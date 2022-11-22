@@ -4,12 +4,23 @@
 # created: Novemeber 17, 2022
 # ---
 
+#PREAMBLE####
+
+#1. Load packages----
+
 library(tidyverse)
 library(wildRtrax)
 library(data.table)
 library(lubridate)
 
+#2. Set root path for data on google drive----
+root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
+
 #A. DOWNLOAD DATA FROM WILDTRAX####
+
+#1. Login to WildTrax----
+config <- "script/login.R"
+source(config)
 
 #1. Get list of projects from WildTrax----
 wt_auth()
@@ -53,10 +64,9 @@ raw <- rbindlist(dat.list, fill=TRUE) %>%
 #5. Save date stamped data & project list----
 save(raw, projects, file=paste0("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/QPAD/Data/wildtrax_raw_", Sys.Date(), ".Rdata"))
 
-#B. GET EBIRD DATA####
+#B. GET BAM PATCH DATA####
 
-#C. GET BAM PATCH DATA####
-
-#D. GET BBS DATA####
+#C. GET BC/YK PATCH DATA####
+#D. GET EBIRD DATA####
 
 #E. PUT TOGETHER####
