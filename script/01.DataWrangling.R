@@ -4,9 +4,8 @@
 # created: Novemeber 17, 2022
 # ---
 
-#NOTES####
+#NOTES################################
 
-#TO DO: REPLACE TMTTS IN WT ARU DATA####
 #TO DO: GET EBIRD FOR OUTSIDE CANADA####
 
 #The "BAMProjects_WildTrax.csv" file is a list of all projects currently in WildTrax that BAM can use in the national models. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations.
@@ -19,25 +18,32 @@
 
 #BC/YK patch was provided by Anna Drake to include datasets from these regions that are unavailable in the BAM database. These datasets will be harmonized for inclusion in WildTrax under BAM and so future iterations of the national models should not need this patch.
 
-#raw eBird data is downloaded from the eBird interface at https://ebird.org/data/download/ebd prior to wrangling with the "auk" package and will require a request for access. Use the custom download tool to download only the datasets for Canada and the US instead of the global dataset.
+#raw eBird data is downloaded from the eBird interface at https://ebird.org/data/download/ebd prior to wrangling with the "auk" package and will require a request for access. Use the custom download tool to download only the datasets for Canada and the US instead of the global dataset. Note you will also need the global sampling file to use the auk package for zero filling.
 
-#raw eBird data omits Great Grey Owl & Northern Hawk Owl as sensitive species (https://support.ebird.org/en/support/solutions/articles/48000803210?b_id=1928&_gl=1*xq054u*_ga*ODczMTUyMjcuMTY2OTE0MDI4Ng..*_ga_QR4NVXZ8BM*MTY2OTE0MDI4NS4xLjEuMTY2OTE0MDM3OC4zNS4wLjA.&_ga=2.147122167.150058226.1669140286-87315227.1669140286).
+#raw eBird data omits Great Grey Owl & Northern Hawk Owl as sensitive species (https://support.ebird.org/en/support/solutions/articles/48000803210?b_id=1928&_gl=1*xq054u*_ga*ODczMTUyMjcuMTY2OTE0MDI4Ng..*_ga_QR4NVXZ8BM*MTY2OTE0MDI4NS4xLjEuMTY2OTE0MDM3OC4zNS4wLjA.&_ga=2.147122167.150058226.1669140286-87315227.1669140286) and should not be used for modelling these two species.
+
+#wrangling eBird data with the auk package requires installation of AWK on windows computers. Please see #https://cornelllabofornithology.github.io/auk/articles/auk.html.
+
+#eBird data has not been zerofilled because there was no species filtering done and we are assuming that all stationary counts have at least 1 bird observed.
 
 #The column "sensor" currently only differentiates between ARU & human point count data types. Future versions should consider differentiating between SM2 ARU data types and other ARU data types due to differences in the perceptibility of these two approaches, either via QPAD or a correction factor.
 
-#PREAMBLE####
+#The replace TMTTs script will be replaced by a wildRtrax function in the near future.
+
+#PREAMBLE############################
 
 #1. Load packages----
 
-library(tidyverse)
-library(wildRtrax)
-library(data.table)
-library(lubridate)
+library(tidyverse) #basic data wrangling
+library(wildRtrax) #to download data from wildtrax
+library(data.table) #for binding lists into dataframes
+library(lubridate) #date wrangling
+library(auk) #eBird wrangling
 
 #2. Set root path for data on google drive----
 root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
 
-#A. DOWNLOAD DATA FROM WILDTRAX####
+#A. DOWNLOAD DATA FROM WILDTRAX#######################
 
 #1. Login to WildTrax----
 config <- "script/login.R"
@@ -141,7 +147,7 @@ raw.wt <- rbindlist(dat.list, fill=TRUE) %>%
 save(raw.wt, projects.wt, error.log, file=paste0(root, "/wildtrax_raw_", Sys.Date(), ".Rdata"))
 load(file.path(root, "wildtrax_raw_2022-11-22.Rdata"))
 
-#B. GET PATCH DATA####
+#B. GET PATCH DATA###############################
 
 #1. BAM patch----
 raw.bam <- readRDS(file.path(root, "pc_patch.rds"))
@@ -149,14 +155,23 @@ raw.bam <- readRDS(file.path(root, "pc_patch.rds"))
 #2. BC/YK patch----
 raw.bcyk <- readRDS(file.path(root, "BC_YK_patch.rds"))
 
-#D. GET EBIRD DATA####
+#C. GET EBIRD DATA##########################
 
-#https://cornelllabofornithology.github.io/auk/articles/auk.html
+#1. Set ebd path----
+auk_set_ebd_path(file.path(root, "ebd_CA_relOct-2022"), overwrite=TRUE)
 
-input <- file.path(root, "ebd_CA_relOct-2022/ebd_CA_relOct-2022.txt")
+#2. Define filters----
+filters <- auk_ebd("ebd_CA_relOct-2022.txt") %>% 
+  auk_protocol("Stationary") %>% 
+  auk_duration(c(0, 10)) %>% 
+  auk_complete()
 
+#3. Filter data----
+#select columns to keep
+filtered <- auk_filter(filters, file=file.path(root, "ebd_data_filtered.txt"), overwrite=TRUE,
+                       keep = c("group identifier", "sampling_event_identifier", "scientific name", "common_name", "observation_count", "latitude", "longitude", "locality_type", "observation_date", "time_observations_started", "observer_id", "duration_minutes"))
 
-#E. HARMONIZE####
+#D. HARMONIZE###############################
 
 #1. Set desired columns----
 colnms <- c("source", "project", "sensor", "singlesp", "location", "buffer", "lat", "lon", "year", "date", "observer", "duration", "distance", "species", "abundance")
@@ -164,7 +179,7 @@ colnms <- c("source", "project", "sensor", "singlesp", "location", "buffer", "la
 #2. Wrangle wildtrax data-----
 
 #2a. A bit of prep----
-use.wt <- raw.wt %>% 
+dat.wt <- raw.wt %>% 
   rename(lat = latitude, lon = longitude, species = speciesCode, buffer = bufferRadius.m.) %>% 
   full_join(projects.wt %>% 
               rename(sensor = sensorId) %>% 
@@ -176,7 +191,7 @@ use.wt <- raw.wt %>%
 #2b. Get the point count data----
 #wrangle distance and duration maximums
 #remove counts with unknown duration and distance
-pc.wt <- use.wt %>% 
+pc.wt <- dat.wt %>% 
   dplyr::filter(sensor=="PC",
                 durationMethod!="UNKNOWN",
                 distanceMethod!="UNKNOWN") %>% 
@@ -197,12 +212,11 @@ pc.wt <- use.wt %>%
 #filter ARU data to first detection of each individual
 #wrangle duration
 #identify datasets that should only be used for single species
-#replace tmtts
 
 ssp <- read.csv(file.path(root, "BAMProjects_WildTrax.csv")) %>% 
   dplyr::filter(single.species=="y")
 
-aru.wt <- use.wt %>% 
+aru.wt <- dat.wt %>% 
   dplyr::filter(sensor=="ARU") %>% 
   mutate(singlesp = ifelse(project_id %in% ssp$project_id, "y", "n")) %>% 
   separate(method, into=c("duration", "method"), remove=TRUE) %>% 
@@ -213,6 +227,30 @@ aru.wt <- use.wt %>%
   ungroup() %>%
   dplyr::filter(tag_start_s == first_tag) %>% 
   dplyr::select(all_of(colnms))
+
+#2d. Replace TMTTs with predicted abundance----
+tmtt <- read.csv("C:/Users/Elly Knight/Documents/ABMI/Projects/TMTT/data/tmtt_predictions.csv") %>% 
+  rename(species = species_code)
+user <- read.csv("C:/Users/Elly Knight/Documents/ABMI/Projects/TMTT/data/app_user.csv") %>% 
+  rename(observer = user_name) %>% 
+  dplyr::select(observer, user_id)
+
+tmtt.wt <- aru.wt %>% 
+  dplyr::filter(abundance=="TMTT") %>% 
+  left_join(user) %>% 
+  mutate(user_id = ifelse(is.na(user_id), observer, user_id))%>% 
+  mutate(boot = round(runif(max(row_number()), 1, 100)),
+         species = ifelse(species %in% tmtt$species, species, "species"),
+         user_id = as.integer(ifelse(user_id %in% tmtt$user_id, user_id, 0))) %>% 
+  data.frame() %>% 
+  left_join(tmtt) %>% 
+  mutate(abundance = round(pred)) %>% 
+  dplyr::select(colnames(aru.wt))
+
+#2e. Put back together----
+use.wt <- aru.wt %>% 
+  dplyr::filter(abundance!="TMTT") %>% 
+  rbind(tmtt.wt)
 
 #3. Wrangle BAM patch data----
 #wrangle distance and duration maximums
@@ -252,18 +290,33 @@ use.bcyk <- raw.bcyk %>%
          year = year(date),
          observer = NA) %>% 
   dplyr::select(all_of(colnms))
+
+#5. Wrangle ebird data----
+#Note this assumes observations with "X" individuals are 1s
+
+raw.ebd <- read_ebd("ebd_data_filtered.txt")
+
+use.ebd <- raw.ebd %>% 
+  mutate(date = ymd_hms(paste0(observation_date, time_observations_started)),
+         abundance = as.numeric(ifelse(observation_count=="X", 1, observation_count)),
+         route = NA,
+         stop = NA) %>% 
+  separate(state_code, into=c("country", "province")) %>% 
+  rename(lat = latitude,
+         lon = longitude,
+         duration = duration_minutes) %>% 
+  dplyr::select(year, province, route, stop, date, count, lat, lon, time, day, duration)
   
-#F. PUT TOGETHER####
+#E. PUT TOGETHER############################
 
 #1. Put everything together----
-use <- rbind(pc.wt, aru.wt, use.bam, use.bcyk)
+use <- rbind(use.wt, use.bam, use.bcyk, use.ebd)
+
+#2. Separate into visit and detection objects----
   
-#2. Clip by study area----
+#3. Clip by study area----
 
-#3. Remove duplicates----
+#4. Remove duplicates----
 
-#F. SEPARATE INTO VISIT DF AND DETECTION DF####
 
-#detection - remove noise, unknown spp, nonbirds
-
-#G. SAVE!####
+#F. SAVE!####
