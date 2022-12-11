@@ -7,6 +7,7 @@
 #NOTES################################
 
 #TO DO: GET EBIRD FOR OUTSIDE CANADA####
+#TO DO: GET CALLING LAKE DATA#####
 
 #The "BAMProjects_WildTrax.csv" file is a list of all projects currently in WildTrax that BAM can use in the national models. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations.
 
@@ -157,19 +158,37 @@ raw.bcyk <- readRDS(file.path(root, "BC_YK_patch.rds"))
 
 #C. GET EBIRD DATA##########################
 
-#1. Set ebd path----
-auk_set_ebd_path(file.path(root, "ebd_CA_relOct-2022"), overwrite=TRUE)
+#Note: loop currently has to be run by hand because auk_set_ebd_path() requires restarting the session after running the command
 
-#2. Define filters----
-filters <- auk_ebd("ebd_CA_relOct-2022.txt") %>% 
-  auk_protocol("Stationary") %>% 
-  auk_duration(c(0, 10)) %>% 
-  auk_complete()
+library(auk)
+root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
 
-#3. Filter data----
-#select columns to keep
-filtered <- auk_filter(filters, file=file.path(root, "ebd_data_filtered.txt"), overwrite=TRUE,
-                       keep = c("group identifier", "sampling_event_identifier", "scientific name", "common_name", "observation_count", "latitude", "longitude", "locality_type", "observation_date", "time_observations_started", "observer_id", "duration_minutes"))
+#1. Get list of ebd objects to process----
+ebd.files <- list.files(file.path(root, "ebd_raw"), pattern="ebd_*")
+
+i <- 24
+#2. Set up loop----
+for(i in 3:length(ebd.files)){
+  
+  #3. Set ebd path----
+  auk_set_ebd_path(file.path(root, "ebd_raw", ebd.files[i]), overwrite=TRUE)
+  
+  #4. Define filters----
+  filters <- auk_ebd(paste0(ebd.files[i], ".txt")) %>% 
+    auk_protocol("Stationary") %>% 
+    auk_duration(c(0, 10)) %>% 
+    auk_complete()
+  
+  #5. Filter data----
+  #select columns to keep
+  filtered <- auk_filter(filters, file=file.path(root, "ebd_filtered", paste0(ebd.files[i], ".txt")), overwrite=TRUE,
+                         keep = c("group identifier", "sampling_event_identifier", "scientific name", "common_name", "observation_count", "latitude", "longitude", "locality_type", "observation_date", "time_observations_started", "observer_id", "duration_minutes"))
+  
+}
+
+#3. Check list of processed files----
+ebd.files.done <- list.files(file.path(root, "ebd_filtered"), pattern="ebd_*")
+
 
 #D. HARMONIZE###############################
 
@@ -317,6 +336,8 @@ use <- rbind(use.wt, use.bam, use.bcyk, use.ebd)
 #3. Clip by study area----
 
 #4. Remove duplicates----
+#dggridR::
+#setup for 200m, flag, then check for identical timestamps
 
 
 #F. SAVE!####
