@@ -6,9 +6,6 @@
 
 #NOTES################################
 
-#TO DO: GET EBIRD FOR OUTSIDE CANADA####
-#TO DO: GET CALLING LAKE DATA#####
-
 #The "BAMProjects_WildTrax.csv" file is a list of all projects currently in WildTrax that BAM can use in the national models. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations.
 
 #The "BAMProjects_WildTrax.csv" file also contains information on which ARU projects are processed for a single species or taxa and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models in collaboration with Erin Bayne.
@@ -192,7 +189,7 @@ ebd.files.done <- list.files(file.path(root, "ebd_filtered"), pattern="ebd_*")
 #D. HARMONIZE###############################
 
 #1. Set desired columns----
-colnms <- c("source", "project", "sensor", "singlesp", "location", "buffer", "lat", "lon", "year", "date", "observer", "duration", "distance", "species", "abundance")
+colnms <- c("source", "project", "sensor", "tagMethod", "singlesp", "location", "buffer", "lat", "lon", "year", "date", "observer", "duration", "distance", "species", "abundance")
 
 #2. Wrangle wildtrax data-----
 
@@ -223,7 +220,8 @@ pc.wt.meth <- dat.wt %>%
          chardis = str_locate_all(distanceMethod, "-"),
          chardismax = max(chardis),
          distance1 = str_sub(distanceMethod, chardismax+1, -2),
-         distance = ifelse(distance1 %in% c("AR", "IN"), Inf, as.numeric(distance1))) %>% 
+         distance = ifelse(distance1 %in% c("AR", "IN"), Inf, as.numeric(distance1)),
+         tagMethod = "PC") %>% 
   dplyr::select(distanceMethod, durationMethod, distance, duration)
 
 pc.wt <- dat.wt %>% 
@@ -256,6 +254,7 @@ aru.wt <- dat.wt %>%
 #2d. Replace TMTTs with predicted abundance----
 tmtt <- read.csv("C:/Users/Elly Knight/Documents/ABMI/Projects/TMTT/data/tmtt_predictions.csv") %>% 
   rename(species = species_code)
+
 user <- read.csv("C:/Users/Elly Knight/Documents/ABMI/Projects/TMTT/data/app_user.csv") %>% 
   rename(observer = user_name) %>% 
   dplyr::select(observer, user_id)
@@ -371,7 +370,7 @@ loc <- use %>%
 #3. Clip by study area----
 
 #3a. Read in study area----
-sa <- read_sf("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/Regions/BAM_BCR_NationalModel.shp")
+sa <- read_sf("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
 
 #3v. Create raster (much faster than from polygon)
 r <- rast(ext(sa), resolution=1000)
@@ -419,32 +418,55 @@ visit.n <- visit.grid %>%
   ungroup() %>% 
   dplyr::filter(n > 1) %>% 
   left_join(visit.grid) 
-
-#4. Identify combos of source----
-#remove eBird to anything
-#remove BAM for wildRtrax to BAM
-#remove BCYK for BCYK to anything
-
-source.n <- visit.n %>%
-  dplyr::select(lat, lon, cell, date, duration, abundance, source) %>% 
-  mutate(exist = 1) %>% 
-  pivot_wider(id_cols=lat:abundance, names_from=source, values_from=exist) %>% 
-  mutate(combo = ifelse())
+#
+#Note: come back to commented out sections after WT fixing is done.
+# 
+# #4. Identify combos of source----
+# #remove eBird to anything
+# #remove BAM for wildRtrax to BAM
+# #remove BCYK for BCYK to anything
+# 
+# source.n <- visit.n %>%
+#   dplyr::select(lat, lon, cell, date, duration, abundance, source) %>% 
+#   mutate(exist = 1) %>% 
+#   pivot_wider(id_cols=lat:abundance, names_from=source, values_from=exist) %>% 
+#   mutate(combo = ifelse())
 
 #4. Take out all the ebird surveys in the duplicates----
 ebird.n <- visit.n %>% 
   dplyr::filter(source=="eBird")
 
-#5. Check again----
-visit.n2 <- visit.grid %>% 
-  anti_join(ebird.n)  %>% 
-  group_by(cell, date, duration, abundance) %>% 
-  summarize(n = n()) %>% 
-  ungroup() %>% 
-  dplyr::filter(n > 1) %>% 
-  left_join(visit.grid)
+# #5. Check again----
+# visit.n2 <- visit.grid %>% 
+#   anti_join(ebird.n)  %>% 
+#   group_by(cell, date, duration, abundance) %>% 
+#   summarize(n = n()) %>% 
+#   ungroup() %>% 
+#   dplyr::filter(n > 1) %>% 
+#   left_join(visit.grid)
 
+#5. Put it all back together----
+dat <- use %>% 
+  inner_join(loc.sa) %>% 
+  anti_join(ebird.n %>% 
+              dplyr::select(-abundance)) %>% 
+  dplyr::select(all_of(colnms))
 
+#F. SEPARATE INTO VISITS AND OBSERVATIONS####
+#1. Identify unique visits----
+visit <- dat %>% 
+  dplyr::select(-species, -abundance) %>% 
+  unique()
 
+#2. Tidy bird data----
+#remove unknown abundance
+#filter to QPAD V4 species list
+bird <- dat %>% 
+  mutate(abundance = as.numeric(abundance)) %>% 
+  dplyr::filter(!is.na(abundance))
 
-#F. SAVE!####
+#G. SAVE!####
+save(visit, bird, "01_NM4.1_data_clean.R")
+
+load("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.0/Feb2020/data/BAMdb-GNMsubset-2020-01-08.Rdata")
+load("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.0/Feb2020/data/BAMdb-patched-2019-06-04.Rdata")
