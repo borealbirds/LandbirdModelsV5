@@ -1,99 +1,114 @@
 # ---
 # title: National Models 4.1 - calculate offsets
-# author: Elly Knight, Peter Solymos
+# author: Elly Knight
 # created: December 22, 2022
 # ---
 
 #NOTES################################
 
-# This script uses the qpad-offsets package, which requires downloading that R project from github (https://github.com/borealbirds/qpad-offsets) to your local and setting the working directory to it (line 22).
+# This script uses the qpad-offsets package, which requires downloading that R project from github (https://github.com/borealbirds/qpad-offsets) to your local and setting the working directory to it (line 29).
 
-library(tidyverse)
-library(qpad)
-library(QPAD)
-library(maptools)
-library(intrval)
-library(raster)
+#PREAMBLE############################
 
-#1. Load data package from script 01----
-load("01_NM4.1_data_clean.RDS")
+#1. Load packages----
 
-#2. Set WD to qpad-offsets package----
+library(tidyverse) #basic data wrangling
+library(lubridate) #temporal data wrangling
+library(QPAD) #to get offset model estimates
+library(raster) #to handle covariate extraction from qpad rasters
+library(maptools) #required for QPAD
+library(intrval) #required for QPAD
+library(data.table) #collapse list to dataframe
+
+#2. Set root path for data on google drive----
+root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
+
+#A. LOAD QPAD#####
+
+#1. Set WD to qpad-offsets package----
 setwd("C:/Users/Elly Knight/Documents/BAM/Projects/QPAD/qpad-offsets")
 
-#3. Load QPAD requirements----
-#3a. Estimates----
-load_BAM_QPAD(version = 4)
+#2. Load QPAD requirements----
+#2a. Estimates----
+load_BAM_QPAD(version = 3)
 
-#3b. Raster data----
+#2b. Raster data----
 rlcc <- raster("./data/lcc.tif")
 rtree <- raster("./data/tree.tif")
 rtz <- raster("./data/utcoffset.tif")
 rd1 <- raster("./data/seedgrow.tif")
 crs <- proj4string(rtree)
 
-#3c. Source functions----
+#2c. Source functions----
 source("functions.R")
 
+#B. PREP DATA####
 
+#1. Load data package from script 01----
+load(file.path(root, "01_NM4.1_data_clean.R"))
 
-## species of interest
-spp <- "OVEN"
+#2. Select columns----
+#add column for whether is local or utc time
+bird.x <- bird %>% 
+  mutate(dt = as.character(date(date)),
+         tm = as.character(paste0(hour(date), ":", minute(date)))) %>% 
+  rename(dur = duration, dis = distance) %>% 
+  dplyr::filter(lon >= -164,
+                lon <= -52,
+                lat >= 39,
+                lat <= 69) 
 
-## date and time
-## https://en.wikipedia.org/wiki/ISO_8601
-dt <- "2019-06-07" # ISO 8601 in YYYY-MM-DD (0-padded)
-tm <- "05:20" # ISO 8601 in hh:mm (24 hr clock, 0-padded)
+#3. Split into local and utc time zone objects----
+bird.local <- bird.x %>% 
+  dplyr::filter(source!="eBird")
+bird.utc <- bird.x %>% 
+  dplyr::filter(source=="eBird")
 
-## spatial coordinates
-lon <- -113.4938 # longitude WGS84 (EPSG: 4326)
-lat <- 53.5461 # latitude WGS84 (EPSG: 4326)
+#Visualize to check
+hist(hour(bird.local$date))
+hist(hour(bird.utc$date))
 
-## point count duration 
-## and truncation distance (Inf for unlimited)
-dur <- 10 # minutes
-dis <- 100 # meters
+#C. CALCULATE OFFSETS####
 
+#1. Get list of species for loop----
+spp.tz <- expand.grid(tz=c("local", "utc"), species = sort(unique(bird.x$species)))
 
-
-
-x <- make_x(dt, tm, lon, lat, dur, dis)
-str(x)
-##'data.frame':	1 obs. of  8 variables:
-## $ TSSR  : num 0.0089
-## $ JDAY  : num 0.43
-## $ DSLS  : num 0.14
-## $ LCC2  : Factor w/ 2 levels "Forest","OpenWet": 2
-## $ LCC4  : Factor w/ 4 levels "DecidMixed","Conif",..: 3
-## $ TREE  : num 2.55
-## $ MAXDUR: num 10
-## $ MAXDIS: num 1
-
-
-
-o <- make_off(spp, x)
-str(o)
-##'data.frame':	1 obs. of  5 variables:
-## $ p         : num 0.991
-## $ q         : num 0.562
-## $ A         : num 3.14
-## $ correction: num 1.75
-## $ offset    : num 0.559
-
-
-SPP <- getBAMspecieslist()
-OFF <- matrix(0, nrow(x), length(SPP))
-rownames(OFF) <- rownames(x) # your survey IDs here
-colnames(OFF) <- SPP
-
-for (spp in SPP) {
-  cat(spp, "\n")
+#2. Set up loop----
+bird.o <- list()
+for(i in 1:nrow(spp.tz)){
+  
   flush.console()
-  o <- make_off(spp, x)
-  OFF[,spp] <- o$offset
+  
+  #3. Set tz method----
+  tz <- spp.tz$tz[i]
+  
+  #4. Filter to species----
+  if(tz=="local"){
+    bird.i <- bird.local %>% 
+      dplyr::filter(species==spp.tz$species[i])
+  }
+  if(tz=="utc"){
+    bird.i <- bird.utc %>% 
+      dplyr::filter(species==spp.tz$species[i])
+  }
+
+  #5. Make dataframe for prediction----
+  x <- make_x(bird.i, tz)
+  
+  #6. Calculate offsets----
+  o <- make_off(spp.tz$species[i], x)
+  
+  #7. Put together and save to list----
+  bird.o[[i]] <- cbind(bird.i, o)
+  
+  print(paste0("Finished loop ", i, " of ", nrow(spp.tz), " - ", spp.tz$species[i]))
+  
 }
-str(OFF)
-##num [1, 1:151] 0.1365 0.9699 0.0643 0.5917 -0.3132 ...
-## - attr(*, "dimnames")=List of 2
-##  ..$ : chr "17"
-##  ..$ : chr [1:151] "ALFL" "AMCR" "AMGO" "AMPI" ...
+
+#D. SAVE####
+
+#1. Collapse to dataframe----
+bird <- rbindlist(bird.o)
+
+#2. Save----
+save(visit, bird, file=file.path(root, "01_NM4.1_data_offsets.R"))
