@@ -6,19 +6,29 @@
 
 #NOTES################################
 
-#the coordinates for ABMI Ecosystem health data are buffered within 5.5 km of the actual coordinate and should not be used for covariate extraction.
+#PREAMBLE############################
 
-library(tidyverse)
-library(rgee)
-library(terra)
-library(sf)
+#1. Load packages----
 
-#A. EXTRACT COVARIATES FROM GEE####
+library(tidyverse) #basic data wrangling
+library(rgee) #to extract data from google earth engine
+library(terra) #basic raster handling
+library(sf) #basic shapefile handling
 
-#B. EXTRACT COVARIATES FROM GD####
+#2. Set root path for data on google drive----
+root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
 
-#C. GET BCR####
+#A. DATA PREP####
 
-#D. REPACKAGE#####
+#1. Load data----
+load(file.path(root, "01_NM4.1_data_offsets.R"))
+
+#B. EXTRACT COVARIATES FROM GEE####
+
+#C. EXTRACT COVARIATES FROM GD####
+
+#D. GET BCR####
+
+#E. SAVE#####
 
 save(visit, bird, "")
