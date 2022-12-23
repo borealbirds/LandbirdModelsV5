@@ -40,7 +40,8 @@ library(auk) #eBird wrangling
 library(purrr) #Mapping functions to read in multiple files
 library(sf) #read in & handle study area
 library(terra) #raster management
-library(dggridR)
+library(dggridR) #to make grid for checking for duplicates
+library(QPAD) #to load species list for bird data
 
 #2. Set root path for data on google drive----
 root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
@@ -213,21 +214,21 @@ pc.wt.meth <- dat.wt %>%
   dplyr::select(durationMethod, distanceMethod) %>% 
   unique() %>% 
   rowwise() %>% 
-  mutate(durationMethod = ifelse(str_sub(durationMethod, -1, -1)=="+", str_sub(durationMethod, -100, -2), durationMethod),
-         chardur = str_locate_all(durationMethod, "-"),
+  mutate(durationMethod2 = ifelse(str_sub(durationMethod, -1, -1)=="+", str_sub(durationMethod, -100, -2), durationMethod),
+         chardur = str_locate_all(durationMethod2, "-"),
          chardurmax = max(chardur),
-         duration = as.numeric(str_sub(durationMethod, chardurmax+1, -4)),
+         duration = as.numeric(str_sub(durationMethod2, chardurmax+1, -4)),
          chardis = str_locate_all(distanceMethod, "-"),
          chardismax = max(chardis),
          distance1 = str_sub(distanceMethod, chardismax+1, -2),
-         distance = ifelse(distance1 %in% c("AR", "IN"), Inf, as.numeric(distance1)),
-         tagMethod = "PC") %>% 
+         distance = ifelse(distance1 %in% c("AR", "IN"), Inf, as.numeric(distance1))) %>% 
   dplyr::select(distanceMethod, durationMethod, distance, duration)
 
 pc.wt <- dat.wt %>% 
   dplyr::filter(sensor=="PC") %>% 
-  mutate(singlesp = "n") %>% 
-  left_join(pc.wt.meth) %>% 
+  mutate(singlesp = "n",
+         tagMethod = ifelse(distanceMethod=="0m-INF-ARU", "1SPT", "PC")) %>% 
+  inner_join(pc.wt.meth) %>% 
   dplyr::select(all_of(colnms)) %>% 
   data.frame()
 
@@ -242,13 +243,14 @@ ssp <- read.csv(file.path(root, "BAMProjects_WildTrax.csv")) %>%
 aru.wt <- dat.wt %>% 
   dplyr::filter(sensor=="ARU") %>% 
   mutate(singlesp = ifelse(project_id %in% ssp$project_id, "y", "n")) %>% 
-  separate(method, into=c("duration", "method"), remove=TRUE) %>% 
+  separate(method, into=c("duration", "tagMethod"), remove=TRUE) %>% 
   mutate(duration = as.numeric(str_sub(duration, -100, -2)),
          distance = Inf) %>% 
-  group_by(source, project, sensor, singlesp, location, buffer, lat, lon, year, date, observer, duration, distance, species, abundance, individual_appearance_order) %>%
+  group_by(source, project, sensor, tagMethod, singlesp, location, buffer, lat, lon, year, date, observer, duration, distance, species, abundance, individual_appearance_order) %>%
   mutate(first_tag = min(tag_start_s)) %>%
   ungroup() %>%
-  dplyr::filter(tag_start_s == first_tag) %>% 
+  dplyr::filter(tag_start_s == first_tag,
+                tagMethod %in% c("1SPM", "1SPT")) %>% 
   dplyr::select(all_of(colnms))
 
 #2d. Replace TMTTs with predicted abundance----
@@ -298,6 +300,7 @@ bam.meth <- raw.bam %>%
 use.bam <- raw.bam %>% 
   mutate(source = "BAM",
          sensor = "PC",
+         tagMethod = "PC",
          equipment = NA,
          singlesp = "n",
          date = ymd_hms(date),
@@ -313,6 +316,7 @@ use.bcyk <- raw.bcyk %>%
   rename(project = Source, duration = dur, distance = dis, species = spp, abundance = count) %>% 
   mutate(source = "BCYK",
          sensor = ifelse(str_sub(project, -3, -1)=="ARU", "ARU", "PC"),
+         tagMethod = ifelse(sensor=="ARU", "1SPM", "PC"),
          singlesp = "n",
          location = NA,
          buffer = NA,
@@ -328,8 +332,8 @@ use.bcyk <- raw.bcyk %>%
 ebd.files.done <- list.files(file.path(root, "ebd_filtered"), pattern="ebd_*", full.names=TRUE)
 
 #Note this next line takes a long time to run (couple hours)
-raw.ebd.list <- purrr::map(.x=ebd.files.done, .f=~read_ebd(.))
-raw.ebd <- rbindlist(raw.ebd.list)
+raw.ebd <- purrr::map(.x=ebd.files.done, .f=~read_ebd(.)) %>% 
+  rbindlist()
 
 tax.wt <- read.csv(file.path(root, "lu_species.csv")) %>% 
   mutate(scientific_name = paste(species_genus, species_name)) %>% 
@@ -341,6 +345,7 @@ use.ebd <- raw.ebd %>%
   mutate(source = "eBird",
          project=NA,
          sensor="PC",
+         tagMethod="PC",
          singlesp="n",
          location=NA,
          buffer=0,
@@ -446,11 +451,18 @@ ebird.n <- visit.n %>%
 #   left_join(visit.grid)
 
 #5. Put it all back together----
+#Remove buffered locations
+#Remove locations outside QPAD limits
 dat <- use %>% 
   inner_join(loc.sa) %>% 
   anti_join(ebird.n %>% 
               dplyr::select(-abundance)) %>% 
-  dplyr::select(all_of(colnms))
+  dplyr::select(all_of(colnms)) %>% 
+  dplyr::filter(!buffer %in% c(50, 10000),
+                lon >= -164,
+                lon <= -52,
+                lat >= 39,
+                lat <= 69)
 
 #F. SEPARATE INTO VISITS AND OBSERVATIONS####
 #1. Identify unique visits----
@@ -459,14 +471,20 @@ visit <- dat %>%
   unique()
 
 #2. Tidy bird data----
+
+#2a. Get list of species from qpad----
+#load("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/QPAD/Results/BAMCOEFS_QPAD_v4.rda")
+load_BAM_QPAD(3)
+spp <- getBAMspecieslist()
+#spp <- .BAMCOEFS4$spp
+
+#2b. Filter----
 #remove unknown abundance
 #filter to QPAD V4 species list
 bird <- dat %>% 
   mutate(abundance = as.numeric(abundance)) %>% 
-  dplyr::filter(!is.na(abundance))
+  dplyr::filter(!is.na(abundance),
+                species %in% spp)
 
 #G. SAVE!####
-save(visit, bird, "01_NM4.1_data_clean.R")
-
-load("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.0/Feb2020/data/BAMdb-GNMsubset-2020-01-08.Rdata")
-load("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.0/Feb2020/data/BAMdb-patched-2019-06-04.Rdata")
+save(visit, bird, file=file.path(root, "01_NM4.1_data_clean.R"))
