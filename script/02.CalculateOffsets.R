@@ -21,7 +21,7 @@ library(intrval) #required for QPAD
 library(data.table) #collapse list to dataframe
 
 #2. Set root path for data on google drive----
-root <- "G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/PointCount/"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/BirdData"
 
 #A. LOAD QPAD#####
 
@@ -30,7 +30,7 @@ setwd("C:/Users/Elly Knight/Documents/BAM/Projects/QPAD/qpad-offsets")
 
 #2. Load QPAD requirements----
 #2a. Estimates----
-load_BAM_QPAD(version = 3)
+load_BAM_QPAD(version = 4)
 
 #2b. Raster data----
 rlcc <- raster("./data/lcc.tif")
@@ -47,68 +47,43 @@ source("functions.R")
 #1. Load data package from script 01----
 load(file.path(root, "01_NM4.1_data_clean.R"))
 
-#2. Select columns----
-#add column for whether is local or utc time
-bird.x <- bird %>% 
-  mutate(dt = as.character(date(date)),
-         tm = as.character(paste0(hour(date), ":", minute(date)))) %>% 
-  rename(dur = duration, dis = distance) %>% 
-  dplyr::filter(lon >= -164,
-                lon <= -52,
-                lat >= 39,
-                lat <= 69) 
+#2. Format visit data for offset calculation---
+visit.x <- visit %>% 
+  mutate(time = str_sub(date, 12, 16),
+         date = as.character(date(date))) %>% 
+  rename(dur = duration, dis = distance, tagmeth = tagMethod)
 
 #3. Split into local and utc time zone objects----
-bird.local <- bird.x %>% 
+visit.x.local <- visit.x %>% 
   dplyr::filter(source!="eBird")
-bird.utc <- bird.x %>% 
+visit.x.utc <- visit.x %>% 
   dplyr::filter(source=="eBird")
 
-#Visualize to check
-hist(hour(bird.local$date))
-hist(hour(bird.utc$date))
+#4. Format for offset calculation----
+x.local <- make_x(visit.x.local, tz="local")
+x.local$id <- visit.x.local$id
+x.utc <- make_x(visit.x.utc, tz="utc")
+x.utc$id <- visit.x.utc$id
+x <- rbind(x.local, x.utc)
 
 #C. CALCULATE OFFSETS####
 
-#1. Get list of species for loop----
-spp.tz <- expand.grid(tz=c("local", "utc"), species = sort(unique(bird.x$species)))
+#1. Get list of species----
+spp <- getBAMspecieslist()
 
-#2. Set up loop----
-bird.o <- list()
-for(i in 1:nrow(spp.tz)){
-  
+#2. Set up output----
+offsets <- data.frame(id=x$id)
+
+#3. Make OFF----
+for (i in 1:length(spp)) {
+  cat(spp[i], "\n")
   flush.console()
-  
-  #3. Set tz method----
-  tz <- spp.tz$tz[i]
-  
-  #4. Filter to species----
-  if(tz=="local"){
-    bird.i <- bird.local %>% 
-      dplyr::filter(species==spp.tz$species[i])
-  }
-  if(tz=="utc"){
-    bird.i <- bird.utc %>% 
-      dplyr::filter(species==spp.tz$species[i])
-  }
-
-  #5. Make dataframe for prediction----
-  x <- make_x(bird.i, tz)
-  
-  #6. Calculate offsets----
-  o <- make_off(spp.tz$species[i], x)
-  
-  #7. Put together and save to list----
-  bird.o[[i]] <- cbind(bird.i, o)
-  
-  print(paste0("Finished loop ", i, " of ", nrow(spp.tz), " - ", spp.tz$species[i]))
-  
+  o <- make_off(spp[i], x, useMethod="y")
+  offsets[,i+1] <- round(o$offset,4)
 }
+colnames(offsets) <- c("id", spp)
 
 #D. SAVE####
 
-#1. Collapse to dataframe----
-bird <- rbindlist(bird.o)
-
-#2. Save----
-save(visit, bird, file=file.path(root, "01_NM4.1_data_offsets.R"))
+#1. Save----
+save(visit, bird, offsets, file=file.path(root, "02_NM4.1_data_offsets.R"))
