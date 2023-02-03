@@ -435,9 +435,13 @@ dat <- use %>%
 
 #F. SEPARATE INTO VISITS AND OBSERVATIONS####
 #1. Identify unique visits----
+#add primary key
 visit <- dat %>% 
-  dplyr::select(-species, -abundance) %>% 
-  unique()
+  dplyr::select(-species, -abundance, -isSeen, -isHeard) %>% 
+  unique() %>% 
+  mutate(id = row_number()) %>% 
+  dplyr::filter(!is.na(duration),
+                !is.na(distance))
 
 #2. Tidy bird data----
 
@@ -448,10 +452,17 @@ spp <- getBAMspecieslist()
 #2b. Filter----
 #remove unknown abundance
 #filter to QPAD V4 species list
+#link to primary key and make wide
 bird <- dat %>% 
   mutate(abundance = as.numeric(abundance)) %>% 
   dplyr::filter(!is.na(abundance),
-                species %in% spp)
+                !is.na(duration),
+                !is.na(distance),
+                species %in% spp) %>% 
+  full_join(visit) %>% 
+  mutate(species = ifelse(is.na(species), "NONE", species),
+         abundance = ifelse(is.na(abundance), 1, abundance)) %>% 
+  pivot_wider(id_cols=id, names_from=species, values_from=abundance, values_fn=sum, values_fill=0, names_sort=TRUE)
 
 #G. SAVE!####
 save(visit, bird, file=file.path(root, "01_NM4.1_data_clean.R"))
