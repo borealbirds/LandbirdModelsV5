@@ -29,6 +29,10 @@ load(file.path(root, "01_NM4.1_data_offsets.R"))
 
 #D. GET BCR####
 
-#E. SAVE#####
+#E. STRATIFY####
+
+#F> 
+
+#F. SAVE#####
 
 save(visit, bird, "")
