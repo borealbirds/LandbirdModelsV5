@@ -8,6 +8,10 @@
 
 # This script uses the qpad-offsets package, which requires downloading that R project from github (https://github.com/borealbirds/qpad-offsets) to your local and setting the working directory to it (line 29).
 
+# This script calculates offsets for ALL species available in QPAD, some of which may not fully satisfy the assumptions of QPAD. Further filtering of the species list should be conducted.
+
+# This script uses the traditional QPAD method for offset calculation. Future versions of the models should consider the joint estimation approach for more accurate density estimation.
+
 #PREAMBLE############################
 
 #1. Load packages----
