@@ -19,6 +19,7 @@ library(rgee) #to extract data from google earth engine
 library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(exactextractr) #fast & efficient raster extraction
+library(rgee) #access & extract layers stored on Google Earth Engine
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
@@ -49,6 +50,10 @@ loc.n <- loc %>%
 #4. Buffer location objects----
 loc.buff <- st_buffer(loc.n, 200)
 
+#5. Plain dataframe for joining to output----
+loc.df <- data.frame(loc.n) %>% 
+  dplyr::select(-geometry)
+
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Climate Normals - static - point value----
@@ -65,25 +70,32 @@ cn <- rast(cn.files$filepath)
 names(cn) <- cn.files$variable
 
 #1c. Extract values - use point value
-loc.cn <- cbind(data.frame(loc.n),
+loc.cn <- cbind(loc.df,
                 loc.n %>% 
                   st_transform(crs(cn)) %>% 
-                  terra::extract(x=cn, ID=FALSE)) %>% 
-  dplyr::select(-geometry)
+                  terra::extract(x=cn, ID=FALSE))
 
 #1d. Save output
-write.csv(loc.cn, file.path(root, "CovariateExtraction", "ClimateNormals.csv"), row.names = FALSE)
+write.csv(loc.cn, file.path(root, "CovariateExtraction", "ClimateNormals_GD.csv"), row.names = FALSE)
 
-#2. Topograhic - static - point value----
+#1e. Cleanup
+#rm(cn, cn.files, loc.cn)
+
+#2. Topograhic - static - point or buffer value----
+
+#NOTE: TRI & roughness not working - "cannot read values" - see "Issues" column in tracking sheet for details
+#NOTE: Need to fix column name of exact_extract code
 
 #2a. Get list of layers
 tp.files <- data.frame(filepath = list.files(file.path(root, "Covariates", "Topography"), full.names = TRUE, pattern="*.tif")) %>% 
   separate(filepath, into=c("f1", "f2", "f3", "f4", "f5", "f6", "file"), remove=FALSE, sep="/") %>% 
   mutate(variable = str_sub(file, -100, -5),
-         variable = ifelse(variable=="mTPI_Canada", "mTPI", variable))
+         variable = ifelse(variable=="mTPI_Canada", "mTPI", variable),
+         extract = ifelse(variable %in% c("TRI", "roughness"), "radius", "point"))
 
 #2b. Set up loop
-#extract iteratively because extents and projections do not match
+#extract iteratively because extents and projections do not match and mix of extraction
+loc.tp <- loc.df
 for(i in 1:nrow(tp.files)){
   
   #2c. Read in layer
@@ -91,34 +103,80 @@ for(i in 1:nrow(tp.files)){
   names(tp) <- tp.files$variable[i]
   
   #2d. Extract values - use point value
-  if(i==1){
-    loc.tp <- cbind(data.frame(loc.n),
-                    loc.n %>% 
-                      st_transform(crs(tp)) %>% 
-                      terra::extract(x=tp, ID=FALSE)) %>% 
-      dplyr::select(-geometry)
-  } else {
+  if(tp.files$extract[i]=="point"){
     loc.tp <- cbind(loc.tp,
                     loc.n %>% 
                       st_transform(crs(tp)) %>% 
                       terra::extract(x=tp, ID=FALSE))
-    
-    loc.tp <- terra::extract(tp, loc.n)
   }
+  
+  #2e. Extract values - use buffer mean
+  if(tp.files$extract[i]=="radius"){
+    loc.tp <- cbind(loc.tp,
+                    loc.buff %>% 
+                      st_transform(crs(tp)) %>% 
+                      exact_extract(x=tp, "mean", colname_fun="values"))
+  }
+  
   print(paste0("Finished layer ", i, " of ", nrow(tp.files)))
 }
 
-#1d. Save output
-write.csv(loc.tp, file.path(root, "CovariateExtraction", "Topography.csv"), row.names = FALSE)
+#2f. Save output
+write.csv(loc.tp, file.path(root, "CovariateExtraction", "Topography_GD.csv"), row.names = FALSE)
 
-#3. Peatland depth - static - point value----
+#2g. Cleanup
+#rm(tp, tp.files, loc.tp)
 
-#4. Road-----
+#3. Wetland - static - buffer value----
 
-#5. Human footprint----
+#3a. Read in layers
+pt <- rast(file.path(root, "Covariates", "Wetlands", "Peat-ML_global_peatland_extent.tif"))
+names(pt) <- "peat"
+
+#3b. Extract values - use point value
+loc.pt <- cbind(loc.df,
+                loc.buff %>% 
+                  st_transform(crs(pt)) %>% 
+                  exact_extract(x=pt, "mean"))
+
+#3c. Fix column names
+colnames(loc.pt) <- c(colnames(loc.df), names(pt))
+
+#3d. Save output
+write.csv(loc.pt, file.path(root, "CovariateExtraction", "Wetland_GD.csv"), row.names = FALSE)
+
+#3e. Cleanup
+#rm(pt, pt.files, loc.pt)
+
+#4. Disturbance-----
+
+
+
+#5. Disturbance----
+
+#6. Biomass----
 
 
 #C. EXTRACT COVARIATES FROM GEE####
+
+#1. Initialize GEE----
+ee_Initialize()
+ee_check()
+
+#2. Create GCS bucket----
+#This only needs to be done once!
+# project_id <- ee_get_earthengine_path() %>%
+#   list.files(., "\\.json$", full.names = TRUE) %>%
+#   jsonlite::read_json() %>%
+#   '$'(project_id) # Get the Project ID
+# 
+# googleCloudStorageR::gcs_create_bucket("national_models", projectId = project_id)
+
+#3. Send polygons to GEE---
+poly <- sf_as_ee(loc.buff)
+point <- sf_as_ee(loc.n)
+
+#4. Get layers----
 
 
 #D. GET BCR####
