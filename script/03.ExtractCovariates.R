@@ -10,6 +10,8 @@
 
 #This script extracts the list of model covariates agreed upon by the BAM National Model team. The full list of those covariates can be found at https://docs.google.com/spreadsheets/d/1XATuq8BOYC2KkbJObaturaf4NFD2ufvn/edit?usp=sharing&ouid=104837701987164094932&rtpof=true&sd=true
 
+#This script runs through each category of covariates separately to avoid mistakes. Future versions should consider aligning file names with a lookup table that details extraction method and then looping through all files at once.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -150,6 +152,47 @@ write.csv(loc.pt, file.path(root, "CovariateExtraction", "Wetland_GD.csv"), row.
 
 #4. Disturbance-----
 
+#4a. Get list of layers
+dt.files <- data.frame(filepath = list.files(file.path(root, "Covariates", "Disturbance"), full.names = TRUE, pattern="*.tif")) %>% 
+  separate(filepath, into=c("f1", "f2", "f3", "f4", "f5", "f6", "file"), remove=FALSE, sep="/") %>% 
+  mutate(variable = str_sub(file, -100, -5),
+         variable = case_when(variable=="cum_threat2020.02.18" ~ "CAN_HF_1km",
+                              variable=="Global_HF_CONUS" ~ "Global_HF_1km",
+                              !is.na(variable) ~ variable))
+
+#4b. Set up loop
+#extract iteratively because extents and projections do not match
+loc.dt <- loc.df
+for(i in 1:nrow(dt.files)){
+  
+  #2c. Read in layer
+  dt <- rast(dt.files$filepath[i])
+  names(dt) <- dt.files$variable[i]
+  
+  #2d. Extract values - use point value
+  if(dt.files$extract[i]=="point"){
+    loc.dt <- cbind(loc.dt,
+                    loc.n %>% 
+                      st_transform(crs(dt)) %>% 
+                      terra::extract(x=dt, ID=FALSE))
+  }
+  
+  #2e. Extract values - use buffer mean
+  if(dt.files$extract[i]=="radius"){
+    loc.dt <- cbind(loc.dt,
+                    loc.buff %>% 
+                      st_transform(crs(dt)) %>% 
+                      exact_extract(x=dt, "mean", colname_fun="values"))
+  }
+  
+  print(paste0("Finished layer ", i, " of ", nrow(dt.files)))
+}
+
+#2f. Save oudtut
+write.csv(loc.dt, file.path(root, "CovariateExtraction", "Topography_GD.csv"), row.names = FALSE)
+
+#2g. Cleanup
+#rm(dt, dt.files, loc.dt)
 
 
 #5. Disturbance----
