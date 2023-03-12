@@ -33,7 +33,7 @@ meth <- read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), she
 #A. DATA PREP####
 
 #1. Load data----
-load(file.path(root, "BirdData", "02_NM4.1_data_offsets.R"))
+load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
 
 #2. Create sf object of just location*year for annual layers----
 #transform to 5072
@@ -57,17 +57,20 @@ loc.buff <- st_buffer(loc.n, 200)
 meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1)
 
 #2. Plain dataframe for joining to output----
-loc.df <- data.frame(loc.n) %>% 
+loc.gd <- data.frame(loc.n) %>% 
   dplyr::select(-geometry)
 
 #3. Set up loop----
-for(i in 41:nrow(meth.gd)){
+#TO DO: FIX COUNT OF LOOPS CALCULATION####
+#for(i in 1:nrow(meth.gd)){
+for(i in 1:12){
+    
   
   #4. Determine if stacking----
-  #increase i to skip the stacked rows of data
+  #remove additional stacked layers from layer list
   if(meth.gd$StackCategory[i]==1){
     meth.gd.i <- dplyr::filter(meth.gd, Category==meth.gd$Category[i])
-    i <- i + nrow(meth.gd.i) - 1
+    meth.gd <- anti_join(meth.gd, meth.gd.i[2:nrow(meth.gd.i),])
   } 
   if(meth.gd$StackCategory[i]==0){
     meth.gd.i <- meth.gd[i,]}
@@ -107,16 +110,16 @@ for(i in 41:nrow(meth.gd)){
     dt = data.table::data.table(year=files.i$year, val = files.i$year)
     data.table::setattr(dt, "sorted", "year")
     data.table::setkey(dt, year)
-    loc.n$year.rd <- dt[J(loc.n$year), roll = "nearest"]$val
-    loc.buff$year.rd <- dt[J(loc.buff$year), roll = "nearest"]$val
+    loc.n.i$year.rd <- dt[J(loc.n$year), roll = "nearest"]$val
+    loc.buff.i$year.rd <- dt[J(loc.buff$year), roll = "nearest"]$val
     
     #11. Set up to loop through years----
     loc.cov <- data.frame()
     yrs <- unique(files.i$year)
     for(j in 1:length(yrs)){
       
-      loc.n.j <- dplyr::filter(loc.n, year.rd==yrs[j])
-      loc.buff.j <- dplyr::filter(loc.buff, year.rd==yrs[j])
+      loc.n.j <- dplyr::filter(loc.n.i, year.rd==yrs[j])
+      loc.buff.j <- dplyr::filter(loc.buff.i, year.rd==yrs[j])
       
       #12. Read in raster----
       rast.i <- rast(files.i$Link[j])
@@ -144,12 +147,12 @@ for(i in 41:nrow(meth.gd)){
   #14. Add to output----
   #fix column names
   if(!is.na(meth.gd$Priority[i])) meth.gd.i$Name <- paste0(meth.gd.i$Name, "-", meth.gd.i$Priority)
-  nms <- c(colnames(loc.df)[1:(ncol(loc.df)-1)], meth.gd.i$Name)
-  loc.df <- cbind(loc.df, loc.cov)
-  names(loc.df) <- nms
+  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Name)
+  loc.gd <- cbind(loc.gd, loc.cov)
+  names(loc.gd) <- nms
   
   #15. Save----
-  save(loc.df, file=file.path(root, "BirdData", "03_NM4.1_data_covariates_GD.R"))
+  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
   
   #16. Report status----
   print(paste0("Finished variable ", i, " of ", nrow(meth.gd), " - ", meth.gd$Name[i]))
@@ -159,8 +162,7 @@ for(i in 41:nrow(meth.gd)){
 #C. EXTRACT COVARIATES FROM GEE####
 
 #1. Initialize GEE----
-ee_Initialize()
-ee_check()
+ee_Initialize(gcs=TRUE)
 
 #2. Create GCS bucket----
 #This only needs to be done once!
@@ -171,14 +173,56 @@ ee_check()
 # 
 # googleCloudStorageR::gcs_create_bucket("national_models", projectId = project_id)
 
-#3. Send polygons to GEE---
-poly <- sf_as_ee(loc.buff)
-point <- sf_as_ee(loc.n)
+#3. Get list of static layers to run----
+meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="static")
 
-#4. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1)
+#4. Set up loop for static layer stacking----
+for(i in 1:nrow(meth.gee)){
+  
+  #5. Get the image----
+  if(meth.gee$GEEtype[i]=="image"){
+    img.i <- ee$Image(meth.gee$Link[i])$select(meth.gee$Name[i])
+  }
+  if(meth.gee$GEEtype[i]=="imagecollection"){
+    img.i <- ee$ImageCollection(meth.gee$Link[i])$select(meth.gee$Name[i])$toBands()
+  }
+  
+  #6. Stack----
+  if(i==1){
+    img.stack <- img.i
+  }
+  
+  if(i > 1){
+    img.stack <- img.stack$addBands(img.i)
+  }
+  
+}
 
-#4. Get layers----
+#7. Set up to do batches of 1000----
+loc.buff$loop <- ceiling(row_number(loc.buff)/1000
+
+
+#8. Send polygons to GEE---
+poly <- sf_as_ee(loc.buff.i)
+
+#8. Extract----
+img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
+                                   collection=poly)
+
+task_vector <- ee_table_to_gcs(collection=img.red,
+                               bucket="national_models",
+                               fileFormat = "CSV")
+task_vector$start()
+ee_monitoring(task_vector, max_attempts=1000)
+
+#9. Save to GD----
+ee_gcs_to_local(task = task_vector, dsn=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE_static.csv"))
+
+check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE_static.csv"))
+
+
+
+
 
 
 #D. GET BCR####
