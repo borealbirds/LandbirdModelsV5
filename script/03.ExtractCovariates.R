@@ -10,7 +10,9 @@
 
 #This script extracts the list of model covariates agreed upon by the BAM National Model team. The full list of those covariates can be found at https://docs.google.com/spreadsheets/d/1XATuq8BOYC2KkbJObaturaf4NFD2ufvn/edit?usp=sharing&ouid=104837701987164094932&rtpof=true&sd=true
 
-#This script extracts covariates for every combination of location & year. Efficiency could be improved by 15-20% by taking only the unique locations for all rows in the method table with TemporalResolution=="static"
+#This script extracts covariates for every combination of location & year. Efficiency could be improved by ~15% by taking only the unique locations for all rows in the method table with TemporalResolution=="static"
+
+#Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #PREAMBLE############################
 
@@ -21,14 +23,12 @@ library(rgee) #to extract data from google earth engine
 library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(exactextractr) #fast & efficient raster extraction
-library(rgee) #access & extract layers stored on Google Earth Engine
-library(readxl) #read in lookup google sheet
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
 
 #3. Get extraction methods lookup table----
-meth <- read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), sheet = "ExtractionLookup")
+meth <- readxl::read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), sheet = "ExtractionLookup")
 
 #A. DATA PREP####
 
@@ -36,19 +36,19 @@ meth <- read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), she
 load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
 
 #2. Create sf object of just location*year for annual layers----
-#transform to 5072
 loc.yr <- visit %>% 
   dplyr::select(project, location, lat, lon, year) %>% 
   unique() %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
-  st_transform(crs=5072)
+  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE)
 
 #EXTRA. Test sample dataset----
-set.seed(1234)
-loc.n <- loc.yr %>% 
-  sample_n(100)
+# set.seed(1234)
+# loc.n <- loc.yr %>%
+#   sample_n(1000)
+loc.n <- loc.yr
 
 #3. Buffer location objects----
+#200 m radius
 loc.buff <- st_buffer(loc.n, 200)
 
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
@@ -65,7 +65,6 @@ loc.gd <- data.frame(loc.n) %>%
 #for(i in 1:nrow(meth.gd)){
 for(i in 1:12){
     
-  
   #4. Determine if stacking----
   #remove additional stacked layers from layer list
   if(meth.gd$StackCategory[i]==1){
@@ -91,7 +90,7 @@ for(i in 1:12){
     if(meth.gd$Extraction[i]=="radius"){
       loc.cov <- loc.buff %>% 
         st_transform(crs(rast.i)) %>% 
-        exact_extract(x=rast.i, "mean")
+        exact_extract(x=rast.i, "mean", force_df=TRUE)
     }
     
   }
@@ -110,6 +109,8 @@ for(i in 1:12){
     dt = data.table::data.table(year=files.i$year, val = files.i$year)
     data.table::setattr(dt, "sorted", "year")
     data.table::setkey(dt, year)
+    loc.n.i <- loc.n
+    loc.buff.i <- loc.buff
     loc.n.i$year.rd <- dt[J(loc.n$year), roll = "nearest"]$val
     loc.buff.i$year.rd <- dt[J(loc.buff$year), roll = "nearest"]$val
     
@@ -135,8 +136,7 @@ for(i in 1:12){
       if(meth.gd$Extraction[i]=="radius"){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
-          exact_extract(x=rast.i, "mean") %>% 
-          data.frame() %>% 
+          exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
           rbind(loc.cov)
       }
       
@@ -159,9 +159,101 @@ for(i in 1:12){
 
 }
 
-#C. EXTRACT COVARIATES FROM GEE####
+#17. Check output----
+loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+summary(loc.check)
 
-#1. Initialize GEE----
+#check missing climate normals - looks like all the coastal data
+loc.na <- dplyr::filter(loc.check, is.na(CMD)) %>% 
+  dplyr::select(project, year, lat, lon, CMD)
+plot(loc.na$lon, loc.na$lat)
+
+#check missing hli3cl - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(hli3cl))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing peat - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(peat))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing global HF - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(HF_5km.2))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing greenup - looks like all of canada?
+loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
+  dplyr::select(project, year, lat, lon, greenup, dormancy)
+plot(loc.na$lon, loc.na$lat)
+
+write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
+
+#TO DO: COME BACK TO MISSING GREENUP & DORMANCY VALUES####
+
+#C. EXTRACT COVARIATES FROM SCANFI####
+
+#1. Get list of covariates to run----
+meth.scanfi <- dplyr::filter(meth, Source=="SCANFI", Running==1)
+
+#2. Get & wrangle list of SCANFI layers----
+files.scanfi <- data.frame(Link=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", full.names = TRUE,recursive=TRUE, pattern="*.tif"),
+                      file=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", recursive=TRUE, pattern="*.tif")) %>% 
+  dplyr::filter(str_sub(file, -3, -1)=="tif") %>% 
+  mutate(file = str_sub(file, 13, 100)) %>% 
+  separate(file, into=c("scanfi", "covtype", "variable", "S", "year", "v0", "filetype")) %>% 
+  mutate(year = as.numeric(ifelse(filetype=="v0", v0, year)),
+         variable = case_when(variable=="VegTypeClass" ~ "landcover",
+                              variable=="prcC" ~ "conifer",
+                              variable=="prcD" ~ "deciduous",
+                              !is.na(variable) ~ tolower(variable))) %>% 
+  dplyr::filter(scanfi=="SCANFI",
+                variable %in% meth.scanfi$Name) %>% 
+  dplyr::select(Link, variable, year) %>% 
+  arrange(year, variable)
+#Check everything is there
+table(files.scanfi$variable, files.scanfi$year)
+
+#3. Match year of data to year of SCANFI----
+years.scanfi <- unique(files.scanfi$year)
+dt = data.table::data.table(year=years.scanfi, val=years.scanfi)
+data.table::setattr(dt, "sorted", "year")
+data.table::setkey(dt, year)
+loc.buff.i <- loc.buff
+loc.buff.i$year.rd <- dt[J(loc.buff$year), roll = "nearest"]$val
+
+#4. Set up to loop through years of SCANFI----
+loc.scanfi <- data.frame()
+for(i in 1:length(years.scanfi)){
+  
+  loc.buff.yr <- dplyr::filter(loc.buff.i, year.rd==years.scanfi[i])
+
+  #6. Read in raster----
+  files.i <- dplyr::filter(files.scanfi, year==years.scanfi[i])
+  rast.i <- rast(files.i$Link)
+  names(rast.i) <- files.i$variable
+  
+  #7. Extract----
+  loc.scanfi <- data.frame(loc.buff.yr) %>% 
+    dplyr::select(-geometry, -year.rd) %>% 
+    cbind(loc.buff.yr %>% 
+            st_transform(crs(rast.i)) %>% 
+            exact_extract(x=rast.i, "mean", force_df=TRUE)) %>% 
+    rbind(loc.scanfi)
+  
+  print(paste0("Finished year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
+  
+}
+
+#8. Fix column names----
+colnames(loc.scanfi) <- colnames(loc.df, unique(files.scanfi)) 
+
+#9. Save----
+write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+
+#D. EXTRACT COVARIATES FROM GEE####
+
+#1. Load and initialize GEE----
+#load here to avoid conflicts above
+library(rgee)
 ee_Initialize(gcs=TRUE)
 
 #2. Create GCS bucket----
@@ -199,26 +291,43 @@ for(i in 1:nrow(meth.gee)){
 }
 
 #7. Set up to do batches of 1000----
-loc.buff$loop <- ceiling(row_number(loc.buff)/1000
+loc.buff$loop <- ceiling(row_number(loc.buff)/1000)
 
+task.list <- list()
+for(i in 1:max(loc.buff$loop)){
+  
+  loc.buff.i <- dplyr::filter(loc.buff, loop==i)
+  
+  #8. Send polygons to GEE---
+  poly <- sf_as_ee(loc.buff.i)
+  
+  #9. Extract----
+  img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
+                                     collection=poly)
+  
+  task.list[[i]] <- ee_table_to_gcs(collection=img.red,
+                                 bucket="national_models",
+                                 fileFormat = "CSV")
+  task.list[[i]]$start()
+  
+  #10. Check is running
+  if(i==1){
+    ee_monitoring(task.list[[i]], max_attempts=1000)
+  }
 
-#8. Send polygons to GEE---
-poly <- sf_as_ee(loc.buff.i)
+  print(paste0("Finished batch ", i, " of ", max(loc.buff$loop)))
+  
+}
 
-#8. Extract----
-img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
-                                   collection=poly)
+#11. Download from cloud----
+for(i in 1:length(task.list)){
+  ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", i, ".csv")))
+}
 
-task_vector <- ee_table_to_gcs(collection=img.red,
-                               bucket="national_models",
-                               fileFormat = "CSV")
-task_vector$start()
-ee_monitoring(task_vector, max_attempts=1000)
+#12. Collapse to one object----
+#fix column names???
 
-#9. Save to GD----
-ee_gcs_to_local(task = task_vector, dsn=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE_static.csv"))
-
-check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE_static.csv"))
+#13. Check----
 
 
 
