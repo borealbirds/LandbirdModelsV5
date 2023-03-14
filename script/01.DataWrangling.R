@@ -43,7 +43,7 @@ library(dggridR) #to make grid for checking for duplicates
 library(QPAD) #to load species list for bird data
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/BirdData"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/Data"
 
 #A. DOWNLOAD DATA FROM WILDTRAX#######################
 
@@ -261,7 +261,7 @@ aru.wt <- dat.wt %>%
   dplyr::select(all_of(colnms))
 
 #2d. Replace TMTTs with predicted abundance----
-tmtt <- read.csv("C:/Users/Elly Knight/Documents/ABMI/Projects/WildTrax/TMTT/data/tmtt_predictions_mean.csv") %>% 
+tmtt <- read.csv("C:/Users/elly/Documents/ABMI/WildTrax/TMTT/data/tmtt_predictions_mean.csv") %>% 
   rename(species = species_code)
 
 tmtt.wt <- aru.wt %>% 
