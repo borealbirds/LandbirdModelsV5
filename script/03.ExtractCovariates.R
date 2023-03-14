@@ -19,10 +19,11 @@
 #1. Load packages----
 
 library(tidyverse) #basic data wrangling
-library(rgee) #to extract data from google earth engine
 library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(exactextractr) #fast & efficient raster extraction
+library(rgee)
+ee_Initialize(gcs=TRUE)
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
@@ -39,7 +40,8 @@ load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
 loc.yr <- visit %>% 
   dplyr::select(project, location, lat, lon, year) %>% 
   unique() %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE)
+  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
+  st_transform(crs=5072)
 
 #EXTRA. Test sample dataset----
 # set.seed(1234)
@@ -251,12 +253,7 @@ write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_
 
 #D. EXTRACT COVARIATES FROM GEE####
 
-#1. Load and initialize GEE----
-#load here to avoid conflicts above
-library(rgee)
-ee_Initialize(gcs=TRUE)
-
-#2. Create GCS bucket----
+#1. Create GCS bucket----
 #This only needs to be done once!
 # project_id <- ee_get_earthengine_path() %>%
 #   list.files(., "\\.json$", full.names = TRUE) %>%
@@ -265,21 +262,23 @@ ee_Initialize(gcs=TRUE)
 # 
 # googleCloudStorageR::gcs_create_bucket("national_models", projectId = project_id)
 
-#3. Get list of static layers to run----
+#2. Get list of static layers to run----
 meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="static")
 
-#4. Set up loop for static layer stacking----
+#3. Set up loop for static layer stacking----
 for(i in 1:nrow(meth.gee)){
-  
-  #5. Get the image----
+
+  #4. Get the image----
   if(meth.gee$GEEtype[i]=="image"){
-    img.i <- ee$Image(meth.gee$Link[i])$select(meth.gee$Name[i])
+    if(!is.na(meth.gee$GEEBand[i]))
+    img.i <- ee$Image(meth.gee$Link[i])$select(meth.gee$GEEBand[i]) 
+    else img.i <- ee$Image(meth.gee$Link[i]) 
   }
   if(meth.gee$GEEtype[i]=="imagecollection"){
-    img.i <- ee$ImageCollection(meth.gee$Link[i])$select(meth.gee$Name[i])$toBands()
+    img.i <- ee$ImageCollection(meth.gee$Link[i])$select(meth.gee$GEEBand[i])$toBands()
   }
   
-  #6. Stack----
+  #5. Stack----
   if(i==1){
     img.stack <- img.i
   }
@@ -290,7 +289,7 @@ for(i in 1:nrow(meth.gee)){
   
 }
 
-#7. Set up to do batches of 1000----
+#6. Set up to do batches of 1000----
 loc.buff$loop <- ceiling(row_number(loc.buff)/1000)
 
 task.list <- list()
@@ -298,10 +297,10 @@ for(i in 1:max(loc.buff$loop)){
   
   loc.buff.i <- dplyr::filter(loc.buff, loop==i)
   
-  #8. Send polygons to GEE---
+  #7. Send polygons to GEE---
   poly <- sf_as_ee(loc.buff.i)
   
-  #9. Extract----
+  #8. Extract----
   img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
                                      collection=poly)
   
@@ -319,17 +318,30 @@ for(i in 1:max(loc.buff$loop)){
   
 }
 
+#11. Save the task list----
+save(task.list, file.path(root, "Data", "Covariates", "GEETasklist.Rdata"))
+
 #11. Download from cloud----
 for(i in 1:length(task.list)){
   ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", i, ".csv")))
 }
 
 #12. Collapse to one object----
-#fix column names???
+files.gee <- list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)
+dat.gee <- purrr::map(files.gee, read.csv) %>% 
+  data.table::rbindlist() %>% 
+  dplyr::select(c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee$GEEName))
 
-#13. Check----
+#13. Fix column names----
+meth.gee$Name <- ifelse(is.na(meth.gee$Priority), meth.gee$Name, paste0(meth.gee$Name, ".", meth.gee$Priority))
+colnames(dat.gee) <- c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee$Name)
 
-
+#14. Zerofill----
+zerocols <- meth.gee %>% 
+  dplyr::filter(Zerofill==1)
+dat.gee <- dat.gee %>% 
+  dplyr::select(zerocols$Name) %>% 
+  mutate()
 
 
 
@@ -342,4 +354,4 @@ for(i in 1:length(task.list)){
 
 #G. SAVE#####
 
-save(visit, bird,  file=file.path(root, "01_NM4.1_data_clean.R"))
+save(visit, bird,  file=file.path(root, "03_NM4.1_data_covariates.R"))
