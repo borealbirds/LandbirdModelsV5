@@ -327,19 +327,19 @@ use <- rbind(use.wt, use.ebd)
 
 #2. Separate out locations only----
 loc <- use %>% 
-  dplyr::select(source, project, sensor, location, lat, lon) %>% 
+  dplyr::select(source, organization, project, sensor, location, lat, lon) %>% 
   unique() %>% 
   dplyr::filter(!is.na(lat))
   
 #3. Clip by study area----
 
 #3a. Read in study area----
-sa <- read_sf("G:/.shortcut-targets-by-id/0B1zm_qsix-gPbkpkNGxvaXV0RmM/BAM.SharedDrive/RshProjs/PopnStatus/NationalModelsV4.1/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
+sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels4.1/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
 
 #3v. Create raster (much faster than from polygon)
 r <- rast(ext(sa), resolution=1000)
 
-sa.r <- rasterize(x=sa, y=r, field="subUnit")
+sa.r <- rasterize(x=vect(sa), y=r, field="subUnit")
 
 #3c. Extract raster locations and remove NAs----
 loc.sa <- loc %>% 
