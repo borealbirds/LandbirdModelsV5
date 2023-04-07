@@ -18,7 +18,7 @@
 #GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
 #SCANFI - NOT DONE - ISSUES WITH RASTER READING - TRY RUNNING IN CLUSTERS OF 1000 - NOPE
 #GOOGLE EARTH STATIC - DONE
-#GOOGLE EARTH TEMPORAL - NOT DONE
+#GOOGLE EARTH TEMPORAL - DONE
 #WRANGLING - NOT DONE
 
 
@@ -43,6 +43,8 @@ meth <- readxl::read_excel(file.path(root, "NationalModels_V4.1_VariableList.xls
 
 #1. Load data----
 load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+rm(bird)
+rm(offsets)
 
 #2. Create sf object of just location*year for annual layers----
 loc.yr <- visit %>% 
@@ -56,6 +58,7 @@ loc.yr <- visit %>%
  # loc.n <- loc.yr %>%
  #   sample_n(1000)
 loc.n <- loc.yr
+rm(loc.yr)
 
 #3. Buffer location objects----
 #200 m radius
@@ -263,35 +266,39 @@ for(i in 1:length(years.scanfi)){
   names(rast.i) <- files.i$variable
   
   #8. Set up loops----
-  for(j in 1:max(loc.buff.yr$loop)){
+#  for(j in 1:max(loc.buff.yr$loop)){
+  loc.scanfi.list <- list()
+  for(j in 1:nrow(loc.buff.yr)){
     
-    loc.i <- dplyr::filter(loc.buff.yr, loop==j)
+    loc.i <- loc.buff.yr[j,]
     
     #9. Extract----
     loc.scanfi.i <- try(exact_extract(x=rast.i, y=loc.i, "mean", force_df=TRUE))
     
     #10. Save output if extraction works----
     if(class(loc.scanfi.i)=="data.frame"){
-      loc.scanfi <- rbind(loc.scanfi,
-                          cbind(data.frame(loc.i) %>% 
-                                  dplyr::select(-geometry, -year.rd, -loop, -scanfi),
-                                loc.scanfi.i))
+      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i) %>% 
+        data.frame() %>% 
+        dplyr::select(-geometry, -year.rd, -loop, -scanfi)
     }
     
-    #11. Log if extraction does note work----
+    #11. Log if extraction does not work----
     if(class(loc.scanfi.i)!="data.frame"){
       loc.error <- rbind(loc.error, loc.i)
     }
     
-    #12. Save----
-    write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
-    
-    #13. Report progress----
-    print(paste0("Finished loop ", j, " of ", max(loc.buff.yr$loop), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
+    #12. Report progress----
+    print(paste0("Finished loop ", j, " of ", nrow(loc.buff.yr), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
     
     flush.console()
     
   }
+  
+  loc.scanfi <- rbind(loc.scanfi,
+                      data.table::rbindlist(loc.scanfi.list))
+  
+  #13. Save----
+  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
   
 }
 
@@ -423,12 +430,13 @@ lc <- data.frame(landcover = c(1:17),
 
 
 #3. Plain dataframe for joining to output----
-loc.gee <- data.frame(loc.n) %>% 
-  dplyr::select(-geometry)
+# loc.gee <- data.frame(loc.n) %>% 
+#   dplyr::select(-geometry)
+loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 1:nrow(meth.gee)){
+for(i in 6:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
