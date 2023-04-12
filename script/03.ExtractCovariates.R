@@ -16,7 +16,8 @@
 
 #CHECKLIST
 #GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
-#SCANFI - NOT DONE - ISSUES WITH RASTER READING - TRY RUNNING IN CLUSTERS OF 1000 - NOPE
+#TO DO: US LANDCOVER & BIOMASS
+#SCANFI - RUNNING
 #GOOGLE EARTH STATIC - DONE
 #GOOGLE EARTH TEMPORAL - DONE
 #WRANGLING - NOT DONE
@@ -252,9 +253,10 @@ data.table::setkey(dt, year)
 loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 
 #6. Set up to loop through years of SCANFI----
-loc.scanfi <- data.frame()
-loc.error <- data.frame()
-for(i in 1:length(years.scanfi)){
+#loc.scanfi <- data.frame()
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+#loc.error <- data.frame()
+for(i in 5:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
