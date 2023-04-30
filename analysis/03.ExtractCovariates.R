@@ -15,8 +15,8 @@
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #CHECKLIST
-#GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
 #TO DO: US LANDCOVER & BIOMASS
+#GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
 #SCANFI - RUNNING
 #GOOGLE EARTH STATIC - DONE
 #GOOGLE EARTH TEMPORAL - DONE
@@ -78,7 +78,7 @@ loc.gd <- data.frame(loc.n) %>%
 #3. Set up loop----
 #TO DO: FIX COUNT OF LOOPS CALCULATION####
 #for(i in 1:nrow(meth.gd)){
-for(i in 1:12){
+for(i in 1:11){
     
   #4. Determine if stacking----
   #remove additional stacked layers from layer list
@@ -255,8 +255,9 @@ loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 #6. Set up to loop through years of SCANFI----
 #loc.scanfi <- data.frame()
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
-#loc.error <- data.frame()
-for(i in 5:length(years.scanfi)){
+loc.error <- data.frame()
+#loc.error <- read.csv(file.path(root, "Data", "Covariates", "SCANFIerrors.csv"))
+for(i in 8:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -268,9 +269,8 @@ for(i in 5:length(years.scanfi)){
   names(rast.i) <- files.i$variable
   
   #8. Set up loops----
-#  for(j in 1:max(loc.buff.yr$loop)){
   loc.scanfi.list <- list()
-  for(j in 1:nrow(loc.buff.yr)){
+  for(j in 222379:nrow(loc.buff.yr)){
     
     loc.i <- loc.buff.yr[j,]
     
@@ -286,8 +286,11 @@ for(i in 5:length(years.scanfi)){
     
     #11. Log if extraction does not work----
     if(class(loc.scanfi.i)!="data.frame"){
-      loc.error <- rbind(loc.error, loc.i)
+      loc.error <- rbind(loc.error, loc.i) %>% 
+        data.frame()
     }
+    
+    saveRDS(loc.scanfi.list, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_interim_4.RDS"))
     
     #12. Report progress----
     print(paste0("Finished loop ", j, " of ", nrow(loc.buff.yr), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
@@ -300,7 +303,7 @@ for(i in 5:length(years.scanfi)){
                       data.table::rbindlist(loc.scanfi.list))
   
   #13. Save----
-  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
   
 }
 
