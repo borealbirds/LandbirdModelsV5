@@ -25,12 +25,12 @@ library(intrval) #required for QPAD
 library(data.table) #collapse list to dataframe
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/BirdData"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/Data"
 
 #A. LOAD QPAD#####
 
 #1. Set WD to qpad-offsets package----
-setwd("C:/Users/Elly Knight/Documents/BAM/Projects/QPAD/qpad-offsets")
+setwd("C:/Users/elly/Documents/BAM/QPAD/qpad-offsets")
 
 #2. Load QPAD requirements----
 #2a. Estimates----
@@ -82,7 +82,7 @@ offsets <- data.frame(id=x$id)
 for (i in 1:length(spp)) {
   cat(spp[i], "\n")
   flush.console()
-  o <- make_off(spp[i], x, useMethod="y")
+  o <- make_off(spp[i], x, useMethod="n")
   offsets[,i+1] <- round(o$offset,4)
 }
 colnames(offsets) <- c("id", spp)
