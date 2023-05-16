@@ -256,8 +256,7 @@ loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 #loc.scanfi <- data.frame()
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 loc.error <- data.frame()
-#loc.error <- read.csv(file.path(root, "Data", "Covariates", "SCANFIerrors.csv"))
-for(i in 8:length(years.scanfi)){
+for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -270,7 +269,7 @@ for(i in 8:length(years.scanfi)){
   
   #8. Set up loops----
   loc.scanfi.list <- list()
-  for(j in 222379:nrow(loc.buff.yr)){
+  for(j in 1:nrow(loc.buff.yr)){
     
     loc.i <- loc.buff.yr[j,]
     
@@ -290,7 +289,7 @@ for(i in 8:length(years.scanfi)){
         data.frame()
     }
     
-    saveRDS(loc.scanfi.list, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_interim_4.RDS"))
+    # saveRDS(loc.scanfi.list, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_interim_1.RDS"))
     
     #12. Report progress----
     print(paste0("Finished loop ", j, " of ", nrow(loc.buff.yr), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
@@ -307,7 +306,7 @@ for(i in 8:length(years.scanfi)){
   
 }
 
-write.csv(loc.error, file=file.path(root, "Data", "Covariates", "SCANFIerrors.csv"), row.names = FALSE)
+write.csv(loc.error, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_MISSING.csv"), row.names = FALSE)
 
 # #10. Fix column names----
 # colnames(loc.scanfi) <- colnames(unique(files.scanfi)) 
