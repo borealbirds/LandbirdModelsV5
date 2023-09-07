@@ -254,7 +254,13 @@ loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 
 #6. Set up to loop through years of SCANFI----
 #loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv")) %>% 
+  unique()
+
+#workaround for weird NA issue
+loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi)
+table(loc.scanfi.buff$year.rd)
+
 loc.error <- data.frame()
 for(i in 1:length(years.scanfi)){
   
@@ -517,11 +523,8 @@ for(i in 6:nrow(meth.gee)){
   
 }
 
-#D. GET BCR####
-
-#E. STRATIFY####
-
-#F. 
+#E. ASSEMBLE####
+#Don't forget to unique() everything just in case
 
 #G. SAVE#####
 
