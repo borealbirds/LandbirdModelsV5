@@ -34,7 +34,7 @@ setwd("C:/Users/elly/Documents/BAM/QPAD/qpad-offsets")
 
 #2. Load QPAD requirements----
 #2a. Estimates----
-load_BAM_QPAD(version = 4)
+load_BAM_QPAD(version = 3)
 
 #2b. Raster data----
 rlcc <- raster("./data/lcc.tif")
