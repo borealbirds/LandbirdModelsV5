@@ -16,12 +16,11 @@
 
 #CHECKLIST
 #TO DO: US LANDCOVER & BIOMASS
-#GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
+#GOOGLE DRIVE - DONE EXCEPT GREENUP VARS
 #SCANFI - DONE
 #GOOGLE EARTH STATIC - DONE
 #GOOGLE EARTH TEMPORAL - DONE
 #WRANGLING - NOT DONE
-
 
 #PREAMBLE############################
 
@@ -74,11 +73,11 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Name!="TRI", Running==1)
 #2. Plain dataframe for joining to output----
 #loc.gd <- data.frame(loc.n) %>% 
 #  dplyr::select(-geometry)
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD_TRI.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
 
 #3. Set up loop----
-loop <- max(meth.gd$StackCategory)
-for(i in 9:loop){
+loop <- length(unique(meth.gd$StackCategory))
+for(i in 12:loop){
   
   #4. Filter to stack category----
   meth.gd.i <- dplyr::filter(meth.gd, StackCategory==i)
@@ -156,13 +155,13 @@ for(i in 9:loop){
 
   #14. Add to output----
   #fix column names
-  if(!is.na(meth.gd$Priority[i])) meth.gd.i$Name <- paste0(meth.gd.i$Name, "-", meth.gd.i$Priority)
+  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Name <- paste0(meth.gd.i$Name, "-", meth.gd.i$Priority)
   nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Name)
   loc.gd <- cbind(loc.gd, loc.cov)
   names(loc.gd) <- nms
   
   #15. Save----
-  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
   
   #16. Report status----
   print(paste0("Finished stack category ", i, " of ", loop))
