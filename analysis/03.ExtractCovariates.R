@@ -17,7 +17,7 @@
 #CHECKLIST
 #TO DO: US LANDCOVER & BIOMASS
 #GOOGLE DRIVE - DONE EXCEPT GREENUP VARS, TRI
-#SCANFI - RUNNING
+#SCANFI - DONE
 #GOOGLE EARTH STATIC - DONE
 #GOOGLE EARTH TEMPORAL - DONE
 #WRANGLING - NOT DONE
@@ -51,13 +51,14 @@ rm(offsets)
 loc.yr <- visit %>% 
   dplyr::select(project, location, lat, lon, year) %>% 
   unique() %>% 
+  mutate(id=paste(project, location, lat, lon, year, sep="_")) %>% 
   st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
   st_transform(crs=5072)
 
 #EXTRA. Test sample dataset----
- # set.seed(1234)
- # loc.n <- loc.yr %>%
- #   sample_n(1000)
+# set.seed(1234)
+# loc.n <- loc.yr %>%
+#   sample_n(10)
 loc.n <- loc.yr
 rm(loc.yr)
 
@@ -68,41 +69,34 @@ loc.buff <- st_buffer(loc.n, 200)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-#meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1)
-meth.gd <- dplyr::filter(meth, Name=="TRI")
+meth.gd <- dplyr::filter(meth, Source=="Google Drive", Name!="TRI", Running==1)
 
 #2. Plain dataframe for joining to output----
-loc.gd <- data.frame(loc.n) %>% 
-  dplyr::select(-geometry)
+#loc.gd <- data.frame(loc.n) %>% 
+#  dplyr::select(-geometry)
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD_TRI.csv"))
 
 #3. Set up loop----
-#TO DO: FIX COUNT OF LOOPS CALCULATION####
-#for(i in 1:nrow(meth.gd)){
-for(i in 1:11){
-    
-  #4. Determine if stacking----
-  #remove additional stacked layers from layer list
-  if(meth.gd$StackCategory[i]==1){
-    meth.gd.i <- dplyr::filter(meth.gd, Category==meth.gd$Category[i])
-    meth.gd <- anti_join(meth.gd, meth.gd.i[2:nrow(meth.gd.i),])
-  } 
-  if(meth.gd$StackCategory[i]==0){
-    meth.gd.i <- meth.gd[i,]}
+loop <- max(meth.gd$StackCategory)
+for(i in 9:loop){
   
+  #4. Filter to stack category----
+  meth.gd.i <- dplyr::filter(meth.gd, StackCategory==i)
+
   #5. Determine if temporally static----
-  if(meth.gd$TemporalResolution[i]=="static"){
+  if(meth.gd.i$TemporalResolution[1]=="static"){
     
     #6. Read in raster----
     rast.i <- rast(meth.gd.i$Link)
     
     #7. Extract - determine point or buffer extraction---
-    if(meth.gd$Extraction[i]=="point"){
+    if(meth.gd.i$Extraction[1]=="point"){
       loc.cov <- loc.n %>% 
         st_transform(crs(rast.i)) %>% 
         terra::extract(x=rast.i, ID=FALSE)
     }
     
-    if(meth.gd$Extraction[i]=="radius"){
+    if(meth.gd.i$Extraction[1]=="radius"){
       loc.cov <- loc.buff %>% 
         st_transform(crs(rast.i)) %>% 
         exact_extract(x=rast.i, "mean", force_df=TRUE)
@@ -111,7 +105,7 @@ for(i in 1:11){
   }
   
   #8. Determine if temporally matching----
-  if(meth.gd$TemporalResolution[i]=="match"){
+  if(meth.gd.i$TemporalResolution[1]=="match"){
     
     #9. Get list of individual files----
     files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE),
@@ -121,7 +115,7 @@ for(i in 1:11){
     
     #10. Match year of file to year of data----
     #http://adomingues.github.io/2015/09/24/finding-closest-element-to-a-number-in-a-list/
-    dt = data.table::data.table(year=files.i$year, val = files.i$year)
+    dt = data.table::data.table(year=unique(files.i$year), val = unique(files.i$year))
     data.table::setattr(dt, "sorted", "year")
     data.table::setkey(dt, year)
     loc.n.i <- loc.n
@@ -138,17 +132,18 @@ for(i in 1:11){
       loc.buff.j <- dplyr::filter(loc.buff.i, year.rd==yrs[j])
       
       #12. Read in raster----
-      rast.i <- rast(files.i$Link[j])
+      files.j <- dplyr::filter(files.i, year==yrs[j])
+      rast.i <- rast(files.j$Link)
       
       #13. Extract - determine point or buffer extraction---
-      if(meth.gd$Extraction[i]=="point"){
+      if(meth.gd.i$Extraction[1]=="point"){
         loc.cov <- loc.n.j %>% 
           st_transform(crs(rast.i)) %>% 
           terra::extract(x=rast.i, ID=FALSE) %>% 
           rbind(loc.cov)
       }
       
-      if(meth.gd$Extraction[i]=="radius"){
+      if(meth.gd.i$Extraction[1]=="radius"){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
           exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
@@ -170,7 +165,7 @@ for(i in 1:11){
   write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
   
   #16. Report status----
-  print(paste0("Finished variable ", i, " of ", nrow(meth.gd), " - ", meth.gd$Name[i]))
+  print(paste0("Finished stack category ", i, " of ", loop))
 
 }
 
@@ -446,7 +441,7 @@ loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_co
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 6:nrow(meth.gee)){
+for(i in 1:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
@@ -522,6 +517,8 @@ for(i in 6:nrow(meth.gee)){
   print(paste0("FINISHED LAYER ", i, " of ", nrow(meth.gee)))
   
 }
+
+loc.gee <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
 
 #E. ASSEMBLE####
 #Don't forget to unique() everything just in case
