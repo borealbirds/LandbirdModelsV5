@@ -73,14 +73,14 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Name!="TRI", Running==1)
 #2. Plain dataframe for joining to output----
 #loc.gd <- data.frame(loc.n) %>% 
 #  dplyr::select(-geometry)
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD_TRI.csv"))
 
 #3. Set up loop----
-loop <- length(unique(meth.gd$StackCategory))
-for(i in 12:loop){
+loop <- unique(meth.gd$StackCategory)
+for(i in 1:length(loop)){
   
   #4. Filter to stack category----
-  meth.gd.i <- dplyr::filter(meth.gd, StackCategory==i)
+  meth.gd.i <- dplyr::filter(meth.gd, StackCategory==loop[i])
 
   #5. Determine if temporally static----
   if(meth.gd.i$TemporalResolution[1]=="static"){
@@ -164,7 +164,7 @@ for(i in 12:loop){
   write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
   
   #16. Report status----
-  print(paste0("Finished stack category ", i, " of ", loop))
+  print(paste0("Finished stack category ", i, " of ", length(loop)))
 
 }
 
