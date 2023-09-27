@@ -15,12 +15,13 @@
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #CHECKLIST
-#TO DO: US LANDCOVER & BIOMASS
+#TO DO: US LANDCOVER & BIOMASS & ROAD
 #GOOGLE DRIVE - DONE EXCEPT GREENUP VARS
-#SCANFI - DONE
+#SCANFI - REDO 1985, ADD HEIGHT SD
 #GOOGLE EARTH STATIC - DONE
-#GOOGLE EARTH TEMPORAL - DONE
+#GOOGLE EARTH TEMPORAL - IN PROGRESS
 #WRANGLING - NOT DONE
+#TIDY SCRIPT - NOT DONE
 
 #PREAMBLE############################
 
@@ -59,7 +60,7 @@ loc.yr <- visit %>%
 # loc.n <- loc.yr %>%
 #   sample_n(10)
 loc.n <- loc.yr
-rm(loc.yr)
+#rm(loc.yr)
 
 #3. Buffer location objects----
 #200 m radius
@@ -73,7 +74,7 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Name!="TRI", Running==1)
 #2. Plain dataframe for joining to output----
 #loc.gd <- data.frame(loc.n) %>% 
 #  dplyr::select(-geometry)
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD_TRI.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- unique(meth.gd$StackCategory)
@@ -193,10 +194,9 @@ plot(loc.na$lon, loc.na$lat)
 loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
   dplyr::select(project, year, lat, lon, greenup, dormancy)
 plot(loc.na$lon, loc.na$lat)
+table(loc.na$year)
 
 write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
-
-#TO DO: COME BACK TO MISSING GREENUP & DORMANCY VALUES####
 
 #C. EXTRACT COVARIATES FROM SCANFI####
 
@@ -210,17 +210,19 @@ files.scanfi <- data.frame(Link=list.files("G:/.shortcut-targets-by-id/11nj6IZyU
   mutate(file = str_sub(file, 13, 100)) %>% 
   separate(file, into=c("scanfi", "covtype", "variable", "S", "year", "v0", "filetype")) %>% 
   mutate(year = as.numeric(ifelse(filetype=="v0", v0, year)),
-         variable = case_when(variable=="VegTypeClass" ~ "landcover",
+         Name = case_when(variable=="VegTypeClass" ~ "landcover",
                               variable=="prcC" ~ "conifer",
                               variable=="prcD" ~ "deciduous",
+                              variable=="prcB" ~ "deciduous",
                               variable=="LodepolePine" ~ "lodgepolepine",
+                              variable=="nfiLandCover" ~ "landcover",
                               !is.na(variable) ~ tolower(variable))) %>% 
   dplyr::filter(scanfi%in%c("SCANFI", "CaNFIR"),
-                variable %in% meth.scanfi$Name) %>% 
-  dplyr::select(Link, variable, year) %>% 
-  arrange(year, variable)
+                Name %in% meth.scanfi$Name) %>% 
+  dplyr::select(Link, Name, year) %>% 
+  arrange(year, Name)
 #Check everything is there
-table(files.scanfi$variable, files.scanfi$year)
+table(files.scanfi$Name, files.scanfi$year)
 
 #3. Remove points outside of SCANFI coverage----
 #do this for SCANFI but not for others because scanfi is so much more time intensive (many high resolution layers)
@@ -247,25 +249,46 @@ data.table::setkey(dt, year)
 loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 
 #6. Set up to loop through years of SCANFI----
-#loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv")) %>% 
-  unique()
+loc.scanfi <- data.frame()
+#loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
 #workaround for weird NA issue
-loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi)
-table(loc.scanfi.buff$year.rd)
+# loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi)
+# table(loc.scanfi.buff$year.rd)
 
 loc.error <- data.frame()
-for(i in 1:length(years.scanfi)){
+for(i in 2:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
     mutate(loop = ceiling(row_number()/1000))
 
-  #7. Read in raster----
-  files.i <- dplyr::filter(files.scanfi, year==years.scanfi[i])
+  #7. Read in rasters for mean extraction----
+  files.i <- meth.scanfi %>% 
+    dplyr::select(-Link) %>% 
+    dplyr::filter(RadiusFunction=="mean") %>% 
+    left_join(files.scanfi, multiple="all") %>% 
+    dplyr::filter(year==years.scanfi[i])
   rast.i <- rast(files.i$Link)
-  names(rast.i) <- files.i$variable
+  names(rast.i) <- files.i$Label
+  
+  #8. Read in rasters for sd extraction----
+  filesd.i <- meth.scanfi %>% 
+    dplyr::select(-Link) %>% 
+    dplyr::filter(RadiusFunction=="cv") %>% 
+    left_join(files.scanfi, multiple="all") %>% 
+    dplyr::filter(year==years.scanfi[i])
+  rastsd.i <- rast(filesd.i$Link)
+  names(rastsd.i) <- filesd.i$Label
+  
+  #9. Read in rasters for mode extraction----
+  filesmd.i <- meth.scanfi %>% 
+    dplyr::select(-Link) %>% 
+    dplyr::filter(RadiusFunction=="mode") %>% 
+    left_join(files.scanfi, multiple="all") %>% 
+    dplyr::filter(year==years.scanfi[i])
+  rastmd.i <- rast(filesd.i$Link)
+  names(rastmd.i) <- filesmd.i$Label
   
   #8. Set up loops----
   loc.scanfi.list <- list()
@@ -275,10 +298,12 @@ for(i in 1:length(years.scanfi)){
     
     #9. Extract----
     loc.scanfi.i <- try(exact_extract(x=rast.i, y=loc.i, "mean", force_df=TRUE))
+    loc.scanfi.sd.i <- try(exact_extract(x=rastsd.i, y=loc.i, fun="coefficient_of_variation", force_df=TRUE))
+    loc.scanfi.md.i <- try(exact_extract(x=rastmd.i, y=loc.i, fun="mode", force_df=TRUE))
     
     #10. Save output if extraction works----
     if(class(loc.scanfi.i)=="data.frame"){
-      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i) %>% 
+      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i, loc.scanfi.sd.i, loc.scanfi.md.i) %>% 
         data.frame() %>% 
         dplyr::select(-geometry, -year.rd, -loop, -scanfi)
     }
@@ -289,8 +314,6 @@ for(i in 1:length(years.scanfi)){
         data.frame()
     }
     
-    # saveRDS(loc.scanfi.list, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_interim_1.RDS"))
-    
     #12. Report progress----
     print(paste0("Finished loop ", j, " of ", nrow(loc.buff.yr), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
     
@@ -300,21 +323,14 @@ for(i in 1:length(years.scanfi)){
   
   loc.scanfi <- rbind(loc.scanfi,
                       data.table::rbindlist(loc.scanfi.list))
+  names(loc.scanfi) <- c(colnames(loc.i)[1:6], names(rast.i), names(rastsd.i), "landcover.2")
   
   #13. Save----
   write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
   
 }
 
-write.csv(loc.error, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_MISSING.csv"), row.names = FALSE)
-
-# #10. Fix column names----
-# colnames(loc.scanfi) <- colnames(unique(files.scanfi)) 
-# 
-# #11. Add the data outside of scanfi coverage back in
-# 
-# #12. Save again----
-# write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+# write.csv(loc.error, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_MISSING.csv"), row.names = FALSE)
 
 #D. EXTRACT COVARIATES FROM GEE - TEMPORALLY STATIC####
 
@@ -358,7 +374,7 @@ for(i in 1:nrow(meth.gee)){
 loc.buff$loop <- ceiling(row_number(loc.buff)/1000)
 
 task.list <- list()
-for(i in 580:max(loc.buff$loop)){
+for(i in 1:max(loc.buff$loop)){
   
   loc.buff.i <- dplyr::filter(loc.buff, loop==i)
   
@@ -434,13 +450,13 @@ lc <- data.frame(landcover = c(1:17),
 
 
 #3. Plain dataframe for joining to output----
-# loc.gee <- data.frame(loc.n) %>% 
-#   dplyr::select(-geometry)
+#loc.gee <- data.frame(loc.n) %>% 
+   dplyr::select(-geometry)
 loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 1:nrow(meth.gee)){
+for(i in 9:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
@@ -511,16 +527,27 @@ for(i in 1:nrow(meth.gee)){
     loc.gee <- left_join(loc.gee, lc)
   }
   
-  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"), row.names=FALSE)
   
   print(paste0("FINISHED LAYER ", i, " of ", nrow(meth.gee)))
   
 }
 
-loc.gee <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
-
 #E. ASSEMBLE####
 #Don't forget to unique() everything just in case
+
+loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+
+
+
+#15. Save again----
+write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
 #G. SAVE#####
 
