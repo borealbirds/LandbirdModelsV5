@@ -69,7 +69,7 @@ loc.buff <- st_buffer(loc.n, 200)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", Name!="TRI", Running==1)
+meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, Complete==0)
 
 #2. Plain dataframe for joining to output----
 #loc.gd <- data.frame(loc.n) %>% 
@@ -108,10 +108,25 @@ for(i in 1:length(loop)){
   if(meth.gd.i$TemporalResolution[1]=="match"){
     
     #9. Get list of individual files----
-    files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE),
-                          file=list.files(meth.gd.i$Link)) %>% 
-      mutate(year = as.numeric(str_sub(file, -8, -5))) %>% 
-      arrange(year)
+    if(loop[i] %in% c(18,19)){
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, recursive=TRUE),
+                            file=list.files(meth.gd.i$Link, recursive=TRUE)) %>% 
+        separate(file, into=c("year", "region", "name", "tif"), remove=FALSE) %>% 
+        mutate(name = case_when(name %in% c("105cbd", "130cbd", "140cbd", "CBD") ~ "biomass",
+                                name %in% c("105cc", "130cc", "140cc", "CC") ~ "closure",
+                                name %in% c("105ch", "130ch", "140ch", "CH") ~ "height"),
+               year = as.numeric(year)) %>% 
+        arrange(year) %>% 
+        unique()
+      
+    }
+    else{
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE),
+                            file=list.files(meth.gd.i$Link)) %>% 
+        mutate(year = as.numeric(str_sub(file, -8, -5))) %>% 
+        arrange(year) %>% 
+        unique()
+    }
     
     #10. Match year of file to year of data----
     #http://adomingues.github.io/2015/09/24/finding-closest-element-to-a-number-in-a-list/
@@ -156,7 +171,7 @@ for(i in 1:length(loop)){
 
   #14. Add to output----
   #fix column names
-  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Name <- paste0(meth.gd.i$Name, "-", meth.gd.i$Priority)
+  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Name <- paste0(meth.gd.i$Name, ".", meth.gd.i$Priority)
   nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Name)
   loc.gd <- cbind(loc.gd, loc.cov)
   names(loc.gd) <- nms
@@ -169,7 +184,9 @@ for(i in 1:length(loop)){
 
 }
 
-#17. Check output----
+#17. Merge AK & CONUS columns for landfire----
+
+#18. Check output----
 loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
 summary(loc.check)
 
@@ -257,7 +274,7 @@ loc.scanfi <- data.frame()
 # table(loc.scanfi.buff$year.rd)
 
 loc.error <- data.frame()
-for(i in 2:length(years.scanfi)){
+for(i in 7:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -416,12 +433,12 @@ zerocols <- meth.gee %>%
 zero.gee <- loc.gee %>% 
   dplyr::select(zerocols$Name2) %>% 
   replace_na(list(occurrence=0, recurrence=0, seasonality=0))
-loc.gee2 <- loc.gee %>% 
+loc.gee.static <- loc.gee %>% 
   dplyr::select(-zerocols$Name2) %>% 
   cbind(zero.gee)
 
 #14. Save----
-write.csv(loc.gee2, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
 
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
@@ -456,7 +473,7 @@ loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_co
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 9:nrow(meth.gee)){
+for(i in 10:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
@@ -524,7 +541,7 @@ for(i in 9:nrow(meth.gee)){
   
   #15. Join to landcover classes----
   if(meth.gee$Name[i]=="landcover"){
-    loc.gee <- left_join(loc.gee, lc)
+    loc.gee <- left_join(loc.gee, lc, multiple="all")
   }
   
   write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"), row.names=FALSE)
@@ -534,8 +551,11 @@ for(i in 9:nrow(meth.gee)){
 }
 
 #E. ASSEMBLE####
-#Don't forget to unique() everything just in case
 
+#1. Load data----
+load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+
+#2. Load extracted covariates----
 loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
 
 loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
@@ -544,11 +564,24 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_cov
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
+#3. Add id to visit and join together----
+visit.old <- visit
 
+visit <- visit.old %>% 
+  rename(row = id) %>% 
+  mutate(id=paste(project, location, lat, lon, year, sep="_")) %>% 
+  left_join(loc.gd %>% 
+              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.scanfi %>% 
+              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.gee.static %>% 
+              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.gee.match %>% 
+              dplyr::select(-lat, -lon)) %>% 
+  dplyr::select(-id) %>% 
+  rename(id = row)
 
-#15. Save again----
-write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+#4. Remove things with NAs for certain layers????
 
 #G. SAVE#####
-
-save(visit, bird,  file=file.path(root, "03_NM4.1_data_covariates.R"))
+save(visit, bird,  offsets, file=file.path(root, "03_NM4.1_data_covariates.R"))
