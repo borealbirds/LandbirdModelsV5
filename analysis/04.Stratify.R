@@ -33,24 +33,24 @@ visit.v <- visit %>%
   st_transform(5072) %>% 
   vect()
 
-#2. Get list of buffered BCRs----
-bcrs <- data.frame(path=list.files(file.path(root, "Regions", "Buffered_BCRs"), pattern="*.shp", full.names = TRUE),
-                   filename=list.files(file.path(root, "Regions", "Buffered_BCRs"), pattern="*.shp")) %>% 
-  mutate(bcr=str_sub(filename, -100, -5))
+#2. Read in BCR shapefile----
+bcrs <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp"))
 
 #3. Set up loop----
 bcr.list <- list(bcr=visit$id)
 for(i in 1:nrow(bcrs)){
   
-  #4. Read in buffered bcr shapefile----
-  bcr.shp <- try(read_sf(bcrs$path[i]) %>% 
+  #4. Filter & buffer bcr shapefile----
+  bcr.shp <- bcrs %>% 
+    dplyr::filter(row_number()==i) %>% 
     st_transform(crs=5072) %>% 
-    mutate(bcr=1))
+    st_buffer(100000) %>% 
+    mutate(bcr=1)
   
   if(class(bcr.shp)[1]=="sf"){
     
     #5. Convert to raster for fast extraction----
-    r <- rast(ext(bcr.shp), resolution=100, crs=crs(bcr.shp))
+    r <- rast(ext(bcr.shp), resolution=1000, crs=crs(bcr.shp))
     bcr.r <- rasterize(x=bcr.shp, y=r, field="bcr")
     
     #6. Extract raster value----
@@ -65,7 +65,7 @@ for(i in 1:nrow(bcrs)){
 
 #7. Collapse to dataframe and name----
 bcr <- data.frame(do.call(cbind, bcr.list))
-colnames(bcr) <- c("id", bcrs$bcr)
+colnames(bcr) <- c("id", bcrs$subUnit)
 
 #UPDATE BIRD LIST BY BCR##############
 
