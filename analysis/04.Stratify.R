@@ -6,6 +6,10 @@
 
 #NOTES################################
 
+#TODO: FIND GOOD LAYER TO INTERSECT BCRS WITH
+#TODO: THINK ABOUT BORDER TRANSITION & BUFFERING VS LAYER CONSISTENCY
+
+
 
 
 #PREAMBLE############################
@@ -33,8 +37,17 @@ visit.v <- visit %>%
   st_transform(5072) %>% 
   vect()
 
+#2. Read in us/canada shapefile----
+uscan <- read_sf(file.path(root, "Regions", "USA_Canada", "USA_Canada_ShapefileMErge.shp")) %>% 
+  mutate(country = ifelse(StateName %in% c("NUNAVUT", "NORTHWEST TERRITORIES", "YUKON TERRITORY", "BRITISH COLUMBIA", "QUEBEC", "NEWFOUNDLAND AND LABRADOR", "ALBERTA", "SASKATCHEWAN", "MANITOBA", "ONTARIO", "QUEBEC", "NOVA SCOTIA", "NEW BRUNSWICK", "PRINCE EDWARD ISLAND"), "CA", "USA"))
+
+can <- uscan %>% 
+  dplyr::filter(country=="CA") %>% 
+  st_union()
+
 #2. Read in BCR shapefile----
-bcrs <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp"))
+bcrs <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
+  mutate(bcr=paste0("bcr", subUnit))
 
 #3. Set up loop----
 bcr.list <- list(bcr=visit$id)
@@ -65,11 +78,17 @@ for(i in 1:nrow(bcrs)){
 
 #7. Collapse to dataframe and name----
 bcr <- data.frame(do.call(cbind, bcr.list))
-colnames(bcr) <- c("id", bcrs$subUnit)
+colnames(bcr) <- c("id", bcrs$bcr)
 
-#UPDATE BIRD LIST BY BCR##############
+#8. Remove points outside of study area----
+visit.bcr <- 
 
 
 
 
 #THIN FOR EACH BOOTSTRAP##############
+
+
+
+
+#UPDATE BIRD LIST BY BCR##############
