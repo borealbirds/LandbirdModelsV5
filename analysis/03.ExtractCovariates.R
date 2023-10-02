@@ -155,6 +155,7 @@ for(i in 1:length(loop)){
         loc.cov <- loc.n.j %>% 
           st_transform(crs(rast.i)) %>% 
           terra::extract(x=rast.i, ID=FALSE) %>% 
+          data.table::setnames(meth.gd.i$Name) %>% 
           rbind(loc.cov)
       }
       
@@ -162,6 +163,7 @@ for(i in 1:length(loop)){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
           exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+          data.table::setnames(meth.gd.i$Name) %>% 
           rbind(loc.cov)
       }
       
@@ -338,9 +340,11 @@ for(i in 7:length(years.scanfi)){
     
   }
   
-  loc.scanfi <- rbind(loc.scanfi,
-                      data.table::rbindlist(loc.scanfi.list))
-  names(loc.scanfi) <- c(colnames(loc.i)[1:6], names(rast.i), names(rastsd.i), "landcover.2")
+  loc.scanfi.bind <- data.table::rbindlist(loc.scanfi.list)
+  names(loc.scanfi.bind) <- c(colnames(loc.i)[1:6], names(rast.i), names(rastsd.i), "landcover.2")
+  
+  loc.scanfi <- rbind(loc.scanfi, loc.scanfi.bind)
+
   
   #13. Save----
   write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
@@ -443,7 +447,7 @@ write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_d
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
 #1. Get list of static layers to run----
-meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="match")
+meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="match", Complete==0)
 
 #2. Landcover categories----
 lc <- data.frame(landcover = c(1:17),
@@ -468,12 +472,12 @@ lc <- data.frame(landcover = c(1:17),
 
 #3. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
-   dplyr::select(-geometry)
+#   dplyr::select(-geometry)
 loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 10:nrow(meth.gee)){
+for(i in 1:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
