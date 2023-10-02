@@ -37,17 +37,26 @@ visit.v <- visit %>%
   st_transform(5072) %>% 
   vect()
 
-#2. Read in us/canada shapefile----
-uscan <- read_sf(file.path(root, "Regions", "USA_Canada", "USA_Canada_ShapefileMErge.shp")) %>% 
-  mutate(country = ifelse(StateName %in% c("NUNAVUT", "NORTHWEST TERRITORIES", "YUKON TERRITORY", "BRITISH COLUMBIA", "QUEBEC", "NEWFOUNDLAND AND LABRADOR", "ALBERTA", "SASKATCHEWAN", "MANITOBA", "ONTARIO", "QUEBEC", "NOVA SCOTIA", "NEW BRUNSWICK", "PRINCE EDWARD ISLAND"), "CA", "USA"))
+#2. Read in canada shapefile----
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
+  st_transform(crs=5072) 
 
-can <- uscan %>% 
-  dplyr::filter(country=="CA") %>% 
-  st_union()
+#3. Read in BCR shapefile----
+bcr.raw <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
+  mutate(bcr=paste0("bcr", subUnit)) %>% 
+  st_transform(crs=5072)
 
-#2. Read in BCR shapefile----
-bcrs <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  mutate(bcr=paste0("bcr", subUnit))
+#4. Bisect BCR by canada shapefile---
+bcr.can <- bcr.raw %>% 
+  st_intersection(can) %>% 
+  mutate(country="CAN")
+
+bcr.us <- bcr.raw %>% 
+  st_difference(can) %>% 
+  mutate(country="USA")
+
+bcr <- rbind(bcr.can, bcr.us)
+  
 
 #3. Set up loop----
 bcr.list <- list(bcr=visit$id)
@@ -56,7 +65,6 @@ for(i in 1:nrow(bcrs)){
   #4. Filter & buffer bcr shapefile----
   bcr.shp <- bcrs %>% 
     dplyr::filter(row_number()==i) %>% 
-    st_transform(crs=5072) %>% 
     st_buffer(100000) %>% 
     mutate(bcr=1)
   
