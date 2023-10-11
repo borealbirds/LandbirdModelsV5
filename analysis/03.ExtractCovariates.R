@@ -108,9 +108,9 @@ for(i in 1:length(loop)){
   if(meth.gd.i$TemporalResolution[1]=="match"){
     
     #9. Get list of individual files----
-    if(loop[i] %in% c(18,19)){
-      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, recursive=TRUE),
-                            file=list.files(meth.gd.i$Link, recursive=TRUE)) %>% 
+    if(loop[i] %in% c(17,18)){
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, recursive=TRUE, pattern="*.tif"),
+                            file=list.files(meth.gd.i$Link, recursive=TRUE, pattern="*.tif")) %>% 
         separate(file, into=c("year", "region", "name", "tif"), remove=FALSE) %>% 
         mutate(name = case_when(name %in% c("105cbd", "130cbd", "140cbd", "CBD") ~ "biomass",
                                 name %in% c("105cc", "130cc", "140cc", "CC") ~ "closure",
@@ -121,11 +121,12 @@ for(i in 1:length(loop)){
       
     }
     else{
-      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE),
-                            file=list.files(meth.gd.i$Link)) %>% 
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*.tif"),
+                            file=list.files(meth.gd.i$Link, pattern="*.tif")) %>% 
         mutate(year = as.numeric(str_sub(file, -8, -5))) %>% 
         arrange(year) %>% 
-        unique()
+        unique() %>% 
+        dplyr::filter(!is.na(year))
     }
     
     #10. Match year of file to year of data----
@@ -141,7 +142,7 @@ for(i in 1:length(loop)){
     #11. Set up to loop through years----
     loc.cov <- data.frame()
     yrs <- unique(files.i$year)
-    for(j in 1:length(yrs)){
+    for(j in 9:length(yrs)){
       
       loc.n.j <- dplyr::filter(loc.n.i, year.rd==yrs[j])
       loc.buff.j <- dplyr::filter(loc.buff.i, year.rd==yrs[j])
@@ -173,10 +174,10 @@ for(i in 1:length(loop)){
 
   #14. Add to output----
   #fix column names
-  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Name <- paste0(meth.gd.i$Name, ".", meth.gd.i$Priority)
-  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Name)
+  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Label <- paste0(meth.gd.i$Label, ".", meth.gd.i$Priority)
+  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Label)
   loc.gd <- cbind(loc.gd, loc.cov)
-  names(loc.gd) <- nms
+  colnames(loc.gd) <- nms
   
   #15. Save----
   write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
@@ -268,15 +269,15 @@ data.table::setkey(dt, year)
 loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 
 #6. Set up to loop through years of SCANFI----
-loc.scanfi <- data.frame()
-#loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+#loc.scanfi <- data.frame()
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
 #workaround for weird NA issue
-# loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi)
-# table(loc.scanfi.buff$year.rd)
+loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi, by="id")
+table(loc.scanfi.buff$year.rd)
 
-loc.error <- data.frame()
-for(i in 7:length(years.scanfi)){
+for(i in 6:6){
+#for(i in 8:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -327,13 +328,7 @@ for(i in 7:length(years.scanfi)){
         dplyr::select(-geometry, -year.rd, -loop, -scanfi)
     }
     
-    #11. Log if extraction does not work----
-    if(class(loc.scanfi.i)!="data.frame"){
-      loc.error <- rbind(loc.error, loc.i) %>% 
-        data.frame()
-    }
-    
-    #12. Report progress----
+    #11. Report progress----
     print(paste0("Finished loop ", j, " of ", nrow(loc.buff.yr), " for year ", i, " of ", length(years.scanfi), ": ", years.scanfi[i]))
     
     flush.console()
@@ -350,8 +345,6 @@ for(i in 7:length(years.scanfi)){
   write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
   
 }
-
-# write.csv(loc.error, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI_MISSING.csv"), row.names = FALSE)
 
 #D. EXTRACT COVARIATES FROM GEE - TEMPORALLY STATIC####
 
@@ -529,7 +522,7 @@ for(i in 1:nrow(meth.gee)){
       }
       
       #13. Collapse loops for the year----
-      loc.j[[j]] <- data.table::rbindlist(loc.k)
+      loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE)
       colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1],meth.gee$Name[i])
       
     }
@@ -539,7 +532,7 @@ for(i in 1:nrow(meth.gee)){
   }
   
   #14. Collapse data across years----
-  loc.i <- data.table::rbindlist(loc.j)
+  loc.i <- data.table::rbindlist(loc.j, fill=TRUE)
   loc.gee <- cbind(loc.gee, loc.i %>% 
                      dplyr::select(meth.gee$Name[i]))
   
