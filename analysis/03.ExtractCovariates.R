@@ -15,13 +15,14 @@
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #CHECKLIST
-#TO DO: US LANDCOVER & BIOMASS & ROAD
+#TO DO: HERMOSILLA, ABoVE
 #GOOGLE DRIVE - DONE EXCEPT GREENUP VARS
-#SCANFI - REDO 1985, ADD HEIGHT SD
+#SCANFI - DONE
 #GOOGLE EARTH STATIC - DONE
-#GOOGLE EARTH TEMPORAL - IN PROGRESS
+#GOOGLE EARTH TEMPORAL - DONE
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
+#ASSIGN LANDCOVER CATEGORIES - NOT DONE
 
 #PREAMBLE############################
 
@@ -120,9 +121,17 @@ for(i in 1:length(loop)){
         unique()
       
     }
-    else{
-      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*.tif"),
-                            file=list.files(meth.gd.i$Link, pattern="*.tif")) %>% 
+    if(loop[i]==19){
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*.img"),
+                            file=list.files(meth.gd.i$Link, pattern="*.img")) %>% 
+        mutate(year = as.numeric(str_sub(file, -32, -29))) %>% 
+        arrange(year) %>% 
+        unique() %>% 
+        dplyr::filter(!is.na(year))
+    }
+    if(!loop[i] %in% c(17, 18, 19)){
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*tif"),
+                            file=list.files(meth.gd.i$Link, pattern="*tif")) %>% 
         mutate(year = as.numeric(str_sub(file, -8, -5))) %>% 
         arrange(year) %>% 
         unique() %>% 
@@ -142,7 +151,7 @@ for(i in 1:length(loop)){
     #11. Set up to loop through years----
     loc.cov <- data.frame()
     yrs <- unique(files.i$year)
-    for(j in 9:length(yrs)){
+    for(j in 1:length(yrs)){
       
       loc.n.j <- dplyr::filter(loc.n.i, year.rd==yrs[j])
       loc.buff.j <- dplyr::filter(loc.buff.i, year.rd==yrs[j])
@@ -176,6 +185,7 @@ for(i in 1:length(loop)){
   #fix column names
   if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Label <- paste0(meth.gd.i$Label, ".", meth.gd.i$Priority)
   nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Label)
+  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)-1], "lcclass.4")
   loc.gd <- cbind(loc.gd, loc.cov)
   colnames(loc.gd) <- nms
   
@@ -269,15 +279,9 @@ data.table::setkey(dt, year)
 loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 
 #6. Set up to loop through years of SCANFI----
-#loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+loc.scanfi <- data.frame()
 
-#workaround for weird NA issue
-loc.scanfi.buff <- anti_join(loc.scanfi.buff, loc.scanfi, by="id")
-table(loc.scanfi.buff$year.rd)
-
-for(i in 6:6){
-#for(i in 8:length(years.scanfi)){
+for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -443,7 +447,7 @@ write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_d
 meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="match", Complete==0)
 
 #2. Landcover categories----
-lc <- data.frame(landcover = c(1:17),
+lc.modis <- data.frame(landcover = c(1:17),
                  lcclass = c("evergreen_needleleaf",
                              "evergreen_broadleaf",
                              "deciduous_needleleaf",
@@ -461,6 +465,25 @@ lc <- data.frame(landcover = c(1:17),
                              "snow", 
                              "barren",
                              "water"))
+
+lc. <- data.frame(landcover = c(1:17),
+                       lcclass = c("evergreen_needleleaf",
+                                   "evergreen_broadleaf",
+                                   "deciduous_needleleaf",
+                                   "deciduous_broadleaf",
+                                   "mixed",
+                                   "shrub_closed",
+                                   "shrub_open",
+                                   "savanna_woody",
+                                   "savanna_open",
+                                   "grassland",
+                                   "wetland",
+                                   "crop_dense",
+                                   "urban",
+                                   "crop_natural",
+                                   "snow", 
+                                   "barren",
+                                   "water"))
 
 
 #3. Plain dataframe for joining to output----
@@ -523,7 +546,10 @@ for(i in 1:nrow(meth.gee)){
       
       #13. Collapse loops for the year----
       loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE)
-      colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1],meth.gee$Name[i])
+      
+      #14. Fix column names----
+      colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], 
+                                paste0(meth.gee$Label[i], as.character(meth.gee$Priority[i])))
       
     }
     
@@ -531,14 +557,14 @@ for(i in 1:nrow(meth.gee)){
     
   }
   
-  #14. Collapse data across years----
+  #15. Collapse data across years----
   loc.i <- data.table::rbindlist(loc.j, fill=TRUE)
   loc.gee <- cbind(loc.gee, loc.i %>% 
                      dplyr::select(meth.gee$Name[i]))
   
-  #15. Join to landcover classes----
-  if(meth.gee$Name[i]=="landcover"){
-    loc.gee <- left_join(loc.gee, lc, multiple="all")
+  #16. Join to landcover classes----
+  if(meth.gee$Name[i]=="landcovermodis"){
+    loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
   }
   
   write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"), row.names=FALSE)
