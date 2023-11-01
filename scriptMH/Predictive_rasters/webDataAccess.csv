@@ -1,0 +1,60 @@
+﻿Dataset,year,url,source_type
+Canada road,2006,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grgf000r06a_e.zip,weblink
+Canada road,2011,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r11a_e.zip,weblink
+Canada road,2012,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r12a_e.zip,weblink
+Canada road,2013,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r13a_e.zip,weblink
+Canada road,2014,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r14a_e.zip,weblink
+Canada road,2015,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r15a_e.zip,weblink
+Canada road,2016,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/2016/lrnf000r16a_e.zip,weblink
+Canada road,2017,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r17a_e.zip,weblink
+Canada road,2018,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r18a_e.zip,weblink
+Canada road,2019,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r19a_e.zip,weblink
+Canada road,2020,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r20a_e.zip,weblink
+Canada road,2021,https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/RNF-FRR/files-fichiers/lrnf000r21a_e.zip,weblink
+Canada road,2022,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/lrnf000r22a_e.zip,weblink
+Canada road,2005,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r05a_e.zip,weblink
+Canada road,2007,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r07a_e.zip,weblink
+Canada road,2008,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r08a_e.zip,weblink
+Canada road,2009,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r09a_e.zip,weblink
+Canada road,2010,https://www12.statcan.gc.ca/census-recensement/2011/geo/RNF-FRR/files-fichiers/grnf000r10a_e.zip,weblink
+US road1,2010,https://www2.census.gov/geo/tiger/TIGER2010/ROADS/,weblink
+US road1,2011,https://www2.census.gov/geo/tiger/TIGER2011/ROADS/,weblink
+US road1,2012,https://www2.census.gov/geo/tiger/TIGER2012/ROADS/,weblink
+US road1,2013,https://www2.census.gov/geo/tiger/TGRGDB13/tlgdb_2013_a_us_roads.gdb.zip,weblink
+US road1,2014,https://www2.census.gov/geo/tiger/TGRGDB14/tlgdb_2014_a_us_roads.gdb.zip,weblink
+US road1,2015,https://www2.census.gov/geo/tiger/TGRGDB15/tlgdb_2015_a_us_roads.gdb.zip,weblink
+US road1,2016,https://www2.census.gov/geo/tiger/TGRGDB16/tlgdb_2016_a_us_roads.gdb.zip,weblink
+US road1,2017,https://www2.census.gov/geo/tiger/TGRGDB17/tlgdb_2017_a_us_roads.gdb.zip,weblink
+US road1,2018,https://www2.census.gov/geo/tiger/TGRGDB18/tlgdb_2018_a_us_roads.gdb.zip,weblink
+US road1,2019,https://www2.census.gov/geo/tiger/TGRGDB19/tlgdb_2019_a_us_roads.gdb.zip,weblink
+US road,2020,https://www2.census.gov/geo/tiger/TGRGDB20/tlgdb_2020_a_us_roads.gdb.zip,weblink
+US road1,2021,https://www2.census.gov/geo/tiger/TGRGDB21/tlgdb_2021_a_us_roads.gdb.zip,weblink
+US road1,2022,https://www2.census.gov/geo/tiger/TGRGDB22/tlgdb_2022_a_us_roads.gdb.zip,weblink
+LFheight_ak,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_105_mosaic-AK_105_CH.zip&TYPE=landfire,weblink
+LFheight_ak,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_130_mosaic-AK_130_CH.zip&TYPE=landfire,weblink
+LFheight_ak,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_140_mosaic-AK_140_CH.zip&TYPE=landfire,weblink
+LFheight_ak,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_220_mosaic-LF2022_CH_220_AK.zip&TYPE=landfire,weblink
+LFcc_ak,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_105_mosaic-AK_105_CC.zip&TYPE=landfire,weblink
+LFcc_ak,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_130_mosaic-AK_130_CC.zip&TYPE=landfire,weblink
+LFcc_ak,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_140_mosaic-AK_140_CC.zip&TYPE=landfire,weblink
+LFcc_ak,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_220_mosaic-LF2022_CC_220_AK.zip&TYPE=landfire,weblink
+LFbiomass_ak,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_105_mosaic-AK_105_CBD.zip&TYPE=landfire,weblink
+LFbiomass_ak,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_130_mosaic-AK_130_CBD.zip&TYPE=landfire,weblink
+LFbiomass_ak,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_140_mosaic-AK_140_CBD.zip&TYPE=landfire,weblink
+LFbiomass_ak,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=AK_220_mosaic-LF2022_CBD_220_AK.zip&TYPE=landfire,weblink
+LFheight_conus,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=US_105-US_105_CH.zip&TYPE=landfire,weblink
+LFheight_conus,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=US_130-US_130_CH.zip&TYPE=landfire,weblink
+LFheight_conus,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=US_140-US_140_CH.zip&TYPE=landfire,weblink
+LFheight_conus,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=US_220_mosaic-LF2022_CH_220_CONUS.zip&TYPE=landfire,weblink
+LFcc_conus,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=US_105-US_105_CC.zip&TYPE=landfire,weblink
+LFcc_conus,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=US_130-US_130_CC.zip&TYPE=landfire,weblink
+LFcc_conus,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=US_140-US_140_CC.zip&TYPE=landfire,weblink
+LFcc_conus,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=US_220_mosaic-LF2022_CC_220_CONUS.zip&TYPE=landfire,weblink
+LFbiomass_conus,2001,https://landfire.gov/bulk/downloadfile.php?FNAME=US_105-US_105_CBD.zip&TYPE=landfire,weblink
+LFbiomass_conus,2012,https://landfire.gov/bulk/downloadfile.php?FNAME=US_130-US_130_CBD.zip&TYPE=landfire,weblink
+LFbiomass_conus,2014,https://landfire.gov/bulk/downloadfile.php?FNAME=US_140-US_140_CBD.zip&TYPE=landfire,weblink
+LFbiomass_conus,2020,https://landfire.gov/bulk/downloadfile.php?FNAME=US_220_mosaic-LF2022_CBD_220_CONUS.zip&TYPE=landfire,weblink
+Landcover_ABoVE,1984:2014,1UdSQM_5EZXMfhm63OtQUDFyizPqyZByK,googledrive id
+Biomass_CONUS,1986:2022,projects/rap-data-365417/assets/vegetation-cover-v3,gee
+Biomass_SCANFI,"""c(1985,1990,1995,2000,2005,2010,2015,2020)""",1BBs55yCcqUPZL65Q7wRYNyPOXWogK6Ag,googledrive id
+Landcover_hermosilla,1984:2019,projects/sat-io/open-datasets/CA_FOREST_LC_VLCE2/CA_forest_VLCE2_,gee
