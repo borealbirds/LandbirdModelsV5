@@ -6,8 +6,8 @@
 
 #NOTES################################
 
-#TODO: FIND GOOD LAYER TO INTERSECT BCRS WITH
-#TODO: THINK ABOUT BORDER TRANSITION & BUFFERING VS LAYER CONSISTENCY
+#In this script, we stratify & prepare the data for modelling. Steps include:
+#1. BCR Attribution: Diving the data into BCRs for separate models. Each BCR is buffered by 100km. We do this so that we can feather predictions from adjacent regions together. The exception is the international boundaries between US and Canada, which we don't buffer because spatial layers for the covariates are different on either side of the border. In this case, we use a shapefiles of country boundaries to intersect with the buffered regions.
 
 
 
@@ -37,59 +37,81 @@ visit.v <- visit %>%
   st_transform(5072) %>% 
   vect()
 
-#2. Read in canada shapefile----
+#2. Read in country shapefiles----
 can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
+  st_transform(crs=5072) 
+usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
   st_transform(crs=5072) 
 
 #3. Read in BCR shapefile----
-bcr.raw <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
   mutate(bcr=paste0("bcr", subUnit)) %>% 
   st_transform(crs=5072)
 
-#4. Bisect BCR by canada shapefile---
-bcr.can <- bcr.raw %>% 
-  st_intersection(can) %>% 
-  mutate(country="CAN")
-
-bcr.us <- bcr.raw %>% 
-  st_difference(can) %>% 
-  mutate(country="USA")
-
-bcr <- rbind(bcr.can, bcr.us)
+ggplot() +
+  geom_sf(data=bcr, aes(fill=bcr))
   
-
-#3. Set up loop----
-bcr.list <- list(bcr=visit$id)
-for(i in 1:nrow(bcrs)){
+#3. Set up loop for Canada BCR----
+bcr.ca.list <- list(id=visit$id)
+for(i in 1:nrow(bcr)){
   
-  #4. Filter & buffer bcr shapefile----
-  bcr.shp <- bcrs %>% 
+  #4. Filter, buffer, & crop bcr shapefile to Canada----
+  bcr.ca <- bcr %>% 
     dplyr::filter(row_number()==i) %>% 
     st_buffer(100000) %>% 
-    mutate(bcr=1)
+    mutate(bcr=1) %>% 
+    st_intersection(can)
   
-  if(class(bcr.shp)[1]=="sf"){
-    
+  if(nrow(bcr.ca) > 0){
     #5. Convert to raster for fast extraction----
-    r <- rast(ext(bcr.shp), resolution=1000, crs=crs(bcr.shp))
-    bcr.r <- rasterize(x=bcr.shp, y=r, field="bcr")
+    r <- rast(ext(bcr.ca), resolution=1000, crs=crs(bcr.ca))
+    bcr.r <- rasterize(x=bcr.ca, y=r, field="bcr")
     
     #6. Extract raster value----
-    bcr.list[[i+1]] <- extract(x=bcr.r, y=visit.v)[,2]
+    bcr.ca.list[[i+1]] <- extract(x=bcr.r, y=visit.v)[,2]
+    names(bcr.ca.list)[i+1] <- paste0("ca-", bcr$bcr[i])
   }
   
-
-  
-  print(paste0("Finished bcr ", i, " of ", nrow(bcrs)))
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr)))
   
 }
 
-#7. Collapse to dataframe and name----
-bcr <- data.frame(do.call(cbind, bcr.list))
-colnames(bcr) <- c("id", bcrs$bcr)
+#7. Set up loop for USA BCR----
+bcr.usa.list <- list(id=visit$id)
+for(i in 1:nrow(bcr)){
+  
+  #8. Filter, buffer, & crop bcr shapefile to Canada----
+  bcr.usa <- bcr %>% 
+    dplyr::filter(row_number()==i) %>% 
+    st_buffer(100000) %>% 
+    mutate(bcr=1) %>% 
+    st_intersection(usa)
+  
+  if(nrow(bcr.usa) > 0){
+    #9. Convert to raster for fast extraction----
+    r <- rast(ext(bcr.usa), resolution=1000, crs=crs(bcr.usa))
+    bcr.r <- rasterize(x=bcr.usa, y=r, field="bcr")
+    
+    #10. Extract raster value----
+    bcr.usa.list[[i+1]] <- extract(x=bcr.r, y=visit.v)[,2]
+    names(bcr.usa.list)[i+1] <- paste0("usa-", bcr$bcr[i])
+  }
 
-#8. Remove points outside of study area----
-visit.bcr <- 
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr)))
+  
+}
+
+#11. Collapse to dataframe and name----
+bcr.df <- data.frame(do.call(cbind, bcr.ca.list)) %>% 
+  left_join(data.frame(do.call(cbind, bcr.usa.list)))
+
+#12. Remove columns (combos of BCR & country) that don't exist---
+bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
+
+#13. Remove points outside of study area----
+bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
+visit.bcr <- visit %>% 
+  dplyr::filter(id %in% bcr.df$id)
 
 
 
@@ -100,3 +122,7 @@ visit.bcr <-
 
 
 #UPDATE BIRD LIST BY BCR##############
+
+#SAVE#####
+
+save(visit.bcr, file=file.path(root, "03_NM4.1_data_stratify.Rdata"))
