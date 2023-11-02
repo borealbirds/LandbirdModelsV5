@@ -15,11 +15,15 @@
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #CHECKLIST
-#TO DO: HERMOSILLA, ABoVE
-#GOOGLE DRIVE - DONE EXCEPT GREENUP VARS
+#TO DO: HERMOSILLA, MODIS 5x5, SCANFI 5X5, BIOMASS 5X5
+
+
+#GOOGLE DRIVE - DONE EXCEPT HERMOSILLA
 #SCANFI - DONE
 #GOOGLE EARTH STATIC - DONE
 #GOOGLE EARTH TEMPORAL - DONE
+#5x5 - IN PROGRESS
+
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
@@ -40,6 +44,14 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
 
 #3. Get extraction methods lookup table----
 meth <- readxl::read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), sheet = "ExtractionLookup")
+
+#4. GEE CV function----
+geecv <- function(img.stack){
+  mn <- img.stack$reduceRegions(reducer=ee$Reducer$mean(), collection=poly)
+  std <- img.stack$reduceRegions(reducer=ee$Reducer$stdDev(), collection=poly)
+  cv <- img.stack$set('cv', std$get('stdDev')$divide(mean$get('mean')))
+  return(cv)
+}
 
 #A. DATA PREP####
 
@@ -64,8 +76,10 @@ loc.n <- loc.yr
 #rm(loc.yr)
 
 #3. Buffer location objects----
-#200 m radius
+#200 m radius for local extent
+#2 km radius to landscape extent
 loc.buff <- st_buffer(loc.n, 200)
+loc.buff2 <- st_buffer(loc.n, 2000)
 
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
@@ -75,11 +89,13 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, Complete==0)
 #2. Plain dataframe for joining to output----
 #loc.gd <- data.frame(loc.n) %>% 
 #  dplyr::select(-geometry)
+
+#Read in existing dataframe if not starting from scratch
 loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- unique(meth.gd$StackCategory)
-for(i in 1:length(loop)){
+for(i in 4:length(loop)){
   
   #4. Filter to stack category----
   meth.gd.i <- dplyr::filter(meth.gd, StackCategory==loop[i])
@@ -90,15 +106,21 @@ for(i in 1:length(loop)){
     #6. Read in raster----
     rast.i <- rast(meth.gd.i$Link)
     
-    #7. Extract - determine point or buffer extraction---
+    #7. Extract - determine point or buffer extraction and buffer extent---
     if(meth.gd.i$Extraction[1]=="point"){
       loc.cov <- loc.n %>% 
         st_transform(crs(rast.i)) %>% 
         terra::extract(x=rast.i, ID=FALSE)
     }
     
-    if(meth.gd.i$Extraction[1]=="radius"){
+    if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==200){
       loc.cov <- loc.buff %>% 
+        st_transform(crs(rast.i)) %>% 
+        exact_extract(x=rast.i, "mean", force_df=TRUE)
+    }
+    
+    if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
+      loc.cov <- loc.buff2 %>% 
         st_transform(crs(rast.i)) %>% 
         exact_extract(x=rast.i, "mean", force_df=TRUE)
     }
@@ -109,7 +131,9 @@ for(i in 1:length(loop)){
   if(meth.gd.i$TemporalResolution[1]=="match"){
     
     #9. Get list of individual files----
-    if(loop[i] %in% c(17,18)){
+    
+    #For Landfire file structure
+    if(loop[i] %in% c(17:24)){
       files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, recursive=TRUE, pattern="*.tif"),
                             file=list.files(meth.gd.i$Link, recursive=TRUE, pattern="*.tif")) %>% 
         separate(file, into=c("year", "region", "name", "tif"), remove=FALSE) %>% 
@@ -120,8 +144,16 @@ for(i in 1:length(loop)){
         arrange(year) %>% 
         unique()
       
+      #Just height for CV extraction
+      if(loop[i] %in% c(21:24)){
+        files.i <- files.i %>% 
+          dplyr::filter(name=="height")
+      }
+      
     }
-    if(loop[i]==19){
+    
+    #For NLCD file structure
+    if(loop[i]==25){
       files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*.img"),
                             file=list.files(meth.gd.i$Link, pattern="*.img")) %>% 
         mutate(year = as.numeric(str_sub(file, -32, -29))) %>% 
@@ -129,9 +161,11 @@ for(i in 1:length(loop)){
         unique() %>% 
         dplyr::filter(!is.na(year))
     }
-    if(!loop[i] %in% c(17, 18, 19)){
-      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*tif"),
-                            file=list.files(meth.gd.i$Link, pattern="*tif")) %>% 
+    
+    #Everything else
+    if(!loop[i] %in% c(17:25)){
+      files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*tif", recursive=TRUE),
+                            file=list.files(meth.gd.i$Link, pattern="*tif", recursive=TRUE)) %>% 
         mutate(year = as.numeric(str_sub(file, -8, -5))) %>% 
         arrange(year) %>% 
         unique() %>% 
@@ -145,8 +179,10 @@ for(i in 1:length(loop)){
     data.table::setkey(dt, year)
     loc.n.i <- loc.n
     loc.buff.i <- loc.buff
+    loc.buff2.i <- loc.buff2
     loc.n.i$year.rd <- dt[J(loc.n$year), roll = "nearest"]$val
     loc.buff.i$year.rd <- dt[J(loc.buff$year), roll = "nearest"]$val
+    loc.buff2.i$year.rd <- dt[J(loc.buff2$year), roll = "nearest"]$val
     
     #11. Set up to loop through years----
     loc.cov <- data.frame()
@@ -155,27 +191,38 @@ for(i in 1:length(loop)){
       
       loc.n.j <- dplyr::filter(loc.n.i, year.rd==yrs[j])
       loc.buff.j <- dplyr::filter(loc.buff.i, year.rd==yrs[j])
+      loc.buff2.j <- dplyr::filter(loc.buff2.i, year.rd==yrs[j])
       
       #12. Read in raster----
       files.j <- dplyr::filter(files.i, year==yrs[j])
       rast.i <- rast(files.j$Link)
       
-      #13. Extract - determine point or buffer extraction---
+      #13. Extract - determine point or buffer extraction and buffer extent---
       if(meth.gd.i$Extraction[1]=="point"){
         loc.cov <- loc.n.j %>% 
           st_transform(crs(rast.i)) %>% 
           terra::extract(x=rast.i, ID=FALSE) %>% 
-          data.table::setnames(meth.gd.i$Name) %>% 
+          data.table::setnames(meth.gd.i$Label) %>% 
           rbind(loc.cov)
       }
       
-      if(meth.gd.i$Extraction[1]=="radius"){
+      if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==200){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
           exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
-          data.table::setnames(meth.gd.i$Name) %>% 
+          data.table::setnames(meth.gd.i$Label) %>% 
           rbind(loc.cov)
       }
+      
+      if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
+        loc.cov <- loc.buff.j %>% 
+          st_transform(crs(rast.i)) %>% 
+          exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+          data.table::setnames(meth.gd.i$Label) %>% 
+          rbind(loc.cov)
+      }
+      
+      print(paste0("Finished year ", j, " of ", length(yrs)))
       
     }
     
@@ -185,7 +232,6 @@ for(i in 1:length(loop)){
   #fix column names
   if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Label <- paste0(meth.gd.i$Label, ".", meth.gd.i$Priority)
   nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Label)
-  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)-1], "lcclass.4")
   loc.gd <- cbind(loc.gd, loc.cov)
   colnames(loc.gd) <- nms
   
@@ -197,7 +243,27 @@ for(i in 1:length(loop)){
 
 }
 
-#17. Merge AK & CONUS columns for landfire----
+#15. Merge AK & CONUS columns for landfire----
+loc.gd2 <- loc.gd %>% 
+  mutate(
+#    height.2 = ifelse(!is.na(height.2.ak), height.2.ak, height.2.conus),
+         heightcv.2 = ifelse(!is.na(heightcv.2.ak), heightcv.2.ak, heightcv.2.conus),
+#         biomass.2 = ifelse(!is.na(biomass.2.ak), biomass.2.ak, biomass.2.conus),
+#         closure.3 = ifelse(!is.na(closure.3.ak), closure.3.ak, closure.3.conus),
+         height_ls.2 = ifelse(!is.na(height_ls.2.ak), height_ls.2.ak, height_ls.2.conus),
+         heightcv_ls.2 = ifelse(!is.na(heightcv_ls.2.ak), heightcv_ls.2.ak, heightcv_ls.2.conus),
+         biomass_ls.2 = ifelse(!is.na(biomass_ls.2.ak), biomass_ls.2.ak, biomass_ls.2.conus),
+         closure_ls.3 = ifelse(!is.na(closure_ls.3.ak), closure_ls.3.ak, closure_ls.3.conus)) %>% 
+  dplyr::select(-height.2.ak, -height.2.conus,
+                -heightcv.2.ak, -heightcv.2.conus,
+                -biomass.2.ak, -biomass.2.conus,
+                -closure.3.ak, -closure.3.conus,
+                -height_ls.2.ak, -height_ls.2.conus,
+                -heightcv_ls.2.ak, -heightcv_ls.2.conus,
+                -biomass_ls.2.ak, -biomass_ls.2.conus,
+                -closure_ls.3.ak, -closure_ls.3.conus)
+
+write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
 
 #18. Check output----
 loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
@@ -223,7 +289,9 @@ plot(loc.na$lon, loc.na$lat)
 #check missing greenup - looks like all of canada?
 loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
   dplyr::select(project, year, lat, lon, greenup, dormancy)
-plot(loc.na$lon, loc.na$lat)
+ggplot(loc.na) +
+  geom_point(aes(x=lon, y=lat)) +
+  facet_wrap(~year)
 table(loc.na$year)
 
 write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
@@ -270,6 +338,12 @@ loc.scanfi.buff <- cbind(loc.n, loc.scanfi.sa) %>%
   st_buffer(200) %>% 
   st_transform(crs(rast.scanfi))
 
+loc.scanfi.buff2 <- cbind(loc.n, loc.scanfi.sa) %>% 
+  dplyr::filter(!is.na(scanfi)) %>% 
+  st_transform(5072) %>% 
+  st_buffer(2000) %>% 
+  st_transform(crs(rast.scanfi))
+
 #5. Match year of data to year of SCANFI----
 #Use only buffer object because all extractions are radius method
 years.scanfi <- unique(files.scanfi$year)
@@ -277,57 +351,86 @@ dt = data.table::data.table(year=years.scanfi, val=years.scanfi)
 data.table::setattr(dt, "sorted", "year")
 data.table::setkey(dt, year)
 loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
+loc.scanfi.buff2$year.rd <- dt[J(loc.scanfi.buff2$year), roll = "nearest"]$val
 
-#6. Set up to loop through years of SCANFI----
+#6. Read in/create dataframe----
 loc.scanfi <- data.frame()
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
+#7. Set up to loop through years of SCANFI----
 for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
     mutate(loop = ceiling(row_number()/1000))
+  
+  loc.buff2.yr <- dplyr::filter(loc.scanfi.buff2, year.rd==years.scanfi[i]) %>% 
+    arrange(lat, lon) %>% 
+    mutate(loop = ceiling(row_number()/1000))
 
-  #7. Read in rasters for mean extraction----
-  files.i <- meth.scanfi %>% 
-    dplyr::select(-Link) %>% 
-    dplyr::filter(RadiusFunction=="mean") %>% 
-    left_join(files.scanfi, multiple="all") %>% 
+  #7. Read in rasters for 200m mean extraction----
+  files.i <- meth.scanfi %>%
+    dplyr::select(-Link) %>%
+    dplyr::filter(RadiusFunction=="mean", RadiusExtent==200) %>%
+    left_join(files.scanfi, multiple="all") %>%
     dplyr::filter(year==years.scanfi[i])
   rast.i <- rast(files.i$Link)
   names(rast.i) <- files.i$Label
-  
-  #8. Read in rasters for sd extraction----
-  filesd.i <- meth.scanfi %>% 
-    dplyr::select(-Link) %>% 
-    dplyr::filter(RadiusFunction=="cv") %>% 
-    left_join(files.scanfi, multiple="all") %>% 
+
+  #8. Read in rasters for 200m cv extraction----
+  filesd.i <- meth.scanfi %>%
+    dplyr::select(-Link) %>%
+    dplyr::filter(RadiusFunction=="cv", RadiusExtent==200) %>%
+    left_join(files.scanfi, multiple="all") %>%
     dplyr::filter(year==years.scanfi[i])
   rastsd.i <- rast(filesd.i$Link)
   names(rastsd.i) <- filesd.i$Label
-  
-  #9. Read in rasters for mode extraction----
-  filesmd.i <- meth.scanfi %>% 
-    dplyr::select(-Link) %>% 
-    dplyr::filter(RadiusFunction=="mode") %>% 
-    left_join(files.scanfi, multiple="all") %>% 
+
+  #9. Read in rasters for 200m mode extraction----
+  filesmd.i <- meth.scanfi %>%
+    dplyr::select(-Link) %>%
+    dplyr::filter(RadiusFunction=="mode", RadiusExtent==200) %>%
+    left_join(files.scanfi, multiple="all") %>%
     dplyr::filter(year==years.scanfi[i])
   rastmd.i <- rast(filesd.i$Link)
   names(rastmd.i) <- filesmd.i$Label
+  
+  #7. Read in rasters for 1.4km mean extraction----
+  files2.i <- meth.scanfi %>% 
+    dplyr::select(-Link) %>% 
+    dplyr::filter(RadiusFunction=="mean", RadiusExtent==2000) %>% 
+    left_join(files.scanfi, multiple="all") %>% 
+    dplyr::filter(year==years.scanfi[i])
+  rast2.i <- rast(files2.i$Link)
+  names(rast2.i) <- files2.i$Label
+  
+  #8. Read in rasters for 1.4km cv extraction----
+  filesd2.i <- meth.scanfi %>% 
+    dplyr::select(-Link) %>% 
+    dplyr::filter(RadiusFunction=="cv", RadiusExtent==2000) %>% 
+    left_join(files.scanfi, multiple="all") %>% 
+    dplyr::filter(year==years.scanfi[i])
+  rastsd2.i <- rast(filesd2.i$Link)
+  names(rastsd2.i) <- filesd2.i$Label
   
   #8. Set up loops----
   loc.scanfi.list <- list()
   for(j in 1:nrow(loc.buff.yr)){
     
     loc.i <- loc.buff.yr[j,]
+    loc2.i <- loc.buff2.yr[j,]
     
     #9. Extract----
     loc.scanfi.i <- try(exact_extract(x=rast.i, y=loc.i, "mean", force_df=TRUE))
     loc.scanfi.sd.i <- try(exact_extract(x=rastsd.i, y=loc.i, fun="coefficient_of_variation", force_df=TRUE))
     loc.scanfi.md.i <- try(exact_extract(x=rastmd.i, y=loc.i, fun="mode", force_df=TRUE))
+    loc.scanfi2.i <- try(exact_extract(x=rast2.i, y=loc2.i, "mean", force_df=TRUE))
+    loc.scanfi.sd2.i <- try(exact_extract(x=rastsd2.i, y=loc2.i, fun="coefficient_of_variation", force_df=TRUE))
+    colnames(loc.scanfi.sd2.i) <- "coefficient_of_variation_ls"
     
     #10. Save output if extraction works----
     if(class(loc.scanfi.i)=="data.frame"){
-      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i, loc.scanfi.sd.i, loc.scanfi.md.i) %>% 
+      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i, loc.scanfi.sd.i, loc.scanfi.md.i, loc.scanfi2.i, loc.scanfi.sd2.i) %>% 
         data.frame() %>% 
         dplyr::select(-geometry, -year.rd, -loop, -scanfi)
     }
@@ -340,7 +443,7 @@ for(i in 1:length(years.scanfi)){
   }
   
   loc.scanfi.bind <- data.table::rbindlist(loc.scanfi.list)
-  names(loc.scanfi.bind) <- c(colnames(loc.i)[1:6], names(rast.i), names(rastsd.i), "landcover.2")
+  names(loc.scanfi.bind) <- c(colnames(loc.i)[1:6], names(rast.i), names(rastsd.i), "landcover.2", names(rast2.i), names(rastsd2.i))
   
   loc.scanfi <- rbind(loc.scanfi, loc.scanfi.bind)
 
@@ -364,71 +467,106 @@ for(i in 1:length(years.scanfi)){
 #2. Get list of static layers to run----
 meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="static")
 
-#3. Set up loop for static layer stacking----
-for(i in 1:nrow(meth.gee)){
+#3. Make/get dataframe----
+#loc.gee.static <- data.frame()
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
 
-  #4. Get the image----
-  if(meth.gee$GEEtype[i]=="image"){
-    if(!is.na(meth.gee$GEEBand[i]))
-    img.i <- ee$Image(meth.gee$Link[i])$select(meth.gee$GEEBand[i]) 
-    else img.i <- ee$Image(meth.gee$Link[i]) 
-  }
-  if(meth.gee$GEEtype[i]=="imagecollection"){
-    img.i <- ee$ImageCollection(meth.gee$Link[i])$select(meth.gee$GEEBand[i])$toBands()
+#3. Make method loop----
+loop <- meth.gee %>% 
+  dplyr::select(RadiusFunction, RadiusExtent) %>% 
+  unique()
+
+for(h in 4:nrow(loop)){
+  
+  meth.gee.h <- meth.gee %>% 
+    dplyr::filter(RadiusFunction==loop$RadiusFunction[h],
+                  RadiusExtent==loop$RadiusExtent[h])
+  
+  #3. Set up loop for static layer stacking----
+  for(i in 1:nrow(meth.gee.h)){
+    
+    #4. Get the image----
+    if(meth.gee.h$GEEtype[i]=="image"){
+      if(!is.na(meth.gee.h$GEEBand[i]))
+        img.i <- ee$Image(meth.gee.h$Link[i])$select(meth.gee.h$GEEBand[i]) 
+      else img.i <- ee$Image(meth.gee.h$Link[i]) 
+    }
+    if(meth.gee.h$GEEtype[i]=="imagecollection"){
+      img.i <- ee$ImageCollection(meth.gee.h$Link[i])$select(meth.gee.h$GEEBand[i])$toBands()
+    }
+    
+    #5. Stack----
+    if(i==1){
+      img.stack <- img.i
+    }
+    
+    if(i > 1){
+      img.stack <- img.stack$addBands(img.i)
+    }
+    
   }
   
-  #5. Stack----
-  if(i==1){
-    img.stack <- img.i
+  #6. Set up to do batches of 1000----
+  if(loop$RadiusExtent[h]==200){
+    loc.gee <- loc.buff %>% 
+      mutate(loop = ceiling(row_number()/1000))
   }
   
-  if(i > 1){
-    img.stack <- img.stack$addBands(img.i)
+  if(loop$RadiusExtent[h]==2000){
+    loc.gee <- loc.buff2 %>% 
+      mutate(loop = ceiling(row_number()/1000))
   }
+  
+
+  task.list <- list()
+  for(i in 1:max(loc.gee$loop)){
+    
+    loc.gee.i <- dplyr::filter(loc.gee, loop==i)
+    
+    #8. Send polygons to GEE---
+    poly <- sf_as_ee(loc.gee.i)
+    
+    #9. Extract----
+    if(loop$RadiusFunction[h]=="mean"){
+      img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
+                                         collection=poly)
+    }
+    
+    if(loop$RadiusFunction[h]=="cv"){
+      img.red <- img.stack$reduceRegions(reducer=ee$Reducer$stdDev(),
+                                        collection=poly)
+    }
+    
+    task.list[[i]] <- ee_table_to_gcs(collection=img.red,
+                                      bucket="national_models",
+                                      fileFormat = "CSV")
+    task.list[[i]]$start()
+    
+    #10. Monitor----
+    ee_monitoring(task.list[[i]], max_attempts=1000)
+    
+    #11.Download to local----
+    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
+    
+    print(paste0("Finished batch ", i, " of ", max(loc.gee$loop)))
+    
+  }
+  
+  print(paste0("Finished loop ", h, " of ", nrow(loop)))
   
 }
 
-#6. Set up to do batches of 1000----
-loc.buff$loop <- ceiling(row_number(loc.buff)/1000)
-
-task.list <- list()
-for(i in 1:max(loc.buff$loop)){
-  
-  loc.buff.i <- dplyr::filter(loc.buff, loop==i)
-  
-  #7. Send polygons to GEE---
-  poly <- sf_as_ee(loc.buff.i)
-  
-  #8. Extract----
-  img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
-                                     collection=poly)
-  
-  task.list[[i]] <- ee_table_to_gcs(collection=img.red,
-                                 bucket="national_models",
-                                 fileFormat = "CSV")
-  task.list[[i]]$start()
-  
-  #9. Monitor----
-  ee_monitoring(task.list[[i]], max_attempts=1000)
-  
-  #10.Download to local----
-  ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", i, ".csv")))
-
-  print(paste0("Finished batch ", i, " of ", max(loc.buff$loop)))
-  
-}
-
-#11. Collapse to one object----
+#17. Collapse to one object----
 files.gee <- list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)
 loc.gee <- purrr::map(files.gee, read.csv) %>% 
   data.table::rbindlist() %>% 
-  dplyr::select(c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee$GEEName))
+  dplyr::select(c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$GEEName))
 
-#12. Fix column names----
-meth.gee$Name2 <- ifelse(is.na(meth.gee$Priority), meth.gee$Name, paste0(meth.gee$Name, ".", meth.gee$Priority))
-colnames(loc.gee) <- c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee$Name2)
+#18. Fix column names----
+meth.gee.h$Name2 <- ifelse(is.na(meth.gee.h$Priority), meth.gee.h$Label, paste0(meth.gee.h$Label, ".", meth.gee.h$Priority))
+colnames(loc.gee) <- c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$Name2)
 
-#13. Zerofill----
+#19. Zerofill----
 zerocols <- meth.gee %>% 
   dplyr::filter(Zerofill==1)
 zero.gee <- loc.gee %>% 
@@ -436,10 +574,11 @@ zero.gee <- loc.gee %>%
   replace_na(list(occurrence=0, recurrence=0, seasonality=0))
 loc.gee.static <- loc.gee %>% 
   dplyr::select(-zerocols$Name2) %>% 
-  cbind(zero.gee)
+  cbind(zero.gee) %>% 
+  rbind(loc.gee.static)
 
-#14. Save----
-write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+#20. Save----
+write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"), row.names = FALSE)
 
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
@@ -560,7 +699,7 @@ for(i in 1:nrow(meth.gee)){
   #15. Collapse data across years----
   loc.i <- data.table::rbindlist(loc.j, fill=TRUE)
   loc.gee <- cbind(loc.gee, loc.i %>% 
-                     dplyr::select(meth.gee$Name[i]))
+                     dplyr::select(meth.gee$Label[i]))
   
   #16. Join to landcover classes----
   if(meth.gee$Name[i]=="landcovermodis"){
@@ -586,6 +725,7 @@ loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_
 loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+
 
 #3. Add id to visit and join together----
 visit.old <- visit
