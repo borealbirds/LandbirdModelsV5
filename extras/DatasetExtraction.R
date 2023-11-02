@@ -8,7 +8,7 @@
 
 #This script provides portions of the national model dataset to BAM team members
 
-#This script was initially written to provide Dan Yip with an approximate list of BAM database spatial coverage for BC.
+#This script was initially written to provide Dan Yip with an approximate list of BAM database spatial coverage for BC so that he can seek out existing historic point count datasets for uploading to WildTrax and use in the National Models.
 
 #PREAMBLE############################
 
