@@ -85,25 +85,26 @@ for (y in rast.dir){
   rast_f <- list.files(y, pattern="ch|CH", full.names = TRUE)
   ht_r <- lapply(rast_f, terra::rast) #Create SpatRast
   ht_class <- lapply(ht_r, function(x){classify(x, cbind(-9999, NA))}) #Reclassify: value -9999 = deciduous: no value
-  ht_sprc <- terra::sprc(ht_class) #Create SpatRastCollection
-  ht_mosaic<- terra::mosaic(ht_sprc, fun = "max") # Mosaic rast
-  ht_pj <- project(ht_mosaic, rast1k, res = 1000, method = "near", align = TRUE) # Reproject
-  ht <- terra::crop(ht_pj, rast1k, extend = TRUE) # Extend to NatMod extent
-  ht5k<-terra::focal(ht_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
+  ht_pj <- lapply(ht_class, function(x) {project(x, rast1k, res = 1000, method = "bilinear", align = TRUE) }) # Reproject
+  ht_sprc <- terra::sprc(ht_pj)  #Create SpatRastCollection
+  ht_mosaic<- terra::mosaic(ht_sprc, fun = "max")  # Mosaic rast
+  ht <- terra::crop(ht_mosaic, rast1k, extend = TRUE) # Extend to NatMod extent
+  ht5k <- focal(ht_mosaic,w=matrix(1,5,5),fun=mean,na.rm=TRUE) # get 5k average at 1k resolution
   ht5x5 <- terra::crop(ht5k, rast1k, extend = TRUE) # Extend to NatMod extent
   #save output
   writeRaster(ht, filename=file.path(out.folder,paste0("LFheigth1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
   writeRaster(ht5x5, filename=file.path(out.folder,paste0("LFheigth5x5_", as.character(basename(y)),".tif")), overwrite=TRUE)
-  ##########################
+ 
+   ##########################
   # Crown Closure
   rast_f <- list.files(y, pattern="cc|CC", full.names = TRUE)
   cc_r <- lapply(rast_f, terra::rast) #Create SpatRast
   cc_class <- lapply(cc_r, function(x){classify(x, cbind(-9999, NA))}) #Reclassify: value -9999 = deciduous: no value
-  cc_sprc <- terra::sprc(cc_class) #Create SpatRastCollection
-  cc_mosaic<- terra::mosaic(cc_sprc, fun = "max") # Mosaic rast
-  cc_pj <- project(cc_mosaic, rast1k, res = 1000, method = "near", align = TRUE) # Reproject
-  cc <- terra::crop(cc_pj, rast1k, extend = TRUE) # Extend to NatMod extent
-  cc5k<-terra::focal(cc_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
+  cc_pj <- lapply(cc_class, function(x) {project(x, rast1k, res = 1000, method = "bilinear", align = TRUE) }) # Reproject
+  cc_sprc <- terra::sprc(cc_pj)  #Create SpatRastCollection
+  cc_mosaic<- terra::mosaic(cc_sprc, fun = "max")  # Mosaic rast
+  cc <- terra::crop(cc_mosaic, rast1k, extend = TRUE) # Extend to NatMod extent
+  cc5k <- focal(cc_mosaic,w=matrix(1,5,5),fun=mean,na.rm=TRUE) # get 5k average at 1k resolution
   cc5x5 <- terra::crop(cc5k, rast1k, extend = TRUE) # Extend to NatMod extent
   #save output
   writeRaster(cc, filename=file.path(out.folder,paste0("LFcrownclosure1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
