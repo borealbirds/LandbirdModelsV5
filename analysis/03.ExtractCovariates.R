@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - extract covariates
+# title: National Models 5.0 - extract covariates
 # author: Elly Knight
 # created: December 22, 2022
 # ---
@@ -56,7 +56,7 @@ geecv <- function(img.stack){
 #A. DATA PREP####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 rm(bird)
 rm(offsets)
 
@@ -91,7 +91,7 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, Complete==0)
 #  dplyr::select(-geometry)
 
 #Read in existing dataframe if not starting from scratch
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- unique(meth.gd$StackCategory)
@@ -236,7 +236,7 @@ for(i in 4:length(loop)){
   colnames(loc.gd) <- nms
   
   #15. Save----
-  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
+  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
   
   #16. Report status----
   print(paste0("Finished stack category ", i, " of ", length(loop)))
@@ -263,10 +263,10 @@ loc.gd2 <- loc.gd %>%
                 -biomass_ls.2.ak, -biomass_ls.2.conus,
                 -closure_ls.3.ak, -closure_ls.3.conus)
 
-write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
+write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
 
 #18. Check output----
-loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 summary(loc.check)
 
 #check missing climate normals - looks like all the coastal data
@@ -355,7 +355,7 @@ loc.scanfi.buff2 <- cbind(loc.n, loc.scanfi.sa) %>%
 
 #6. Read in/create dataframe----
 #loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
@@ -450,7 +450,7 @@ for(i in 1:length(years.scanfi)){
 
   
   #13. Save----
-  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
+  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"), row.names = FALSE)
   
 }
 
@@ -470,7 +470,7 @@ meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, Tempo
 
 #3. Make/get dataframe----
 #loc.gee.static <- data.frame()
-loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"))
 
 #3. Make method loop----
 loop <- meth.gee %>% 
@@ -547,7 +547,7 @@ for(h in 4:nrow(loop)){
     ee_monitoring(task.list[[i]], max_attempts=1000)
     
     #11.Download to local----
-    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", "Static", paste0("03_NM4.1_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
+    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", "Static", paste0("03_NM5.0_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
     
     print(paste0("Finished batch ", i, " of ", max(loc.gee$loop)))
     
@@ -643,7 +643,7 @@ loc.gee.static <- loc.gee %>%
   cbind(zero.gee)
 
 #20. Save----
-write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"), row.names = FALSE)
+write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"), row.names = FALSE)
 
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
@@ -673,7 +673,7 @@ lc.modis <- data.frame(landcover = c(1:17),
 #3. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
 #   dplyr::select(-geometry)
-loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
@@ -752,9 +752,9 @@ for(i in 1:nrow(meth.gee)){
           
           ee_monitoring(task.list[[k]], max_attempts=1000)
           
-          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM4.1_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
         
-          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM4.1_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
           
         }
 
@@ -785,7 +785,7 @@ for(i in 1:nrow(meth.gee)){
     loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
   }
   
-  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"), row.names=FALSE)
+  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
   
   print(paste0("FINISHED LAYER ", i, " of ", nrow(meth.gee)))
   
@@ -794,16 +794,16 @@ for(i in 1:nrow(meth.gee)){
 #E. ASSEMBLE####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 
 #2. Load extracted covariates----
-loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
-loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"))
 
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 
 #3. Add id to visit and join together----
@@ -826,4 +826,4 @@ visit <- visit.old %>%
 #4. Remove things with NAs for certain layers????
 
 #G. SAVE#####
-save(visit, bird,  offsets, file=file.path(root, "03_NM4.1_data_covariates.R"))
+save(visit, bird,  offsets, file=file.path(root, "03_NM5.0_data_covariates.R"))

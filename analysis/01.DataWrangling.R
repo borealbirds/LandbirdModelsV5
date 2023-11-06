@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - get data
+# title: National Models 5.0 - get data
 # author: Elly Knight, Melina Houle, Anna Drake
 # created: Novemeber 17, 2022
 # ---
@@ -43,7 +43,7 @@ library(dggridR) #to make grid for checking for duplicates
 library(QPAD) #to load species list for bird data
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/Data"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
 
 #A. DOWNLOAD DATA FROM WILDTRAX#######################
 
@@ -334,7 +334,7 @@ loc <- use %>%
 #3. Clip by study area----
 
 #3a. Read in study area----
-sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels4.1/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
+sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels5.0/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
 
 #3v. Create raster (much faster than from polygon)
 r <- rast(ext(sa), resolution=1000)
@@ -465,4 +465,4 @@ bird <- dat %>%
   pivot_wider(id_cols=id, names_from=species, values_from=abundance, values_fn=sum, values_fill=0, names_sort=TRUE)
 
 #G. SAVE!####
-save(visit, bird, file=file.path(root, "01_NM4.1_data_clean.R"))
+save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))

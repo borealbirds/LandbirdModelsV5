@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - calculate offsets
+# title: National Models 5.0 - calculate offsets
 # author: Elly Knight
 # created: December 22, 2022
 # ---
@@ -25,7 +25,7 @@ library(intrval) #required for QPAD
 library(data.table) #collapse list to dataframe
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/Data"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
 
 #A. LOAD QPAD#####
 
@@ -49,7 +49,7 @@ source("functions.R")
 #B. PREP DATA####
 
 #1. Load data package from script 01----
-load(file.path(root, "01_NM4.1_data_clean.R"))
+load(file.path(root, "01_NM5.0_data_clean.R"))
 
 #2. Format visit data for offset calculation---
 visit.x <- visit %>% 
@@ -90,4 +90,4 @@ colnames(offsets) <- c("id", spp)
 #D. SAVE####
 
 #1. Save----
-save(visit, bird, offsets, file=file.path(root, "02_NM4.1_data_offsets.R"))
+save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.R"))
