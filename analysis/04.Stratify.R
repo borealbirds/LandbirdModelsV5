@@ -9,8 +9,13 @@
 #In this script, we stratify & prepare the data for modelling. Steps include:
 #1. BCR Attribution: Diving the data into BCRs for separate models. Each BCR is buffered by 100km. We do this so that we can feather predictions from adjacent regions together. The exception is the international boundaries between US and Canada, which we don't buffer because spatial layers for the covariates are different on either side of the border. In this case, we use a shapefiles of country boundaries to intersect with the buffered regions.
 
-#2. On line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe
+#2. Filtering out data outside the study area and prior to 1980
 
+#3. Assigning each survey to a grid cell (1.9 km spacing)
+
+#4. Randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe.
+
+#5. Removing species that are not present for each subunit
 
 #PREAMBLE############################
 
