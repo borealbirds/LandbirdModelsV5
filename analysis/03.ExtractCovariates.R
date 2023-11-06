@@ -40,10 +40,10 @@ library(rgee)
 ee_Initialize(gcs=TRUE)
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Get extraction methods lookup table----
-meth <- readxl::read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), sheet = "ExtractionLookup")
+meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
 
 #4. GEE CV function----
 geecv <- function(img.stack){
@@ -331,33 +331,34 @@ loc.scanfi.sa <- loc.n %>%
   terra::extract(x=rast.scanfi, ID=FALSE)
 colnames(loc.scanfi.sa) <- "scanfi"
 
-#4. Rebuffer----
+#4. Get lookup table to match year of data to year of SCANFI----
+#Use only buffer object because all extractions are radius method
+years.dat <- data.frame(year=unique(loc.scanfi.buff$year)) %>% 
+  mutate(year.rd = round(year/5)*5,
+         year.rd = ifelse(year.rd < 1985, 1985, year.rd)) %>% 
+  arrange(year)
+
+#5. Rebuffer and add year of SCANFI data----
 loc.scanfi.buff <- cbind(loc.n, loc.scanfi.sa) %>% 
   dplyr::filter(!is.na(scanfi)) %>% 
   st_transform(5072) %>% 
   st_buffer(200) %>% 
-  st_transform(crs(rast.scanfi))
+  st_transform(crs(rast.scanfi)) %>% 
+  left_join(years.dat)
 
 loc.scanfi.buff2 <- cbind(loc.n, loc.scanfi.sa) %>% 
   dplyr::filter(!is.na(scanfi)) %>% 
   st_transform(5072) %>% 
   st_buffer(2000) %>% 
-  st_transform(crs(rast.scanfi))
-
-#5. Match year of data to year of SCANFI----
-#Use only buffer object because all extractions are radius method
-years.scanfi <- unique(files.scanfi$year)
-dt = data.table::data.table(year=years.scanfi, val=years.scanfi)
-data.table::setattr(dt, "sorted", "year")
-data.table::setkey(dt, year)
-loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
-loc.scanfi.buff2$year.rd <- dt[J(loc.scanfi.buff2$year), roll = "nearest"]$val
+  st_transform(crs(rast.scanfi)) %>% 
+  left_join(years.dat)
 
 #6. Read in/create dataframe----
-loc.scanfi <- data.frame()
+#loc.scanfi <- data.frame()
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
 
 #7. Set up to loop through years of SCANFI----
+years.scanfi <- unique(files.scanfi$year)
 for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
@@ -557,25 +558,89 @@ for(h in 4:nrow(loop)){
 }
 
 #17. Collapse to one object----
-files.gee <- list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)
-loc.gee <- purrr::map(files.gee, read.csv) %>% 
-  data.table::rbindlist() %>% 
-  dplyr::select(c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$GEEName))
+files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)) %>%
+  separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "method", "extent", "n"), sep="_", remove=FALSE)
 
-#18. Fix column names----
-meth.gee.h$Name2 <- ifelse(is.na(meth.gee.h$Priority), meth.gee.h$Label, paste0(meth.gee.h$Label, ".", meth.gee.h$Priority))
-colnames(loc.gee) <- c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$Name2)
+files.gee.cv.200 <- dplyr::filter(files.gee, method=="cv", extent=="200")
+loc.gee.cv.200 <- purrr::map(files.gee.cv.200$path, read.csv) %>% 
+  data.table::rbindlist()
 
-#19. Zerofill----
+files.gee.cv.2000 <- dplyr::filter(files.gee, method=="cv", extent=="2000")
+loc.gee.cv.2000 <- purrr::map(files.gee.cv.2000$path, read.csv) %>% 
+  data.table::rbindlist()
+
+files.gee.mean.200 <- dplyr::filter(files.gee, method=="mean", extent=="200")
+loc.gee.mean.200 <- purrr::map(files.gee.mean.200$path, read.csv) %>% 
+  data.table::rbindlist()
+
+files.gee.mean.2000 <- dplyr::filter(files.gee, method=="mean", extent=="2000")
+loc.gee.mean.2000 <- purrr::map(files.gee.mean.2000$path, read.csv) %>% 
+  data.table::rbindlist()
+
+#18. Get column names----
+lab.cv.200 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="cv",
+                RadiusExtent=="200") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.cv.2000 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="cv",
+                RadiusExtent=="2000") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.mean.200 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="mean",
+                RadiusExtent=="200") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.mean.2000 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="mean",
+                RadiusExtent=="2000") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+#19. Fix column names, put together, calculate----
+loc.gee <- loc.gee.cv.200 %>% 
+  data.table::setnames(c(colnames(loc.gee.cv.200)[1:7],
+                         lab.cv.200$Label,
+                         colnames(loc.gee.cv.200)[8:9])) %>% 
+  dplyr::select(c(id, lab.cv.200$Label)) %>% 
+  full_join(loc.gee.cv.2000 %>% 
+          data.table::setnames(c(colnames(loc.gee.cv.2000)[1:7],
+                                 lab.cv.2000$Label,
+                                 colnames(loc.gee.cv.2000)[8:9])) %>% 
+          dplyr::select(c(id, lab.cv.2000$Label))) %>% 
+  full_join(loc.gee.mean.200 %>% 
+              data.table::setnames(c(colnames(loc.gee.mean.200)[1],
+                                     lab.mean.200$Label[1:2],
+                                     colnames(loc.gee.mean.200)[4:14])) %>% 
+              dplyr::select(c(id, lab.mean.200$Label))) %>% 
+  full_join(loc.gee.mean.2000 %>% 
+              data.table::setnames(c(colnames(loc.gee.mean.2000)[1],
+                                     lab.mean.2000$Label[1:2],
+                                     colnames(loc.gee.mean.2000)[4:8],
+                                     lab.mean.2000$Label[3],
+                                     colnames(loc.gee.mean.2000)[10:12])) %>% 
+              dplyr::select(c(id, lab.mean.2000$Label))) %>% 
+  mutate(heightcv.3 = heightcv.3/height.3,
+         heightcv_ls.3 = heightcv_ls.3/height_ls.3)
+
+#20. Zerofill----
 zerocols <- meth.gee %>% 
   dplyr::filter(Zerofill==1)
 zero.gee <- loc.gee %>% 
-  dplyr::select(zerocols$Name2) %>% 
-  replace_na(list(occurrence=0, recurrence=0, seasonality=0))
+  dplyr::select(zerocols$Label) %>% 
+  replace_na(list(occurrence=0, recurrence=0, seasonality=0, occurrence_ls=0))
 loc.gee.static <- loc.gee %>% 
-  dplyr::select(-zerocols$Name2) %>% 
-  cbind(zero.gee) %>% 
-  rbind(loc.gee.static)
+  dplyr::select(-zerocols$Label) %>% 
+  cbind(zero.gee)
 
 #20. Save----
 write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"), row.names = FALSE)
