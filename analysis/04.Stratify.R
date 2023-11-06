@@ -9,7 +9,7 @@
 #In this script, we stratify & prepare the data for modelling. Steps include:
 #1. BCR Attribution: Diving the data into BCRs for separate models. Each BCR is buffered by 100km. We do this so that we can feather predictions from adjacent regions together. The exception is the international boundaries between US and Canada, which we don't buffer because spatial layers for the covariates are different on either side of the border. In this case, we use a shapefiles of country boundaries to intersect with the buffered regions.
 
-
+#2. On line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe
 
 
 #PREAMBLE############################
@@ -21,6 +21,7 @@ library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(fasterize) #fast rasterization of shapefiles
 library(exactextractr) #fast & efficient raster extraction
+library(dggridR) #grid for spatial thinning
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -45,6 +46,7 @@ usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>%
 
 #3. Read in BCR shapefile----
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
+  dplyr::filter(subUnit!=0) %>% 
   mutate(bcr=paste0("bcr", subUnit)) %>% 
   st_transform(crs=5072)
 
@@ -108,39 +110,76 @@ bcr.df <- data.frame(do.call(cbind, bcr.ca.list)) %>%
 #12. Remove columns (combos of BCR & country) that don't exist---
 bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
 
-#13. Remove points outside of study area----
-bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
-visit.bcr <- visit %>% 
-  dplyr::filter(id %in% bcr.df$id)
-offsets.bcr <- offsets %>% 
-  dplyr::filter(id %in% bcr.df$id)
-bird.bcr <- bird %>% 
-  dplyr::filter(id %in% bcr.df$id)
+#13. Remove points outside of study area and before min year----
+minyear <- 1980
 
-#14. Package into BCRs----
-# bcrs <- unique(colnames(bcr.df)[-1])
-# bcr.list <- list()
-# for(i in 1:length(bcrs)){bcrs[i]
-#   
-#   bcr.i <- bcr.df[,c("id", bcrs[i])] %>% 
-#     data.table::setnames(c("id", "use")) %>% 
-#     dplyr::filter(!is.na(use))
-#   
-#   bcr.list[[i]] <- list()
-#   
-#   bcr.list[[i]][["visit"]] <- visit.bcr %>% 
-#     dplyr::filter(id %in% bcr.i$id)
-#   
-#   bcr.list[[i]][["offsets"]] <- offsets.bcr %>% 
-#     dplyr::filter(id %in% bcr.i$id)
-#   
-#   bcr.list[[i]][["bird"]] <- bird.bcr %>% 
-#     dplyr::filter(id %in% bcr.i$id)
-# }
-# 
-# names(bcr.list) <- bcrs
+bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
+
+visit.bcr <- visit %>% 
+  dplyr::filter(id %in% bcr.df$id,
+                year >= minyear)
+
+#14. Filter offset and bird objects by remaining visits----
+offsets.bcr <- offsets %>% 
+  dplyr::filter(id %in% visit.bcr$id)
+
+bird.bcr <- bird %>% 
+  dplyr::filter(id %in% visit.bcr$id)
 
 #THIN FOR EACH BOOTSTRAP##############
+
+#1. Get list of BCRs----
+bcrs <- unique(colnames(bcr.df)[-1])
+
+#2. Create grid for thinning----
+grid <- dgconstruct(spacing = 2.5, metric=TRUE)
+
+visit.grid <- visit.bcr %>% 
+  mutate(cell = dgGEO_to_SEQNUM(grid, lon, lat)$seqnum)
+
+length(unique(visit.grid$cell))
+
+#3. Set number of bootstraps----
+
+#4. Set up loop----
+bootstraps <- list()
+
+for(i in 1:length(bcrs)){
+  
+  #5. Select visits within BCR----
+  bcr.i <- bcr.df[,c("id", bcrs[i])] %>%
+    data.table::setnames(c("id", "use")) %>%
+    dplyr::filter(!is.na(use))
+  
+  #6. Filter visits and make year groups----
+  visit.i <- visit.grid %>% 
+     dplyr::filter(id %in% bcr.i$id)
+  
+  #6. Set up bootstrap loop----
+  out <- data.frame(id=bcr.df$id)
+  for(j in 1:boot){
+    
+    #7. Set seed----
+    set.seed(j)
+    
+    #8. Random sample----
+    visit.j <- visit.i %>% 
+      group_by(year, cell) %>% 
+      mutate(rowid = row_number(),
+             use = sample(1:max(rowid), 1)) %>% 
+      ungroup() %>% 
+      dplyr::filter(rowid==use)
+    
+    #9. Set up output----
+    out <- out %>% 
+      mutate(use = ifelse(id %in% visit.j$id, 1, 0))
+    
+  }
+  
+
+  
+  
+}
 
 
 
