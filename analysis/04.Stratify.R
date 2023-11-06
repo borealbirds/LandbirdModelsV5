@@ -23,10 +23,10 @@ library(fasterize) #fast rasterization of shapefiles
 library(exactextractr) #fast & efficient raster extraction
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Load data packages with offsets and covariates----
-load(file.path(root, "03_NM4.1_data_covariates.R"))
+load(file.path(root, "Data", "03_NM5.0_data_covariates.R"))
 
 #BCR ATTRIBUTION#####################
 
@@ -112,9 +112,33 @@ bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
 bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
 visit.bcr <- visit %>% 
   dplyr::filter(id %in% bcr.df$id)
+offsets.bcr <- offsets %>% 
+  dplyr::filter(id %in% bcr.df$id)
+bird.bcr <- bird %>% 
+  dplyr::filter(id %in% bcr.df$id)
 
-
-
+#14. Package into BCRs----
+# bcrs <- unique(colnames(bcr.df)[-1])
+# bcr.list <- list()
+# for(i in 1:length(bcrs)){bcrs[i]
+#   
+#   bcr.i <- bcr.df[,c("id", bcrs[i])] %>% 
+#     data.table::setnames(c("id", "use")) %>% 
+#     dplyr::filter(!is.na(use))
+#   
+#   bcr.list[[i]] <- list()
+#   
+#   bcr.list[[i]][["visit"]] <- visit.bcr %>% 
+#     dplyr::filter(id %in% bcr.i$id)
+#   
+#   bcr.list[[i]][["offsets"]] <- offsets.bcr %>% 
+#     dplyr::filter(id %in% bcr.i$id)
+#   
+#   bcr.list[[i]][["bird"]] <- bird.bcr %>% 
+#     dplyr::filter(id %in% bcr.i$id)
+# }
+# 
+# names(bcr.list) <- bcrs
 
 #THIN FOR EACH BOOTSTRAP##############
 
@@ -125,4 +149,4 @@ visit.bcr <- visit %>%
 
 #SAVE#####
 
-save(visit.bcr, file=file.path(root, "03_NM4.1_data_stratify.Rdata"))
+save(visit.bcr, file=file.path(root, "03_NM5.0_data_stratify.Rdata"))
