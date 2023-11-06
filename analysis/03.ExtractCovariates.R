@@ -547,7 +547,7 @@ for(h in 4:nrow(loop)){
     ee_monitoring(task.list[[i]], max_attempts=1000)
     
     #11.Download to local----
-    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
+    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", "Static", paste0("03_NM4.1_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
     
     print(paste0("Finished batch ", i, " of ", max(loc.gee$loop)))
     
@@ -558,7 +558,7 @@ for(h in 4:nrow(loop)){
 }
 
 #17. Collapse to one object----
-files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)) %>%
+files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Static"), full.names = TRUE)) %>%
   separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "method", "extent", "n"), sep="_", remove=FALSE)
 
 files.gee.cv.200 <- dplyr::filter(files.gee, method=="cv", extent=="200")
@@ -670,26 +670,6 @@ lc.modis <- data.frame(landcover = c(1:17),
                              "barren",
                              "water"))
 
-lc. <- data.frame(landcover = c(1:17),
-                       lcclass = c("evergreen_needleleaf",
-                                   "evergreen_broadleaf",
-                                   "deciduous_needleleaf",
-                                   "deciduous_broadleaf",
-                                   "mixed",
-                                   "shrub_closed",
-                                   "shrub_open",
-                                   "savanna_woody",
-                                   "savanna_open",
-                                   "grassland",
-                                   "wetland",
-                                   "crop_dense",
-                                   "urban",
-                                   "crop_natural",
-                                   "snow", 
-                                   "barren",
-                                   "water"))
-
-
 #3. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
 #   dplyr::select(-geometry)
@@ -708,7 +688,9 @@ for(i in 1:nrow(meth.gee)){
   data.table::setattr(dt, "sorted", "year")
   data.table::setkey(dt, year)
   loc.n.i <- loc.n
+  loc.buff2.i <- loc.buff2
   loc.n.i$yearrd <- dt[J(loc.n$year), roll = "nearest"]$val
+  loc.buff2.i$yearrd <- dt[J(loc.buff2$year), roll = "nearest"]$val
   
   #7. Set up to loop through years----
   loc.j <- list()
@@ -716,17 +698,22 @@ for(i in 1:nrow(meth.gee)){
     
     loc.n.yr <- dplyr::filter(loc.n.i, yearrd==years.gee[j]) %>% 
       mutate(loop = ceiling(row_number()/1000))
+    loc.buff2.yr <- dplyr::filter(loc.buff2.i, yearrd==years.gee[j]) %>% 
+      mutate(loop = ceiling(row_number()/1000))
     
     if(nrow(loc.n.yr) > 0){
       
       #8. Set up to loop through sets----
       loc.k <- list()
+      task.list <- list()
       for(k in 1:max(loc.n.yr$loop)){
         
         loc.n.loop <- dplyr::filter(loc.n.yr, loop==k)
+        loc.buff2.loop <- dplyr::filter(loc.buff2.yr, loop==k)
         
         #9. Send polygons to GEE---
         point <- sf_as_ee(loc.n.loop)
+        poly <- sf_as_ee(loc.buff2.loop)
         
         #10. Set start & end date for image filtering---
         start.k <- paste0(years.gee[j]+meth.gee$YearMatch[i], "-", meth.gee$GEEMonthMin[i], "-01")
@@ -742,8 +729,35 @@ for(i in 1:nrow(meth.gee)){
         img.i <- ee$ImageCollection(meth.gee$Link[i])$filter(ee$Filter$date(start.k, end.k))$select(meth.gee$GEEBand[i])$mean()
         
         #12. Extract----
-        loc.k[[k]] <- ee_extract(x=img.i, y=point)
+        if(meth.gee$Extraction[i]=="point"){
+          loc.k[[k]] <- ee_extract(x=img.i, y=point)
+        }
         
+        if(meth.gee$Extraction[i]=="radius"){
+          
+          if(meth.gee$RadiusFunction[i]=="mean"){
+            img.red <- img.i$reduceRegions(reducer=ee$Reducer$mean(),
+                                               collection=poly)
+          }
+          
+          if(meth.gee$RadiusFunction[i]=="mode"){
+            img.red <- img.i$reduceRegions(reducer=ee$Reducer$mode(),
+                                           collection=poly)
+          }
+          
+          task.list[[k]] <- ee_table_to_gcs(collection=img.red,
+                                            bucket="national_models",
+                                            fileFormat = "CSV")
+          task.list[[k]]$start()
+          
+          ee_monitoring(task.list[[k]], max_attempts=1000)
+          
+          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM4.1_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+        
+          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM4.1_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+          
+        }
+
         print(paste0("Finished batch ", k, " of ", max(loc.n.yr$loop)))
         
       }
