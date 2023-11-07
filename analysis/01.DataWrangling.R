@@ -4,9 +4,6 @@
 # created: Novemeber 17, 2022
 # ---
 
-#TO DO: Investigate spatial vs temporal distribution of data
-#TO DO: Data gap analysis
-
 #NOTES################################
 
 #The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in ABMI models (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
