@@ -9,13 +9,11 @@
 #In this script, we stratify & prepare the data for modelling. Steps include:
 #1. BCR Attribution: Diving the data into BCRs for separate models. Each BCR is buffered by 100km. We do this so that we can feather predictions from adjacent regions together. The exception is the international boundaries between US and Canada, which we don't buffer because spatial layers for the covariates are different on either side of the border. In this case, we use a shapefiles of country boundaries to intersect with the buffered regions.
 
-#2. Filtering out data outside the study area and prior to 1980
+#2. Filtering the data. We remove data outside the study area, data before a minimum year, and data outside of dawn surveys. Additional dataset filtering steps can be added here as necessary.
 
-#3. Assigning each survey to a grid cell (1.9 km spacing)
+#3. Thinning. First we assign each survey to a grid cell (1.9 km spacing) Then we randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe.
 
-#4. Randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe.
-
-#5. Removing species that are not present for each subunit
+#4. Indicating species that should be modelled for each subunit based on a minimum detection threshold.
 
 #PREAMBLE############################
 
@@ -34,6 +32,9 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 #3. Load data packages with offsets and covariates----
 load(file.path(root, "Data", "03_NM5.0_data_covariates.R"))
 
+#4. Turn off scientific notation---
+options(scipen=99999)
+
 #BCR ATTRIBUTION#####################
 
 #1. Make visit a vector object----
@@ -51,9 +52,10 @@ usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>%
 
 #3. Read in BCR shapefile----
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=0) %>% 
-  mutate(bcr=paste0("bcr", subUnit)) %>% 
-  st_transform(crs=5072)
+  mutate(area = as.numeric(st_area(read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")))),
+         bcr=paste0("bcr", subUnit)) %>% 
+  st_transform(crs=5072) %>% 
+  dplyr::filter(subUnit != 0)
 
 ggplot() +
   geom_sf(data=bcr, aes(fill=bcr))
@@ -115,11 +117,18 @@ bcr.df <- data.frame(do.call(cbind, bcr.ca.list)) %>%
 #12. Remove columns (combos of BCR & country) that don't exist---
 bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
 
-#13. Remove points outside of study area and before min year----
+#FILTERING######################
+
+#1. Set filters----
+
+#Minimum year of data
 minyear <- 1980
+
+#
 
 bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
 
+#1. Remove points outside of study area and additional filtering----
 visit.bcr <- visit %>% 
   dplyr::filter(id %in% bcr.df$id,
                 year >= minyear)
@@ -145,6 +154,7 @@ visit.grid <- visit.bcr %>%
 length(unique(visit.grid$cell))
 
 #3. Set number of bootstraps----
+boot <- 100
 
 #4. Set up loop----
 bootstraps <- list()
@@ -176,21 +186,35 @@ for(i in 1:length(bcrs)){
       dplyr::filter(rowid==use)
     
     #9. Set up output----
-    out <- out %>% 
-      mutate(use = ifelse(id %in% visit.j$id, 1, 0))
+    out[,(j+1)] <- bcr.df$id %in% visit.j$id
     
   }
   
-
+  #10. Fix column names----
+  x <- seq(1, boot, 1)
+  colnames(out) <- c("id", paste0("X", x))
+  bootstraps[[i]] <- out
   
+  print(paste0("Finished thinning ", bcrs[i], ": ", i, " of ", length(bcrs)))
   
 }
 
-
-
+#11. Label by BCR----
+names(bootstraps) <- bcrs
 
 #UPDATE BIRD LIST BY BCR##############
 
+#1. Get list of species----
+spp <- colnames(bird.bcr)[2:ncol(bird.bcr)]
+
+#2. Set up loop----
+birdlist <- data.frame()
+
+for()
+
+
+#MAKE 
+
 #SAVE#####
 
-save(visit.bcr, file=file.path(root, "03_NM5.0_data_stratify.Rdata"))
+save(visit.bcr, bird.bcr, offsets.bcr, bootstraps, file=file.path(root, "03_NM5.0_data_stratify.Rdata"))
