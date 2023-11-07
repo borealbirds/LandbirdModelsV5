@@ -70,7 +70,14 @@ x.utc <- make_x(visit.x.utc, tz="utc")
 x.utc$id <- visit.x.utc$id
 x <- rbind(x.local, x.utc)
 
-#C. CALCULATE OFFSETS####
+#5. Add temporal covs to visits object
+visit <- visit %>% 
+  left_join(x %>% 
+              mutate(tssr = 24*TSSR,
+                     jday = JDAY*365) %>% 
+              dplyr::select(id, tssr, jday))
+
+#D. CALCULATE OFFSETS####
 
 #1. Get list of species----
 spp <- getBAMspecieslist()
@@ -87,7 +94,7 @@ for (i in 1:length(spp)) {
 }
 colnames(offsets) <- c("id", spp)
 
-#D. SAVE####
+#E. SAVE####
 
 #1. Save----
 save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.R"))
