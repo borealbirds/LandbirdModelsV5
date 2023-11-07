@@ -15,13 +15,8 @@
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #CHECKLIST
-#TO DO: HERMOSILLA, MODIS 5x5, SCANFI 5X5, BIOMASS 5X5
+#TO DO: HERMOSILLA, MODIS 5x5, SCANFI 5X5
 
-
-#GOOGLE DRIVE - DONE EXCEPT HERMOSILLA
-#SCANFI - DONE
-#GOOGLE EARTH STATIC - DONE
-#GOOGLE EARTH TEMPORAL - DONE
 #5x5 - IN PROGRESS
 
 #WRANGLING - NOT DONE
@@ -44,14 +39,6 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Get extraction methods lookup table----
 meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
-
-#4. GEE CV function----
-geecv <- function(img.stack){
-  mn <- img.stack$reduceRegions(reducer=ee$Reducer$mean(), collection=poly)
-  std <- img.stack$reduceRegions(reducer=ee$Reducer$stdDev(), collection=poly)
-  cv <- img.stack$set('cv', std$get('stdDev')$divide(mean$get('mean')))
-  return(cv)
-}
 
 #A. DATA PREP####
 
@@ -816,8 +803,7 @@ visit <- visit.old %>%
               dplyr::select(-lat, -lon)) %>% 
   left_join(loc.scanfi %>% 
               dplyr::select(-lat, -lon)) %>% 
-  left_join(loc.gee.static %>% 
-              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.gee.static) %>% 
   left_join(loc.gee.match %>% 
               dplyr::select(-lat, -lon)) %>% 
   dplyr::select(-id) %>% 
