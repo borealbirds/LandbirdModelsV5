@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - presentation statistics & figures
+# title: National Models 4.1 - dataset extraction
 # author: Elly Knight
 # created: November 2, 2023
 # ---
@@ -19,10 +19,10 @@ library(sf)
 library(gridExtra)
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Load data----
-load(file=file.path(root, "Data", "03_NM4.1_data_stratify.R"))
+load(file=file.path(root, "Data", "03_NM5.0_data_stratify.R"))
 
 #BC COVERAGE FOR DAN#####
 
