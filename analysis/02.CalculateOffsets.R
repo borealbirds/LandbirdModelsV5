@@ -97,4 +97,4 @@ colnames(offsets) <- c("id", spp)
 #E. SAVE####
 
 #1. Save----
-save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.R"))
+save(visit, bird, offsets, file=file.path(root, "Data", "02_NM5.0_data_offsets.R"))

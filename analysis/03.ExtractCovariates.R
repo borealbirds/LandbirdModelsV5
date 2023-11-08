@@ -318,27 +318,27 @@ loc.scanfi.sa <- loc.n %>%
   terra::extract(x=rast.scanfi, ID=FALSE)
 colnames(loc.scanfi.sa) <- "scanfi"
 
-#4. Get lookup table to match year of data to year of SCANFI----
-#Use only buffer object because all extractions are radius method
-years.dat <- data.frame(year=unique(loc.scanfi.buff$year)) %>% 
-  mutate(year.rd = round(year/5)*5,
-         year.rd = ifelse(year.rd < 1985, 1985, year.rd)) %>% 
-  arrange(year)
-
-#5. Rebuffer and add year of SCANFI data----
+#4. Rebuffer----
 loc.scanfi.buff <- cbind(loc.n, loc.scanfi.sa) %>% 
   dplyr::filter(!is.na(scanfi)) %>% 
   st_transform(5072) %>% 
   st_buffer(200) %>% 
-  st_transform(crs(rast.scanfi)) %>% 
-  left_join(years.dat)
+  st_transform(crs(rast.scanfi))
 
 loc.scanfi.buff2 <- cbind(loc.n, loc.scanfi.sa) %>% 
   dplyr::filter(!is.na(scanfi)) %>% 
   st_transform(5072) %>% 
   st_buffer(2000) %>% 
-  st_transform(crs(rast.scanfi)) %>% 
-  left_join(years.dat)
+  st_transform(crs(rast.scanfi))
+
+#5. Match year of data to year of SCANFI----
+#Use only buffer object because all extractions are radius method
+years.scanfi <- unique(files.scanfi$year)
+dt = data.table::data.table(year=years.scanfi, val=years.scanfi)
+data.table::setattr(dt, "sorted", "year")
+data.table::setkey(dt, year)
+loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
+loc.scanfi.buff2$year.rd <- dt[J(loc.scanfi.buff2$year), roll = "nearest"]$val
 
 #6. Read in/create dataframe----
 #loc.scanfi <- data.frame()
@@ -346,7 +346,7 @@ loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_cova
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
-for(i in 1:length(years.scanfi)){
+for(i in 7:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -739,9 +739,9 @@ for(i in 1:nrow(meth.gee)){
           
           ee_monitoring(task.list[[k]], max_attempts=1000)
           
-          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", years.gee[j], "_", k, ".csv")))
         
-          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", k, ".csv")))
+          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", years.gee[j], "_", k, ".csv")))
           
         }
 
@@ -812,4 +812,4 @@ visit <- visit.old %>%
 #4. Remove things with NAs for certain layers????
 
 #G. SAVE#####
-save(visit, bird,  offsets, file=file.path(root, "03_NM5.0_data_covariates.R"))
+save(visit, bird,  offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
