@@ -6,7 +6,7 @@
 
 #NOTES################################
 
-#The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in ABMI models (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
+#The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in national (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
 
 #The "projectInstructions.csv" file also contains information on which ARU projects are processed for a single species or taxa (instructions=="DO NOT USE") and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. These projects are currently not included in the models.
 
