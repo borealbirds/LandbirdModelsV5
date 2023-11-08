@@ -74,10 +74,35 @@ lr <- c(0.01, 0.005, 0.001, 0.0005, 0.0001)
 #Interaction depth
 id <- c(2, 3, 4)
 
+#2. Get BCR & bird lists----
+spp <- colnames(bird)[2:ncol(bird)]
+
+bcrs <- rownames(bootstraps)
+
+#For running on cluster
 loop <- expand.grid(lr, id)
 
-#2. Set up BCR
+#For testing on local
+if(test) {loop <- loop[,1:2]}
+
+#2. Load BRT function----
+load("00.BRTFunction.R")
+
+#3. Run BRT function in parallel----
 
 
+#SELECT PARAMETERS####
+
+
+
+#CONCLUDE####
+
+#1. Save----
+
+#2. Close clusters----
+print("* Shutting down clusters *")
+stopCluster(cl)
+
+if(!test){ q() }
 
 
