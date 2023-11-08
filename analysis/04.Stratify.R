@@ -4,6 +4,9 @@
 # created: September 29, 2022
 # ---
 
+#TO DO: FIX BCR USA INTERACTION####
+#TO DO: FIGURE OUT COVARIATE SELECTION TABLE APPROACH####
+
 #NOTES################################
 
 #In this script, we stratify & prepare the data for modelling. Steps include:
@@ -213,7 +216,7 @@ for(i in 1:length(bcrs)){
   
 }
 
-#11. Label by BCR----
+#11. Label list items by BCR----
 names(bootstraps) <- bcrs
 
 #UPDATE BIRD LIST BY BCR##############
@@ -222,7 +225,7 @@ names(bootstraps) <- bcrs
 nmin <- 30
 
 #2. Set up loop----
-birdlist <- data.frame(id = bcr.df$id)
+birdlist <- data.frame(bcr=bcrs)
 
 for(i in 1:length(bcrs)){
   
@@ -236,10 +239,12 @@ for(i in 1:length(bcrs)){
     dplyr::filter(id %in% bcr.i$id)
   
   #5. Determine whether exceeds threshold----
-  birdlist[i,c(2:nrow(bird.bcr))] <- colSums(bird.i) > nmin
+  birdlist[i,c(2:ncol(bird.bcr))] <- colSums(bird.i[2:ncol(bird.bcr)]) > nmin
   
 }
 
+#6. Rename columns with bird ID----
+colnames(birdlist) <- c("id", colnames(bird.bcr[2:ncol(bird.bcr)]))
 
 #MAKE COVARIATE LOOKUP####
 
