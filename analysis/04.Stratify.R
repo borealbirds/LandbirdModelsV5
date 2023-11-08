@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - stratify by BCR*country
+# title: National Models 5.0 - stratify by BCR*country
 # author: Elly Knight
 # created: September 29, 2022
 # ---
@@ -7,13 +7,16 @@
 #NOTES################################
 
 #In this script, we stratify & prepare the data for modelling. Steps include:
+
 #1. BCR Attribution: Diving the data into BCRs for separate models. Each BCR is buffered by 100km. We do this so that we can feather predictions from adjacent regions together. The exception is the international boundaries between US and Canada, which we don't buffer because spatial layers for the covariates are different on either side of the border. In this case, we use a shapefiles of country boundaries to intersect with the buffered regions.
 
 #2. Filtering the data. We remove data outside the study area, data before a minimum year, and data outside of dawn surveys. Additional dataset filtering steps can be added here as necessary.
 
-#3. Thinning. First we assign each survey to a grid cell (1.9 km spacing) Then we randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe.
+#3. Thinning. First we assign each survey to a grid cell (1.9 km spacing) Then we randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe. This step takes a while to run.
 
 #4. Indicating species that should be modelled for each subunit based on a minimum detection threshold.
+
+#Removal of non-dawn surveys is a secondary line of defense in case temporal patterns of QPAD offsets are unrealistic. In other words, we are restricting the dataset to times of day when p(availability) should be relatively high. This filter should be removed once QPAD offsets have been revisited. It should also be revisited if/when the national models include nocturnal species.
 
 #PREAMBLE############################
 
@@ -124,14 +127,25 @@ bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
 #Minimum year of data
 minyear <- 1980
 
-#
+#Survey time
+mintssr <- -1
+maxtssr <- 6
 
+#day of year
+minday <- 135 #May 15
+maxday <- 196 #July 15
+
+#2. Remove points outside study area
 bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
 
-#1. Remove points outside of study area and additional filtering----
+#3. Filter visits----
 visit.bcr <- visit %>% 
   dplyr::filter(id %in% bcr.df$id,
-                year >= minyear)
+                year >= minyear,
+                tssr >= mintssr,
+                tssr <= maxtssr,
+                jday >= minday,
+                jday <= maxday)
 
 #14. Filter offset and bird objects by remaining visits----
 offsets.bcr <- offsets %>% 
@@ -166,7 +180,7 @@ for(i in 1:length(bcrs)){
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(!is.na(use))
   
-  #6. Filter visits and make year groups----
+  #6. Filter visits----
   visit.i <- visit.grid %>% 
      dplyr::filter(id %in% bcr.i$id)
   
@@ -204,17 +218,36 @@ names(bootstraps) <- bcrs
 
 #UPDATE BIRD LIST BY BCR##############
 
-#1. Get list of species----
-spp <- colnames(bird.bcr)[2:ncol(bird.bcr)]
+#1. Set detection threshold for inclusion----
+nmin <- 30
 
 #2. Set up loop----
-birdlist <- data.frame()
+birdlist <- data.frame(id = bcr.df$id)
 
-for()
+for(i in 1:length(bcrs)){
+  
+  #3. Select visits within BCR----
+  bcr.i <- bcr.df[,c("id", bcrs[i])] %>%
+    data.table::setnames(c("id", "use")) %>%
+    dplyr::filter(!is.na(use))
+  
+  #4. Filter bird data----
+  bird.i <- bird.bcr %>% 
+    dplyr::filter(id %in% bcr.i$id)
+  
+  #5. Determine whether exceeds threshold----
+  birdlist[i,c(2:nrow(bird.bcr))] <- colSums(bird.i) > nmin
+  
+}
 
 
-#MAKE 
+#MAKE COVARIATE LOOKUP####
 
 #SAVE#####
 
-save(visit.bcr, bird.bcr, offsets.bcr, bootstraps, file=file.path(root, "03_NM5.0_data_stratify.Rdata"))
+#1. Rename objects----
+visit <- visit.bcr
+bird <- bird.bcr
+offsets <- offsets.bcr
+
+save(visit, bird, offsets, bootstraps, birdlist, file=file.path(root, "04_NM5.0_data_stratify.Rdata"))
