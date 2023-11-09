@@ -4,7 +4,6 @@
 # created: September 29, 2022
 # ---
 
-#TO DO: FIX BCR USA INTERACTION####
 #TO DO: FIGURE OUT COVARIATE SELECTION TABLE APPROACH####
 
 #NOTES################################
@@ -57,71 +56,53 @@ usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>%
   st_transform(crs=5072) 
 
 #3. Read in BCR shapefile----
+#Merge subunit 0 with 14; too small to model
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  mutate(area = as.numeric(st_area(read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")))),
-         bcr=paste0("bcr", subUnit)) %>% 
-  st_transform(crs=5072) %>% 
-  dplyr::filter(subUnit != 0)
+  mutate(subUnit = ifelse(subUnit==0, 14, subUnit)) %>% 
+  group_by(subUnit) %>% 
+  summarize(geometry = st_union(geometry)) %>% 
+  ungroup() %>% 
+  st_transform(crs=5072)
 
-ggplot() +
-  geom_sf(data=bcr, aes(fill=bcr))
+ggplot(bcr) +
+  geom_sf(aes(fill=factor(subUnit)))
+
+#4. Identify BCRs for each country----
+bcr.ca <- bcr %>% 
+  st_intersection(can) %>% 
+  mutate(country="ca")
+
+bcr.usa <- bcr %>% 
+  st_intersection(usa) %>% 
+  mutate(country="usa")
+
+bcr.country <- rbind(bcr.ca, bcr.usa)
   
-#3. Set up loop for Canada BCR----
-bcr.ca.list <- list(id=visit$id)
-for(i in 1:nrow(bcr)){
+#5. Set up loop for Canada BCR----
+bcr.df <- data.frame(id=visit$id)
+for(i in 1:nrow(bcr.country)){
   
-  #4. Filter, buffer, & crop bcr shapefile to Canada----
-  bcr.ca <- bcr %>% 
+  #6. Filter & buffer shapefile----
+  bcr.buff <- bcr.country %>% 
     dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000) %>% 
-    mutate(bcr=1) %>% 
-    st_intersection(can)
+    st_buffer(100000)
   
-  if(nrow(bcr.ca) > 0){
-    #5. Convert to raster for fast extraction----
-    r <- rast(ext(bcr.ca), resolution=1000, crs=crs(bcr.ca))
-    bcr.r <- rasterize(x=bcr.ca, y=r, field="bcr")
-    
-    #6. Extract raster value----
-    bcr.ca.list[[i+1]] <- extract(x=bcr.r, y=visit.v)[,2]
-    names(bcr.ca.list)[i+1] <- paste0("ca-", bcr$bcr[i])
-  }
+  #7. Crop to international boundary----
+  if(bcr.buff$country=="ca"){ bcr.i <- st_intersection(bcr.buff, can)}
+  if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
   
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr)))
+  #8. Convert to raster for fast extraction----
+  r <- rast(ext(bcr.i), resolution=1000, crs=crs(bcr.i))
+  bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
+  
+  #9. Extract raster value----
+  bcr.df[,(i+1)] <- extract(x=bcr.r, y=visit.v)[,2]
+  
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
   
 }
 
-#7. Set up loop for USA BCR----
-bcr.usa.list <- list(id=visit$id)
-for(i in 1:nrow(bcr)){
-  
-  #8. Filter, buffer, & crop bcr shapefile to Canada----
-  bcr.usa <- bcr %>% 
-    dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000) %>% 
-    mutate(bcr=1) %>% 
-    st_intersection(usa)
-  
-  if(nrow(bcr.usa) > 0){
-    #9. Convert to raster for fast extraction----
-    r <- rast(ext(bcr.usa), resolution=1000, crs=crs(bcr.usa))
-    bcr.r <- rasterize(x=bcr.usa, y=r, field="bcr")
-    
-    #10. Extract raster value----
-    bcr.usa.list[[i+1]] <- extract(x=bcr.r, y=visit.v)[,2]
-    names(bcr.usa.list)[i+1] <- paste0("usa-", bcr$bcr[i])
-  }
-
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr)))
-  
-}
-
-#11. Collapse to dataframe and name----
-bcr.df <- data.frame(do.call(cbind, bcr.ca.list)) %>% 
-  left_join(data.frame(do.call(cbind, bcr.usa.list)))
-
-#12. Remove columns (combos of BCR & country) that don't exist---
-bcr.df <- bcr.df[colSums(!is.na(bcr.df))>0]
+colnames(bcr.df) <- c("id", paste0(bcr.country$country, "_", bcr.country$subUnit))
 
 #FILTERING######################
 
