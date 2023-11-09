@@ -1,5 +1,29 @@
 brtrun <- function(i){
   
-  bird.i <- 
+  #1. Get model settings---
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  boot.i <- loop$boot[i]
+  
+  #2. Get visits to include----
+  visit.i <- visit[bootstraps[[bcr.i]][,boot.i+1]]
+  
+  #3. Get response data (bird data)----
+  bird.i <- bird[bird$id==visit.i$id, spp.i]
+  
+  #4. Get covariates----
+  #TO DO: UPDATE THIS!!!!
+  
+  #5. Put together data object----
+  dat.i <- rbind(bird.i, visit.i)
+  
+  #6. Get offsets----
+  off.i <- offsets[offsets$id==visit.i$id, spp.i]
+  
+  #7. Run model----
+  m.i <- dismo::gbm.step()
+  
+  
+  
     
 }
