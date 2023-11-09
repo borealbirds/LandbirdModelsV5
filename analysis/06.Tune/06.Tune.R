@@ -20,13 +20,19 @@
 
 #PREAMBLE############################
 
-#1. Determine if testing on local----
-test <- FALSE
+#1. Load packages----
+print("* Loading packages on master *")
+library(tidyverse)
+library(dismo)
+library(parallel)
 
-#2. Set root path for data on google drive (for local testing)----
+#2. Determine if testing on local----
+test <- TRUE
+
+#3. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
-#3. Create nodes list----
+#4. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
@@ -37,20 +43,15 @@ if(test){ nodeslist <- 2 }
 
 print(nodeslist)
 
-#4. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#5. Load packages----
-print("* Loading packages on master *")
-library(tidyverse)
-library(dismo)
-library(parallel)
-
+#6. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 
-#6. Load data----
+#7. Load data----
 print("* Loading data on master *")
 
 #For running on cluster
@@ -62,7 +63,7 @@ if(test){ load(file.path(root, "Data", "04_NM5.0_data_stratify.Rdata")) }
 print("* Loading data on workers *")
 
 if(!test){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NM")) }
-tmpcl <- clusterExport(cl, c("DATA OBECTS HERE"))
+tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "bootstraps", "birdlist"))
 
 #RUN MODELS###############
 
@@ -74,21 +75,30 @@ lr <- c(0.01, 0.005, 0.001, 0.0005, 0.0001)
 #Interaction depth
 id <- c(2, 3, 4)
 
-#2. Get BCR & bird lists----
-spp <- colnames(bird)[2:ncol(bird)]
+#2. Set number of bootstraps----
+boot <- 1
 
-bcrs <- rownames(bootstraps)
+#3. Get BCR & bird combo list----
+bcr.spp <- birdlist %>% 
+  rename(bcr=id) %>% 
+  pivot_longer(ABDU:YTVI, names_to="spp", values_to="use") %>% 
+  dplyr::filter(use==TRUE)
+
+#4. Make dataframe of models to run----
 
 #For running on cluster
-loop <- expand.grid(lr, id)
+loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
+  merge(bcr.spp) %>% 
+  dplyr::select(-use)
+tmpcl <- clusterExport(cl, c("loop"))
 
 #For testing on local
-if(test) {loop <- loop[,1:2]}
+if(test) {loop <- loop[1:2,]}
 
-#2. Load BRT function----
+#5. Load BRT function----
 load("00.BRTFunction.R")
 
-#3. Run BRT function in parallel----
+#6. Run BRT function in parallel----
 
 
 #SELECT PARAMETERS####
