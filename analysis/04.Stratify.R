@@ -4,8 +4,6 @@
 # created: September 29, 2022
 # ---
 
-#TO DO: FIGURE OUT COVARIATE SELECTION TABLE APPROACH####
-
 #NOTES################################
 
 #In this script, we stratify & prepare the data for modelling. Steps include:
@@ -96,7 +94,9 @@ for(i in 1:nrow(bcr.country)){
   bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
   
   #9. Extract raster value----
-  bcr.df[,(i+1)] <- extract(x=bcr.r, y=visit.v)[,2]
+  bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) %>% 
+    mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
+  bcr.df[,(i+1)] <- bcr.out$use
   
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
   
@@ -226,8 +226,6 @@ for(i in 1:length(bcrs)){
 
 #6. Rename columns with bird ID----
 colnames(birdlist) <- c("id", colnames(bird.bcr[2:ncol(bird.bcr)]))
-
-#MAKE COVARIATE LOOKUP####
 
 #SAVE#####
 
