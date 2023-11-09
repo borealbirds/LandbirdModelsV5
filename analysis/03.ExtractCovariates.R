@@ -811,5 +811,9 @@ visit <- visit.old %>%
 
 #4. Remove things with NAs for certain layers????
 
+#F. COVARIATE LOOKUP TABLE###############
+
+
+
 #G. SAVE#####
 save(visit, bird,  offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
