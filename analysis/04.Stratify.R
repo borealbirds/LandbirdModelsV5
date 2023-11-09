@@ -120,33 +120,36 @@ minday <- 135 #May 15
 maxday <- 196 #July 15
 
 #2. Remove points outside study area
-bcr.df <- bcr.df[rowSums(!is.na(bcr.df[,c(2:ncol(bcr.df))]))>0,]
+bcr.in <- bcr.df[rowSums(ifelse(bcr.df==TRUE, 1, 0)) > 0,]
 
 #3. Filter visits----
-visit.bcr <- visit %>% 
-  dplyr::filter(id %in% bcr.df$id,
+visit.use <- visit %>% 
+  dplyr::filter(id %in% bcr.in$id,
                 year >= minyear,
                 tssr >= mintssr,
                 tssr <= maxtssr,
                 jday >= minday,
                 jday <= maxday)
 
-#14. Filter offset and bird objects by remaining visits----
-offsets.bcr <- offsets %>% 
-  dplyr::filter(id %in% visit.bcr$id)
+#14. Filter offset, bird, and bcr objects by remaining visits----
+offsets.use <- offsets %>% 
+  dplyr::filter(id %in% visit.use$id)
 
-bird.bcr <- bird %>% 
-  dplyr::filter(id %in% visit.bcr$id)
+bird.use <- bird %>% 
+  dplyr::filter(id %in% visit.use$id)
+
+bcr.use <- bcr.in %>% 
+  dplyr::filter(id %in% visit.use$id)
 
 #THIN FOR EACH BOOTSTRAP##############
 
 #1. Get list of BCRs----
-bcrs <- unique(colnames(bcr.df)[-1])
+bcrs <- unique(colnames(bcr.use)[-1])
 
 #2. Create grid for thinning----
 grid <- dgconstruct(spacing = 2.5, metric=TRUE)
 
-visit.grid <- visit.bcr %>% 
+visit.grid <- visit.use %>% 
   mutate(cell = dgGEO_to_SEQNUM(grid, lon, lat)$seqnum)
 
 length(unique(visit.grid$cell))
@@ -160,7 +163,7 @@ bootstraps <- list()
 for(i in 1:length(bcrs)){
   
   #5. Select visits within BCR----
-  bcr.i <- bcr.df[,c("id", bcrs[i])] %>%
+  bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(!is.na(use))
   
@@ -169,7 +172,7 @@ for(i in 1:length(bcrs)){
      dplyr::filter(id %in% bcr.i$id)
   
   #6. Set up bootstrap loop----
-  out <- data.frame(id=bcr.df$id)
+  out <- data.frame(id=bcr.use$id)
   for(j in 1:boot){
     
     #7. Set seed----
@@ -184,7 +187,7 @@ for(i in 1:length(bcrs)){
       dplyr::filter(rowid==use)
     
     #9. Set up output----
-    out[,(j+1)] <- bcr.df$id %in% visit.j$id
+    out[,(j+1)] <- bcr.use$id %in% visit.j$id
     
   }
   
@@ -211,27 +214,27 @@ birdlist <- data.frame(bcr=bcrs)
 for(i in 1:length(bcrs)){
   
   #3. Select visits within BCR----
-  bcr.i <- bcr.df[,c("id", bcrs[i])] %>%
+  bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(!is.na(use))
   
   #4. Filter bird data----
-  bird.i <- bird.bcr %>% 
+  bird.i <- bird.use %>% 
     dplyr::filter(id %in% bcr.i$id)
   
   #5. Determine whether exceeds threshold----
-  birdlist[i,c(2:ncol(bird.bcr))] <- colSums(bird.i[2:ncol(bird.bcr)]) > nmin
+  birdlist[i,c(2:ncol(bird.use))] <- colSums(bird.i[2:ncol(bird.use)]) > nmin
   
 }
 
 #6. Rename columns with bird ID----
-colnames(birdlist) <- c("bcr", colnames(bird.bcr[2:ncol(bird.bcr)]))
+colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
 
 #SAVE#####
 
 #1. Rename objects----
-visit <- visit.bcr
-bird <- bird.bcr
-offsets <- offsets.bcr
+visit <- visit.use
+bird <- bird.use
+offsets <- offsets.use
 
 save(visit, bird, offsets, bootstraps, birdlist, file=file.path(root, "04_NM5.0_data_stratify.Rdata"))
