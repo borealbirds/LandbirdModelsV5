@@ -225,7 +225,7 @@ for(i in 1:length(bcrs)){
 }
 
 #6. Rename columns with bird ID----
-colnames(birdlist) <- c("id", colnames(bird.bcr[2:ncol(bird.bcr)]))
+colnames(birdlist) <- c("bcr", colnames(bird.bcr[2:ncol(bird.bcr)]))
 
 #SAVE#####
 
