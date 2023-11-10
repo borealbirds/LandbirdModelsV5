@@ -1,4 +1,4 @@
-gbm.step.run <- function(i){
+brt.tune <- function(i){
   
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
@@ -14,6 +14,7 @@ gbm.step.run <- function(i){
   bird.i <- bird[bird$id==visit.i$id, spp.i]
   
   #4. Get covariates----
+  #TO DO: UPDATE THIS!!!!
   covlist.i <- covlist[covlist$id==bcr.i,]
   cov.i <- visit.i[,colnames(visit.i) %in% covlist.i==TRUE]
   

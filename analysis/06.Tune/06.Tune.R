@@ -99,6 +99,10 @@ if(test) {loop <- loop[1:2,]}
 load("00.BRTFunction.R")
 
 #6. Run BRT function in parallel----
+print("* Fitting models *")
+mods <- parLapply(cl,
+                  1:nrow(loop),
+                  fun=brt.tune)
 
 
 #SELECT PARAMETERS####
