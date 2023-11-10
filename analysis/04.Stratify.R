@@ -12,9 +12,13 @@
 
 #2. Filtering the data. We remove data outside the study area, data before a minimum year, and data outside of dawn surveys. Additional dataset filtering steps can be added here as necessary.
 
-#3. Thinning. First we assign each survey to a grid cell (1.9 km spacing) Then we randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe. This step takes a while to run.
+#3. Aggregating subunits based on minimum sample size threshold. Sample sizes are very low in some subunits in Alaska and northwestern BC.
 
-#4. Indicating species that should be modelled for each subunit based on a minimum detection threshold.
+#4. Thinning. First we assign each survey to a grid cell (1.9 km spacing) Then we randomly selecting one survey per cell per year for each bootstrap. Note on line 186-192, we use an alternative to sample_n(), which does provide a truly random sample and biases towards lines of data near the top of the dataframe. This step takes a while to run.
+
+#5. Indicating species that should be modelled for each subunit based on a minimum detection threshold.
+
+#6. Determining which covariates should be used for each subunit. This is done using the same extraction lookup table as the '03.ExtractCovariates.R' script. For each subunit, we choose the version of a covariate with the highest priority that has full coverage for that subunit. We then rename the covariates so that they match the naming conventions of the prediction layers for the prediction step.
 
 #Removal of non-dawn surveys is a secondary line of defense in case temporal patterns of QPAD offsets are unrealistic. In other words, we are restricting the dataset to times of day when p(availability) should be relatively high. This filter should be removed once QPAD offsets have been revisited. It should also be revisited if/when the national models include nocturnal species.
 
@@ -54,12 +58,9 @@ usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>%
   st_transform(crs=5072) 
 
 #3. Read in BCR shapefile----
-#Merge subunit 0 with 14; too small to model
+#Remove subunit 1
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  mutate(subUnit = ifelse(subUnit==0, 14, subUnit)) %>% 
-  group_by(subUnit) %>% 
-  summarize(geometry = st_union(geometry)) %>% 
-  ungroup() %>% 
+  dplyr::filter(subUnit!=1) %>% 
   st_transform(crs=5072)
 
 ggplot(bcr) +
@@ -76,7 +77,7 @@ bcr.usa <- bcr %>%
 
 bcr.country <- rbind(bcr.ca, bcr.usa)
   
-#5. Set up loop for Canada BCR----
+#5. Set up loop for BCR attribution----
 bcr.df <- data.frame(id=visit$id)
 for(i in 1:nrow(bcr.country)){
   
@@ -131,7 +132,7 @@ visit.use <- visit %>%
                 jday >= minday,
                 jday <= maxday)
 
-#14. Filter offset, bird, and bcr objects by remaining visits----
+#4. Filter offset, bird, and bcr objects by remaining visits----
 offsets.use <- offsets %>% 
   dplyr::filter(id %in% visit.use$id)
 
@@ -140,6 +141,31 @@ bird.use <- bird %>%
 
 bcr.use <- bcr.in %>% 
   dplyr::filter(id %in% visit.use$id)
+
+#SAMPLE SIZE AGGREGATION##############
+
+#1. Summarize subunit sample sizes----
+bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
+                    n = colSums(bcr.use[-1]==TRUE)) %>% 
+  arrange(n)
+
+write.csv(bcr.n, file.path(root, "Data", "SubUnitSampleSizes.csv"), row.names=FALSE)
+
+#2. Plot sample sizes----
+bcr.sf <- bcr.country %>% 
+  mutate(bcr = paste0(country, "_", subUnit)) %>% 
+  left_join(bcr.n)
+
+ggplot(bcr.sf) +
+  geom_sf(aes(group=bcr, fill=log(n))) +
+  scale_fill_viridis_c()
+
+ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8, height = 4)
+
+#3. Set sample size minimum----
+
+
+#4. Aggregate subunits----
 
 #THIN FOR EACH BOOTSTRAP##############
 
@@ -154,18 +180,18 @@ visit.grid <- visit.use %>%
 
 length(unique(visit.grid$cell))
 
-#3. Set number of bootstraps----
+#3. Set number of bootlist----
 boot <- 100
 
 #4. Set up loop----
-bootstraps <- list()
+bootlist <- list()
 
 for(i in 1:length(bcrs)){
   
   #5. Select visits within BCR----
   bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
-    dplyr::filter(!is.na(use))
+    dplyr::filter(use==TRUE)
   
   #6. Filter visits----
   visit.i <- visit.grid %>% 
@@ -194,14 +220,14 @@ for(i in 1:length(bcrs)){
   #10. Fix column names----
   x <- seq(1, boot, 1)
   colnames(out) <- c("id", paste0("X", x))
-  bootstraps[[i]] <- out
+  bootlist[[i]] <- out
   
   print(paste0("Finished thinning ", bcrs[i], ": ", i, " of ", length(bcrs)))
   
 }
 
 #11. Label list items by BCR----
-names(bootstraps) <- bcrs
+names(bootlist) <- bcrs
 
 #UPDATE BIRD LIST BY BCR##############
 
@@ -216,7 +242,7 @@ for(i in 1:length(bcrs)){
   #3. Select visits within BCR----
   bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
-    dplyr::filter(!is.na(use))
+    dplyr::filter(use==TRUE)
   
   #4. Filter bird data----
   bird.i <- bird.use %>% 
@@ -230,6 +256,51 @@ for(i in 1:length(bcrs)){
 #6. Rename columns with bird ID----
 colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
 
+#F. COVARIATE LOOKUP TABLE###############
+
+#1. Get extraction methods lookup table----
+meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
+
+#2. Set up dataframe for variables that are global---
+meth.global <- meth %>% 
+  dplyr::filter(is.na(Priority))
+
+covlist <- expand.grid(bcr=bcrs, cov = meth.global$Label.Priority) %>% 
+  mutate(val = TRUE) %>% 
+  pivot_wider(names_from=cov, values_from=val)
+
+#3. Separate by variables that need prioritization----
+#collapse AK & CONUS priority fields - only needed for extraction
+meth.prior <- meth %>% 
+  dplyr::filter(!is.na(Priority)) %>% 
+  mutate(Priority = as.numeri(str_sub(Priority, 1, 1))) %>% 
+  dplyr::select(Category, Type, Label, Priority) %>% 
+  unique() %>% 
+  arrange(Category, Type, Priority) %>%  
+  pivot_wider(values_from=Label, names_from=Priority)
+
+#4. Set up bcr loop----
+for(i in 1:length(bcrs)){
+  
+  #5. Filter data to BCR----
+  visit.i <- bcr.use[,c("id", bcrs[i])] %>%
+    data.table::setnames(c("id", "use")) %>%
+    dplyr::filter(use==TRUE) %>% 
+    dplyr::select(-use) %>% 
+    left_join(visit.use)
+  
+  #6. Set up cov loop----
+  for(j in 1:nrow(meth.prior)){
+    
+    cov.j <- visit.i %>% 
+      dplyr::select(meth.prior$Pr)
+    
+  }
+  
+}
+
+
+
 #SAVE#####
 
 #1. Rename objects----
@@ -237,4 +308,4 @@ visit <- visit.use
 bird <- bird.use
 offsets <- offsets.use
 
-save(visit, bird, offsets, bootstraps, birdlist, file=file.path(root, "04_NM5.0_data_stratify.Rdata"))
+save(visit, bird, offsets, bootlist, birdlist, file=file.path(root, "04_NM5.0_data_stratify.Rdata"))
