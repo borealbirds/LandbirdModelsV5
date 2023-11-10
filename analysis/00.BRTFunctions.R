@@ -14,10 +14,11 @@ gbm.step.run <- function(i){
   bird.i <- bird[bird$id==visit.i$id, spp.i]
   
   #4. Get covariates----
-  #TO DO: UPDATE THIS!!!!
+  covlist.i <- covlist[covlist$id==bcr.i,]
+  cov.i <- visit.i[,colnames(visit.i) %in% covlist.i==TRUE]
   
   #5. Put together data object----
-  dat.i <- rbind(bird.i, visit.i)
+  dat.i <- rbind(bird.i, cov.i)
   
   #6. Get offsets----
   off.i <- offsets[offsets$id==visit.i$id, spp.i]
@@ -30,8 +31,5 @@ gbm.step.run <- function(i){
                          tree.complexity = id.i,
                          learning.rate = lr.i,
                          family="poisson")
-  
-  
-  
     
 }
