@@ -14,14 +14,12 @@
 
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
-#CHECKLIST
-#TO DO: HERMOSILLA, MODIS 5x5, SCANFI 5X5
-
-#5x5 - IN PROGRESS
-
+#TO DO#####
+#EXTRACTION (SCANFI, CLOSURE 5x5) IN PROGRESS
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
+#FIX COVARIATE NAMES - NOT DONE
 
 #PREAMBLE############################
 
@@ -663,7 +661,7 @@ loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_co
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 2:nrow(meth.gee)){
+for(i in 1:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
