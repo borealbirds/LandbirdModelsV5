@@ -346,7 +346,7 @@ loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_cova
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
-for(i in 7:length(years.scanfi)){
+for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
     arrange(lat, lon) %>% 
@@ -435,7 +435,6 @@ for(i in 7:length(years.scanfi)){
   
   loc.scanfi <- rbind(loc.scanfi, loc.scanfi.bind)
 
-  
   #13. Save----
   write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"), row.names = FALSE)
   
@@ -664,7 +663,7 @@ loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_co
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
-for(i in 1:nrow(meth.gee)){
+for(i in 2:nrow(meth.gee)){
   
   #5. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
@@ -810,8 +809,6 @@ visit <- visit.old %>%
   rename(id = row)
 
 #4. Remove things with NAs for certain layers????
-
-#F. COVARIATE LOOKUP TABLE###############
 
 
 
