@@ -4,6 +4,8 @@
 # created: September 29, 2022
 # ---
 
+#TO DO: FINISH COVARIATE LOOKUP####
+
 #NOTES################################
 
 #In this script, we stratify & prepare the data for modelling. Steps include:
