@@ -14,12 +14,15 @@
 
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
+#This script was written in pieces while assembling the various covariates and is unlikely inefficient. It should be revised for the next iteration of the national models.
+
 #TO DO#####
-#EXTRACTION (SCANFI, CLOSURE 5x5) IN PROGRESS
+#FIGURE OUT GEE MATCH NAS - IN PROGRESS
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
 #FIX COVARIATE NAMES - NOT DONE
+#SANITY CHECKS - NOT DONE
 
 #PREAMBLE############################
 
@@ -541,7 +544,7 @@ for(h in 4:nrow(loop)){
   
 }
 
-#17. Collapse to one object----
+#12. Read in output files----
 files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Static"), full.names = TRUE)) %>%
   separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "method", "extent", "n"), sep="_", remove=FALSE)
 
@@ -561,7 +564,7 @@ files.gee.mean.2000 <- dplyr::filter(files.gee, method=="mean", extent=="2000")
 loc.gee.mean.2000 <- purrr::map(files.gee.mean.2000$path, read.csv) %>% 
   data.table::rbindlist()
 
-#18. Get column names----
+#13. Fix column names----
 lab.cv.200 <- meth.gee %>% 
   dplyr::filter(RadiusFunction=="cv",
                 RadiusExtent=="200") %>% 
@@ -590,7 +593,7 @@ lab.mean.2000 <- meth.gee %>%
                         paste0(Label, ".", Priority),
                         Label))
 
-#19. Fix column names, put together, calculate----
+#14. Fix column names, put together, calculate----
 loc.gee <- loc.gee.cv.200 %>% 
   data.table::setnames(c(colnames(loc.gee.cv.200)[1:7],
                          lab.cv.200$Label,
@@ -616,7 +619,7 @@ loc.gee <- loc.gee.cv.200 %>%
   mutate(heightcv.3 = heightcv.3/height.3,
          heightcv_ls.3 = heightcv_ls.3/height_ls.3)
 
-#20. Zerofill----
+#15. Zerofill----
 zerocols <- meth.gee %>% 
   dplyr::filter(Zerofill==1)
 zero.gee <- loc.gee %>% 
@@ -626,7 +629,7 @@ loc.gee.static <- loc.gee %>%
   dplyr::select(-zerocols$Label) %>% 
   cbind(zero.gee)
 
-#20. Save----
+#16. Save----
 write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"), row.names = FALSE)
 
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
@@ -764,16 +767,41 @@ for(i in 1:nrow(meth.gee)){
   loc.gee <- cbind(loc.gee, loc.i %>% 
                      dplyr::select(meth.gee$Label[i]))
   
-  #16. Join to landcover classes----
-  if(meth.gee$Name[i]=="landcovermodis"){
-    loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
-  }
-  
   write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
   
   print(paste0("FINISHED LAYER ", i, " of ", nrow(meth.gee)))
   
 }
+
+#16. Read in output files for radius extraction----
+files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Match"), full.names = TRUE)) %>%
+  separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "covariate", "extent", "year"), sep="_", remove=FALSE)
+
+files.gee.closure <- dplyr::filter(files.gee, covariate=="closure")
+loc.gee.closure <- purrr::map(files.gee.closure$path, read.csv) %>% 
+  data.table::rbindlist()
+
+loc.na <- loc.gee.closure %>% 
+  mutate(na = ifelse(is.na(mean), 1, 0))
+
+ggplot(loc.na) +
+  geom_histogram(aes(x=yearrd, fill=factor(na)))
+
+ggplot(loc.na %>% 
+         sample_n(100000)) +
+  geom_point(aes(x=lon, y=lat, colour=factor(na)))
+
+files.gee.modis <- dplyr::filter(files.gee, covariate=="modisclass")
+loc.gee.modis <- purrr::map(files.gee.modis$path, read.csv) %>% 
+  data.table::rbindlist()
+
+#17. Put together----
+
+#18. Add landcover classes----
+
+#19. Save again----
+write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
+
 
 #E. ASSEMBLE####
 
@@ -805,6 +833,11 @@ visit <- visit.old %>%
               dplyr::select(-lat, -lon)) %>% 
   dplyr::select(-id) %>% 
   rename(id = row)
+
+#16. Join to landcover classes----
+if(meth.gee$Name[i]=="landcovermodis"){
+  loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
+}
 
 #4. Remove things with NAs for certain layers????
 

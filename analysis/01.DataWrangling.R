@@ -24,6 +24,8 @@
 
 #The replace TMTTs script will be replaced by a wildRtrax function in the near future.
 
+#The filter by temporal covariates and study area components of the code should be moved from script 4 to this script for the next iteration for efficiency's sake.
+
 #PREAMBLE############################
 
 #1. Load packages----
