@@ -64,7 +64,7 @@ for (d in datalist){
 }
 
 # Resample
-rast.dir <- list.dirs("./CovariateRasters/Landfire2", recursive = FALSE, full.names = TRUE)
+rast.dir <- list.dirs("./CovariateRasters/Landfire", recursive = FALSE, full.names = TRUE)
 for (y in rast.dir){
   # Biomass (  0 - 40 = 0 - 0.4 kg m-3 45 = thematic class of all values > 0.4 meters AND hardwoods -9999 = NoData)
   rast_f <- list.files(y, pattern="cbd|CBD", full.names = TRUE) # Biomass
@@ -91,10 +91,27 @@ for (y in rast.dir){
   ht <- terra::crop(ht_mosaic, rast1k, extend = TRUE) # Extend to NatMod extent
   ht5k <- focal(ht_mosaic,w=matrix(1,5,5),fun=mean,na.rm=TRUE) # get 5k average at 1k resolution
   ht5x5 <- terra::crop(ht5k, rast1k, extend = TRUE) # Extend to NatMod extent
+
+  # Heightcv
+  ht_class <- lapply(ht_r, function(x){classify(x, cbind(-9999, NA))})
+  ht_pj <- lapply(ht_class, function(x) {project(x, rast1k, method = "bilinear", align = TRUE) }) # Reproject
+  ht_sprc <- terra::sprc(ht_pj)  #Create SpatRastCollection
+  ht_mosaic<- terra::mosaic(ht_sprc, fun = "max")  # Mosaic rast
+  htcv <- aggregate(ht_mosaic, fact=33, fun="sd") #coef var
+  htcv_pj <- terra::project(htcv, rast1k)
+  htcv_cp <- terra::crop(htcv_pj, rast1k, extend = TRUE) # Extend to NatMod extent
+  htcv5k<-terra::focal(htcv_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
+  htcv5k_cp <- terra::crop(htcv5k, rast1k, extend = TRUE) # Extend to NatMod extent
+  
+  writeRaster(htcv_cp, filename=file.path(out.folder,paste0("LFheigthcv1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  writeRaster(htcv5k_cp, filename=file.path(out.folder,paste0("LFheigthcv5k_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  
   #save output
   writeRaster(ht, filename=file.path(out.folder,paste0("LFheigth1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
   writeRaster(ht5x5, filename=file.path(out.folder,paste0("LFheigth5x5_", as.character(basename(y)),".tif")), overwrite=TRUE)
- 
+  writeRaster(htcv, filename=file.path(out.folder,paste0("LFheigthcv1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  writeRaster(htcv5k, filename=file.path(out.folder,paste0("LFheigthcv5k_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  
    ##########################
   # Crown Closure
   rast_f <- list.files(y, pattern="cc|CC", full.names = TRUE)
