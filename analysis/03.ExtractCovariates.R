@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.1 - extract covariates
+# title: National Models 5.0 - extract covariates
 # author: Elly Knight
 # created: December 22, 2022
 # ---
@@ -14,19 +14,15 @@
 
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
-#CHECKLIST
-#TO DO: HERMOSILLA, MODIS 5x5, SCANFI 5X5, BIOMASS 5X5
+#This script was written in pieces while assembling the various covariates and is unlikely inefficient. It should be revised for the next iteration of the national models.
 
-
-#GOOGLE DRIVE - DONE EXCEPT HERMOSILLA
-#SCANFI - DONE
-#GOOGLE EARTH STATIC - DONE
-#GOOGLE EARTH TEMPORAL - DONE
-#5x5 - IN PROGRESS
-
+#TO DO#####
+#FIGURE OUT GEE MATCH NAS - IN PROGRESS
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
+#FIX COVARIATE NAMES - NOT DONE
+#SANITY CHECKS - NOT DONE
 
 #PREAMBLE############################
 
@@ -40,23 +36,15 @@ library(rgee)
 ee_Initialize(gcs=TRUE)
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Get extraction methods lookup table----
-meth <- readxl::read_excel(file.path(root, "NationalModels_V4.1_VariableList.xlsx"), sheet = "ExtractionLookup")
-
-#4. GEE CV function----
-geecv <- function(img.stack){
-  mn <- img.stack$reduceRegions(reducer=ee$Reducer$mean(), collection=poly)
-  std <- img.stack$reduceRegions(reducer=ee$Reducer$stdDev(), collection=poly)
-  cv <- img.stack$set('cv', std$get('stdDev')$divide(mean$get('mean')))
-  return(cv)
-}
+meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
 
 #A. DATA PREP####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 rm(bird)
 rm(offsets)
 
@@ -91,7 +79,7 @@ meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, Complete==0)
 #  dplyr::select(-geometry)
 
 #Read in existing dataframe if not starting from scratch
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- unique(meth.gd$StackCategory)
@@ -236,7 +224,7 @@ for(i in 4:length(loop)){
   colnames(loc.gd) <- nms
   
   #15. Save----
-  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
+  write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
   
   #16. Report status----
   print(paste0("Finished stack category ", i, " of ", length(loop)))
@@ -263,10 +251,10 @@ loc.gd2 <- loc.gd %>%
                 -biomass_ls.2.ak, -biomass_ls.2.conus,
                 -closure_ls.3.ak, -closure_ls.3.conus)
 
-write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"), row.names=FALSE)
+write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
 
 #18. Check output----
-loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 summary(loc.check)
 
 #check missing climate normals - looks like all the coastal data
@@ -354,10 +342,11 @@ loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 loc.scanfi.buff2$year.rd <- dt[J(loc.scanfi.buff2$year), roll = "nearest"]$val
 
 #6. Read in/create dataframe----
-loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+#loc.scanfi <- data.frame()
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 #7. Set up to loop through years of SCANFI----
+years.scanfi <- unique(files.scanfi$year)
 for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) %>% 
@@ -447,9 +436,8 @@ for(i in 1:length(years.scanfi)){
   
   loc.scanfi <- rbind(loc.scanfi, loc.scanfi.bind)
 
-  
   #13. Save----
-  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"), row.names = FALSE)
+  write.csv(loc.scanfi, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"), row.names = FALSE)
   
 }
 
@@ -469,7 +457,7 @@ meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, Tempo
 
 #3. Make/get dataframe----
 #loc.gee.static <- data.frame()
-loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"))
 
 #3. Make method loop----
 loop <- meth.gee %>% 
@@ -546,7 +534,7 @@ for(h in 4:nrow(loop)){
     ee_monitoring(task.list[[i]], max_attempts=1000)
     
     #11.Download to local----
-    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", paste0("03_NM4.1_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
+    ee_gcs_to_local(task = task.list[[i]], dsn=file.path(root, "Data", "Covariates", "GEE", "Static", paste0("03_NM5.0_data_covariates_GEE_static_", loop$RadiusFunction[h], "_", loop$RadiusExtent[h], "_", i, ".csv")))
     
     print(paste0("Finished batch ", i, " of ", max(loc.gee$loop)))
     
@@ -556,29 +544,93 @@ for(h in 4:nrow(loop)){
   
 }
 
-#17. Collapse to one object----
-files.gee <- list.files(file.path(root, "Data", "Covariates", "GEE"), full.names = TRUE)
-loc.gee <- purrr::map(files.gee, read.csv) %>% 
-  data.table::rbindlist() %>% 
-  dplyr::select(c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$GEEName))
+#12. Read in output files----
+files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Static"), full.names = TRUE)) %>%
+  separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "method", "extent", "n"), sep="_", remove=FALSE)
 
-#18. Fix column names----
-meth.gee.h$Name2 <- ifelse(is.na(meth.gee.h$Priority), meth.gee.h$Label, paste0(meth.gee.h$Label, ".", meth.gee.h$Priority))
-colnames(loc.gee) <- c(colnames(loc.yr)[colnames(loc.yr)!="geometry"], meth.gee.h$Name2)
+files.gee.cv.200 <- dplyr::filter(files.gee, method=="cv", extent=="200")
+loc.gee.cv.200 <- purrr::map(files.gee.cv.200$path, read.csv) %>% 
+  data.table::rbindlist()
 
-#19. Zerofill----
+files.gee.cv.2000 <- dplyr::filter(files.gee, method=="cv", extent=="2000")
+loc.gee.cv.2000 <- purrr::map(files.gee.cv.2000$path, read.csv) %>% 
+  data.table::rbindlist()
+
+files.gee.mean.200 <- dplyr::filter(files.gee, method=="mean", extent=="200")
+loc.gee.mean.200 <- purrr::map(files.gee.mean.200$path, read.csv) %>% 
+  data.table::rbindlist()
+
+files.gee.mean.2000 <- dplyr::filter(files.gee, method=="mean", extent=="2000")
+loc.gee.mean.2000 <- purrr::map(files.gee.mean.2000$path, read.csv) %>% 
+  data.table::rbindlist()
+
+#13. Fix column names----
+lab.cv.200 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="cv",
+                RadiusExtent=="200") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.cv.2000 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="cv",
+                RadiusExtent=="2000") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.mean.200 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="mean",
+                RadiusExtent=="200") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+lab.mean.2000 <- meth.gee %>% 
+  dplyr::filter(RadiusFunction=="mean",
+                RadiusExtent=="2000") %>% 
+  mutate(Label = ifelse(!is.na(Priority),
+                        paste0(Label, ".", Priority),
+                        Label))
+
+#14. Fix column names, put together, calculate----
+loc.gee <- loc.gee.cv.200 %>% 
+  data.table::setnames(c(colnames(loc.gee.cv.200)[1:7],
+                         lab.cv.200$Label,
+                         colnames(loc.gee.cv.200)[8:9])) %>% 
+  dplyr::select(c(id, lab.cv.200$Label)) %>% 
+  full_join(loc.gee.cv.2000 %>% 
+          data.table::setnames(c(colnames(loc.gee.cv.2000)[1:7],
+                                 lab.cv.2000$Label,
+                                 colnames(loc.gee.cv.2000)[8:9])) %>% 
+          dplyr::select(c(id, lab.cv.2000$Label))) %>% 
+  full_join(loc.gee.mean.200 %>% 
+              data.table::setnames(c(colnames(loc.gee.mean.200)[1],
+                                     lab.mean.200$Label[1:2],
+                                     colnames(loc.gee.mean.200)[4:14])) %>% 
+              dplyr::select(c(id, lab.mean.200$Label))) %>% 
+  full_join(loc.gee.mean.2000 %>% 
+              data.table::setnames(c(colnames(loc.gee.mean.2000)[1],
+                                     lab.mean.2000$Label[1:2],
+                                     colnames(loc.gee.mean.2000)[4:8],
+                                     lab.mean.2000$Label[3],
+                                     colnames(loc.gee.mean.2000)[10:12])) %>% 
+              dplyr::select(c(id, lab.mean.2000$Label))) %>% 
+  mutate(heightcv.3 = heightcv.3/height.3,
+         heightcv_ls.3 = heightcv_ls.3/height_ls.3)
+
+#15. Zerofill----
 zerocols <- meth.gee %>% 
   dplyr::filter(Zerofill==1)
 zero.gee <- loc.gee %>% 
-  dplyr::select(zerocols$Name2) %>% 
-  replace_na(list(occurrence=0, recurrence=0, seasonality=0))
+  dplyr::select(zerocols$Label) %>% 
+  replace_na(list(occurrence=0, recurrence=0, seasonality=0, occurrence_ls=0))
 loc.gee.static <- loc.gee %>% 
-  dplyr::select(-zerocols$Name2) %>% 
-  cbind(zero.gee) %>% 
-  rbind(loc.gee.static)
+  dplyr::select(-zerocols$Label) %>% 
+  cbind(zero.gee)
 
-#20. Save----
-write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"), row.names = FALSE)
+#16. Save----
+write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"), row.names = FALSE)
 
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
@@ -605,30 +657,10 @@ lc.modis <- data.frame(landcover = c(1:17),
                              "barren",
                              "water"))
 
-lc. <- data.frame(landcover = c(1:17),
-                       lcclass = c("evergreen_needleleaf",
-                                   "evergreen_broadleaf",
-                                   "deciduous_needleleaf",
-                                   "deciduous_broadleaf",
-                                   "mixed",
-                                   "shrub_closed",
-                                   "shrub_open",
-                                   "savanna_woody",
-                                   "savanna_open",
-                                   "grassland",
-                                   "wetland",
-                                   "crop_dense",
-                                   "urban",
-                                   "crop_natural",
-                                   "snow", 
-                                   "barren",
-                                   "water"))
-
-
 #3. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
 #   dplyr::select(-geometry)
-loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings
@@ -643,7 +675,9 @@ for(i in 1:nrow(meth.gee)){
   data.table::setattr(dt, "sorted", "year")
   data.table::setkey(dt, year)
   loc.n.i <- loc.n
+  loc.buff2.i <- loc.buff2
   loc.n.i$yearrd <- dt[J(loc.n$year), roll = "nearest"]$val
+  loc.buff2.i$yearrd <- dt[J(loc.buff2$year), roll = "nearest"]$val
   
   #7. Set up to loop through years----
   loc.j <- list()
@@ -651,17 +685,22 @@ for(i in 1:nrow(meth.gee)){
     
     loc.n.yr <- dplyr::filter(loc.n.i, yearrd==years.gee[j]) %>% 
       mutate(loop = ceiling(row_number()/1000))
+    loc.buff2.yr <- dplyr::filter(loc.buff2.i, yearrd==years.gee[j]) %>% 
+      mutate(loop = ceiling(row_number()/1000))
     
     if(nrow(loc.n.yr) > 0){
       
       #8. Set up to loop through sets----
       loc.k <- list()
+      task.list <- list()
       for(k in 1:max(loc.n.yr$loop)){
         
         loc.n.loop <- dplyr::filter(loc.n.yr, loop==k)
+        loc.buff2.loop <- dplyr::filter(loc.buff2.yr, loop==k)
         
         #9. Send polygons to GEE---
         point <- sf_as_ee(loc.n.loop)
+        poly <- sf_as_ee(loc.buff2.loop)
         
         #10. Set start & end date for image filtering---
         start.k <- paste0(years.gee[j]+meth.gee$YearMatch[i], "-", meth.gee$GEEMonthMin[i], "-01")
@@ -677,8 +716,35 @@ for(i in 1:nrow(meth.gee)){
         img.i <- ee$ImageCollection(meth.gee$Link[i])$filter(ee$Filter$date(start.k, end.k))$select(meth.gee$GEEBand[i])$mean()
         
         #12. Extract----
-        loc.k[[k]] <- ee_extract(x=img.i, y=point)
+        if(meth.gee$Extraction[i]=="point"){
+          loc.k[[k]] <- ee_extract(x=img.i, y=point)
+        }
         
+        if(meth.gee$Extraction[i]=="radius"){
+          
+          if(meth.gee$RadiusFunction[i]=="mean"){
+            img.red <- img.i$reduceRegions(reducer=ee$Reducer$mean(),
+                                               collection=poly)
+          }
+          
+          if(meth.gee$RadiusFunction[i]=="mode"){
+            img.red <- img.i$reduceRegions(reducer=ee$Reducer$mode(),
+                                           collection=poly)
+          }
+          
+          task.list[[k]] <- ee_table_to_gcs(collection=img.red,
+                                            bucket="national_models",
+                                            fileFormat = "CSV")
+          task.list[[k]]$start()
+          
+          ee_monitoring(task.list[[k]], max_attempts=1000)
+          
+          ee_gcs_to_local(task = task.list[[k]], dsn=file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", years.gee[j], "_", k, ".csv")))
+        
+          loc.k[[k]] <- read.csv(file.path(root, "Data", "Covariates", "GEE", "Match", paste0("03_NM5.0_data_covariates_GEE_match_", meth.gee$Label[i], "_", years.gee[j], "_", k, ".csv")))
+          
+        }
+
         print(paste0("Finished batch ", k, " of ", max(loc.n.yr$loop)))
         
       }
@@ -701,30 +767,55 @@ for(i in 1:nrow(meth.gee)){
   loc.gee <- cbind(loc.gee, loc.i %>% 
                      dplyr::select(meth.gee$Label[i]))
   
-  #16. Join to landcover classes----
-  if(meth.gee$Name[i]=="landcovermodis"){
-    loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
-  }
-  
-  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"), row.names=FALSE)
+  write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
   
   print(paste0("FINISHED LAYER ", i, " of ", nrow(meth.gee)))
   
 }
 
+#16. Read in output files for radius extraction----
+files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Match"), full.names = TRUE)) %>%
+  separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "covariate", "extent", "year"), sep="_", remove=FALSE)
+
+files.gee.closure <- dplyr::filter(files.gee, covariate=="closure")
+loc.gee.closure <- purrr::map(files.gee.closure$path, read.csv) %>% 
+  data.table::rbindlist()
+
+loc.na <- loc.gee.closure %>% 
+  mutate(na = ifelse(is.na(mean), 1, 0))
+
+ggplot(loc.na) +
+  geom_histogram(aes(x=yearrd, fill=factor(na)))
+
+ggplot(loc.na %>% 
+         sample_n(100000)) +
+  geom_point(aes(x=lon, y=lat, colour=factor(na)))
+
+files.gee.modis <- dplyr::filter(files.gee, covariate=="modisclass")
+loc.gee.modis <- purrr::map(files.gee.modis$path, read.csv) %>% 
+  data.table::rbindlist()
+
+#17. Put together----
+
+#18. Add landcover classes----
+
+#19. Save again----
+write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
+
+
 #E. ASSEMBLE####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM4.1_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 
 #2. Load extracted covariates----
-loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-match.csv"))
+loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
-loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GEE-static.csv"))
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"))
 
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM4.1_data_covariates_SCANFI.csv"))
+loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 
 #3. Add id to visit and join together----
@@ -737,14 +828,20 @@ visit <- visit.old %>%
               dplyr::select(-lat, -lon)) %>% 
   left_join(loc.scanfi %>% 
               dplyr::select(-lat, -lon)) %>% 
-  left_join(loc.gee.static %>% 
-              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.gee.static) %>% 
   left_join(loc.gee.match %>% 
               dplyr::select(-lat, -lon)) %>% 
   dplyr::select(-id) %>% 
   rename(id = row)
 
+#16. Join to landcover classes----
+if(meth.gee$Name[i]=="landcovermodis"){
+  loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
+}
+
 #4. Remove things with NAs for certain layers????
 
+
+
 #G. SAVE#####
-save(visit, bird,  offsets, file=file.path(root, "03_NM4.1_data_covariates.R"))
+save(visit, bird,  offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))

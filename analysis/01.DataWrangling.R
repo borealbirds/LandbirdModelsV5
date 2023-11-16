@@ -1,15 +1,12 @@
 # ---
-# title: National Models 4.1 - get data
+# title: National Models 5.0 - get data
 # author: Elly Knight, Melina Houle, Anna Drake
 # created: Novemeber 17, 2022
 # ---
 
-#TO DO: Investigate spatial vs temporal distribution of data
-#TO DO: Data gap analysis
-
 #NOTES################################
 
-#The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in ABMI models (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
+#The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in national (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
 
 #The "projectInstructions.csv" file also contains information on which ARU projects are processed for a single species or taxa (instructions=="DO NOT USE") and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. These projects are currently not included in the models.
 
@@ -27,6 +24,8 @@
 
 #The replace TMTTs script will be replaced by a wildRtrax function in the near future.
 
+#The filter by temporal covariates and study area components of the code should be moved from script 4 to this script for the next iteration for efficiency's sake.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -43,7 +42,7 @@ library(dggridR) #to make grid for checking for duplicates
 library(QPAD) #to load species list for bird data
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1/Data"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
 
 #A. DOWNLOAD DATA FROM WILDTRAX#######################
 
@@ -334,7 +333,7 @@ loc <- use %>%
 #3. Clip by study area----
 
 #3a. Read in study area----
-sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels4.1/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
+sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels5.0/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
 
 #3v. Create raster (much faster than from polygon)
 r <- rast(ext(sa), resolution=1000)
@@ -465,4 +464,4 @@ bird <- dat %>%
   pivot_wider(id_cols=id, names_from=species, values_from=abundance, values_fn=sum, values_fill=0, names_sort=TRUE)
 
 #G. SAVE!####
-save(visit, bird, file=file.path(root, "01_NM4.1_data_clean.R"))
+save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))
