@@ -1,5 +1,5 @@
 ################################################3
-#  BAM NAM 4.1 - Producing Prediction Rasters for LANDFIRE biomass dat (height, crown closure, biomass) 
+#  BAM NAM 5.0 - Producing Prediction Rasters for LANDFIRE biomass dat (height, crown closure, biomass) 
 #  The script download source data from website
 #  Temporal raster are saved on disk and transfered to Google SharedDrive
 #################################################
@@ -7,8 +7,6 @@
 library(googledrive)
 library(terra)
 library(dplyr)
-#library(raster)
-#library(data.table)
 
 ########################
 #PARAM 
@@ -17,10 +15,11 @@ library(dplyr)
 options(timeout=400)
 
 # Set extent 
-rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = "EPSG:5072")
+EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
+rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
 
 ## Access urls and extract yearlist
-setwd("E:/MelinaStuff/BAM/NationalModelv4.1")
+setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
 
 webData <- read.csv("./Scripts/webDataAccess.csv", fileEncoding="UTF-8-BOM")
 landfire <- subset(webData, grepl("LF",webData$Dataset))
@@ -103,14 +102,11 @@ for (y in rast.dir){
   htcv5k<-terra::focal(htcv_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
   htcv5k_cp <- terra::crop(htcv5k, rast1k, extend = TRUE) # Extend to NatMod extent
   
-  writeRaster(htcv_cp, filename=file.path(out.folder,paste0("LFheigthcv1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
-  writeRaster(htcv5k_cp, filename=file.path(out.folder,paste0("LFheigthcv5k_", as.character(basename(y)),".tif")), overwrite=TRUE)
-  
   #save output
   writeRaster(ht, filename=file.path(out.folder,paste0("LFheigth1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
   writeRaster(ht5x5, filename=file.path(out.folder,paste0("LFheigth5x5_", as.character(basename(y)),".tif")), overwrite=TRUE)
-  writeRaster(htcv, filename=file.path(out.folder,paste0("LFheigthcv1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
-  writeRaster(htcv5k, filename=file.path(out.folder,paste0("LFheigthcv5k_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  writeRaster(htcv_cp, filename=file.path(out.folder,paste0("LFheigthcv1km_", as.character(basename(y)),".tif")), overwrite=TRUE)
+  writeRaster(htcv5k_cp, filename=file.path(out.folder,paste0("LFheigthcv5k_", as.character(basename(y)),".tif")), overwrite=TRUE)
   
    ##########################
   # Crown Closure

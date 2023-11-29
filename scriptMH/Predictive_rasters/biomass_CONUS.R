@@ -1,5 +1,5 @@
 ################################################3
-#  BAM NAM 4.1 - Producing Prediction Rasters for CONUS biomass tree cover 
+#  BAM NM 5.0 - Producing Prediction Rasters for CONUS biomass tree cover 
 #  The script download from GEE, reproject and rescale to 100m and 1km
 #  Temporal raster are saved on disk and transfered to Google SharedDrive
 #################################################
@@ -15,9 +15,12 @@ library(rgee)
 ##########################################################
 #PARAM 
 Sys.setenv(HOME="C:/Users/mehou10/Documents")
-setwd("E:/MelinaStuff/BAM/NationalModelv4.1")
-wd <- getwd()
-rast1km<- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000,  ymin=1673000, ymax=6200000, crs = "EPSG:5072")
+setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
+
+
+# Set extent 
+EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
+rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
 
 #use_python("C:/Users/mehou10/AppData/Local/r-miniconda/envs/r-reticulate")
 ee_Initialize(user = "houle.melina@gmail.com", drive = TRUE)
@@ -78,6 +81,11 @@ for (i in 1:length(rastlist)) {names(rasters5k[[i]]) <- paste0("RAP_TCC5x5_", su
 lapply(rasters5k, function(i) {
   writeRaster(i, filename=file.path(out_f,names(i)), filetype="GTiff", overwrite = TRUE)
 })
+
+
+
+
+
 
 
 ###################################################################
