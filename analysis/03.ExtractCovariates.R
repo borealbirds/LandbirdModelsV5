@@ -10,14 +10,21 @@
 
 #This script extracts the list of model covariates agreed upon by the BAM National Model team. The full list of those covariates can be found at https://docs.google.com/spreadsheets/d/1XATuq8BOYC2KkbJObaturaf4NFD2ufvn/edit?usp=sharing&ouid=104837701987164094932&rtpof=true&sd=true
 
-#This script extracts covariates for every combination of location & year. Efficiency could be improved by ~15% by taking only the unique locations for all rows in the method table with TemporalResolution=="static"
-
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
 #This script was written in pieces while assembling the various covariates and is unlikely inefficient. It should be revised for the next iteration of the national models.
 
+#Improvements for next version####
+
+#This script extracts covariates for every combination of location & year. Efficiency could be improved by ~15% by taking only the unique locations for all rows in the method table with TemporalResolution=="static"
+
+#This script extracts covariates for all locations. Efficiency could be improved by filtering to layer extent prior to extraction.
+
+#This script extracts covariates for all data points. Efficiency could be improved by removing surveys outside of acceptable survey windows and the survey area prior to extraction
+
+#One way to improve the reproducibility and adding new layers would be to compile the list of layers to extract by comparing the full list to the column names of existing compiled objects instead of using the "running" and "complete" lookup columns. Similarly for GEE extraction and the downloaded files.
+
 #TO DO#####
-#FIGURE OUT GEE MATCH NAS - IN PROGRESS
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
@@ -83,7 +90,7 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 
 #3. Set up loop----
 loop <- unique(meth.gd$StackCategory)
-for(i in 4:length(loop)){
+for(i in 1:length(loop)){
   
   #4. Filter to stack category----
   meth.gd.i <- dplyr::filter(meth.gd, StackCategory==loop[i])
@@ -232,57 +239,28 @@ for(i in 4:length(loop)){
 }
 
 #15. Merge AK & CONUS columns for landfire----
-loc.gd2 <- loc.gd %>% 
-  mutate(
-#    height.2 = ifelse(!is.na(height.2.ak), height.2.ak, height.2.conus),
-         heightcv.2 = ifelse(!is.na(heightcv.2.ak), heightcv.2.ak, heightcv.2.conus),
-#         biomass.2 = ifelse(!is.na(biomass.2.ak), biomass.2.ak, biomass.2.conus),
-#         closure.3 = ifelse(!is.na(closure.3.ak), closure.3.ak, closure.3.conus),
-         height_ls.2 = ifelse(!is.na(height_ls.2.ak), height_ls.2.ak, height_ls.2.conus),
-         heightcv_ls.2 = ifelse(!is.na(heightcv_ls.2.ak), heightcv_ls.2.ak, heightcv_ls.2.conus),
-         biomass_ls.2 = ifelse(!is.na(biomass_ls.2.ak), biomass_ls.2.ak, biomass_ls.2.conus),
-         closure_ls.3 = ifelse(!is.na(closure_ls.3.ak), closure_ls.3.ak, closure_ls.3.conus)) %>% 
-  dplyr::select(-height.2.ak, -height.2.conus,
-                -heightcv.2.ak, -heightcv.2.conus,
-                -biomass.2.ak, -biomass.2.conus,
-                -closure.3.ak, -closure.3.conus,
-                -height_ls.2.ak, -height_ls.2.conus,
-                -heightcv_ls.2.ak, -heightcv_ls.2.conus,
-                -biomass_ls.2.ak, -biomass_ls.2.conus,
-                -closure_ls.3.ak, -closure_ls.3.conus)
+if("height.2.ak" %in% colnames(loc.gd)){
+  loc.gd2 <- loc.gd %>% 
+    mutate(
+      height.2 = ifelse(!is.na(height.2.ak), height.2.ak, height.2.conus),
+      heightcv.2 = ifelse(!is.na(heightcv.2.ak), heightcv.2.ak, heightcv.2.conus),
+      biomass.2 = ifelse(!is.na(biomass.2.ak), biomass.2.ak, biomass.2.conus),
+      closure.3 = ifelse(!is.na(closure.3.ak), closure.3.ak, closure.3.conus),
+      height_ls.2 = ifelse(!is.na(height_ls.2.ak), height_ls.2.ak, height_ls.2.conus),
+      heightcv_ls.2 = ifelse(!is.na(heightcv_ls.2.ak), heightcv_ls.2.ak, heightcv_ls.2.conus),
+      biomass_ls.2 = ifelse(!is.na(biomass_ls.2.ak), biomass_ls.2.ak, biomass_ls.2.conus),
+      closure_ls.3 = ifelse(!is.na(closure_ls.3.ak), closure_ls.3.ak, closure_ls.3.conus)) %>% 
+    dplyr::select(-height.2.ak, -height.2.conus,
+                  -heightcv.2.ak, -heightcv.2.conus,
+                  -biomass.2.ak, -biomass.2.conus,
+                  -closure.3.ak, -closure.3.conus,
+                  -height_ls.2.ak, -height_ls.2.conus,
+                  -heightcv_ls.2.ak, -heightcv_ls.2.conus,
+                  -biomass_ls.2.ak, -biomass_ls.2.conus,
+                  -closure_ls.3.ak, -closure_ls.3.conus)
+} else { loc.gd2 <- loc.gd }
 
 write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
-
-#18. Check output----
-loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
-summary(loc.check)
-
-#check missing climate normals - looks like all the coastal data
-loc.na <- dplyr::filter(loc.check, is.na(CMD)) %>% 
-  dplyr::select(project, year, lat, lon, CMD)
-plot(loc.na$lon, loc.na$lat)
-
-#check missing hli3cl - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(hli3cl))
-plot(loc.na$lon, loc.na$lat)
-
-#check missing peat - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(peat))
-plot(loc.na$lon, loc.na$lat)
-
-#check missing global HF - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(HF_5km.2))
-plot(loc.na$lon, loc.na$lat)
-
-#check missing greenup - looks like all of canada?
-loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
-  dplyr::select(project, year, lat, lon, greenup, dormancy)
-ggplot(loc.na) +
-  geom_point(aes(x=lon, y=lat)) +
-  facet_wrap(~year)
-table(loc.na$year)
-
-write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
 
 #C. EXTRACT COVARIATES FROM SCANFI####
 
@@ -464,7 +442,7 @@ loop <- meth.gee %>%
   dplyr::select(RadiusFunction, RadiusExtent) %>% 
   unique()
 
-for(h in 4:nrow(loop)){
+for(h in 1:nrow(loop)){
   
   meth.gee.h <- meth.gee %>% 
     dplyr::filter(RadiusFunction==loop$RadiusFunction[h],
@@ -517,12 +495,14 @@ for(h in 4:nrow(loop)){
     #9. Extract----
     if(loop$RadiusFunction[h]=="mean"){
       img.red <- img.stack$reduceRegions(reducer=ee$Reducer$mean(),
-                                         collection=poly)
+                                         collection=poly,
+                                         scale=meth.gee$GEEScale[i])
     }
     
     if(loop$RadiusFunction[h]=="cv"){
       img.red <- img.stack$reduceRegions(reducer=ee$Reducer$stdDev(),
-                                        collection=poly)
+                                        collection=poly,
+                                        scale=meth.gee$GEEScale[i])
     }
     
     task.list[[i]] <- ee_table_to_gcs(collection=img.red,
@@ -663,7 +643,7 @@ lc.modis <- data.frame(landcover = c(1:17),
 loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
 #4. Set up to loop through the layers----
-#not worth stacking because almost all layers have different temporal filtering settings
+#not worth stacking because almost all layers have different temporal filtering settings and scales
 for(i in 1:nrow(meth.gee)){
   
   #5. Identify years of imagery----
@@ -717,19 +697,21 @@ for(i in 1:nrow(meth.gee)){
         
         #12. Extract----
         if(meth.gee$Extraction[i]=="point"){
-          loc.k[[k]] <- ee_extract(x=img.i, y=point)
+          loc.k[[k]] <- ee_extract(x=img.i, y=point, scale=meth$GEEScale[i])
         }
         
         if(meth.gee$Extraction[i]=="radius"){
           
           if(meth.gee$RadiusFunction[i]=="mean"){
             img.red <- img.i$reduceRegions(reducer=ee$Reducer$mean(),
-                                               collection=poly)
+                                           collection=poly,
+                                           scale=meth.gee$GEEScale[i])
           }
           
           if(meth.gee$RadiusFunction[i]=="mode"){
             img.red <- img.i$reduceRegions(reducer=ee$Reducer$mode(),
-                                           collection=poly)
+                                           collection=poly, 
+                                           scale=meth.gee$GEEScale[i])
           }
           
           task.list[[k]] <- ee_table_to_gcs(collection=img.red,
@@ -834,12 +816,46 @@ visit <- visit.old %>%
   dplyr::select(-id) %>% 
   rename(id = row)
 
-#16. Join to landcover classes----
+#4. Join to landcover classes----
 if(meth.gee$Name[i]=="landcovermodis"){
   loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
 }
 
-#4. Remove things with NAs for certain layers????
+#5. Sanity checks----
+loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
+summary(loc.check)
+
+#check missing climate normals - looks like all the coastal data
+loc.na <- dplyr::filter(loc.check, is.na(CMD)) %>% 
+  dplyr::select(project, year, lat, lon, CMD)
+plot(loc.na$lon, loc.na$lat)
+
+#check missing hli3cl - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(hli3cl))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing peat - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(peat))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing global HF - also looks coastal
+loc.na <- dplyr::filter(loc.check, is.na(HF_5km.2))
+plot(loc.na$lon, loc.na$lat)
+
+#check missing greenup - looks like all of canada?
+loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
+  dplyr::select(project, year, lat, lon, greenup, dormancy)
+ggplot(loc.na) +
+  geom_point(aes(x=lon, y=lat)) +
+  facet_wrap(~year)
+table(loc.na$year)
+
+write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
+
+#6. Remove things with NAs for certain layers????
+
+
+
 
 
 
