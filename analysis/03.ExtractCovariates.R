@@ -225,7 +225,6 @@ for(i in 1:length(loop)){
 
   #14. Add to output----
   #fix column names
-  if(!is.na(meth.gd.i$Priority[1])) meth.gd.i$Label <- paste0(meth.gd.i$Label, ".", meth.gd.i$Priority)
   nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Label)
   loc.gd <- cbind(loc.gd, loc.cov)
   colnames(loc.gd) <- nms
@@ -239,7 +238,7 @@ for(i in 1:length(loop)){
 }
 
 #15. Merge AK & CONUS columns for landfire----
-if("height.2.ak" %in% colnames(loc.gd)){
+if("heightcv.2.ak" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd %>% 
     mutate(
       height.2 = ifelse(!is.na(height.2.ak), height.2.ak, height.2.conus),
@@ -547,31 +546,19 @@ loc.gee.mean.2000 <- purrr::map(files.gee.mean.2000$path, read.csv) %>%
 #13. Fix column names----
 lab.cv.200 <- meth.gee %>% 
   dplyr::filter(RadiusFunction=="cv",
-                RadiusExtent=="200") %>% 
-  mutate(Label = ifelse(!is.na(Priority),
-                        paste0(Label, ".", Priority),
-                        Label))
+                RadiusExtent=="200")
 
 lab.cv.2000 <- meth.gee %>% 
   dplyr::filter(RadiusFunction=="cv",
-                RadiusExtent=="2000") %>% 
-  mutate(Label = ifelse(!is.na(Priority),
-                        paste0(Label, ".", Priority),
-                        Label))
+                RadiusExtent=="2000")
 
 lab.mean.200 <- meth.gee %>% 
   dplyr::filter(RadiusFunction=="mean",
-                RadiusExtent=="200") %>% 
-  mutate(Label = ifelse(!is.na(Priority),
-                        paste0(Label, ".", Priority),
-                        Label))
+                RadiusExtent=="200")
 
 lab.mean.2000 <- meth.gee %>% 
   dplyr::filter(RadiusFunction=="mean",
-                RadiusExtent=="2000") %>% 
-  mutate(Label = ifelse(!is.na(Priority),
-                        paste0(Label, ".", Priority),
-                        Label))
+                RadiusExtent=="2000")
 
 #14. Fix column names, put together, calculate----
 loc.gee <- loc.gee.cv.200 %>% 
@@ -735,8 +722,7 @@ for(i in 1:nrow(meth.gee)){
       loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE)
       
       #14. Fix column names----
-      colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], 
-                                paste0(meth.gee$Label[i], as.character(meth.gee$Priority[i])))
+      colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], meth.gee$Label[i])
       
     }
     
