@@ -12,9 +12,7 @@
 
 #Records that return NA values from the layers stored in google drive are locations that are outside the area of the raster (i.e., coastlines)
 
-#This script was written in pieces while assembling the various covariates and is unlikely inefficient. It should be revised for the next iteration of the national models.
-
-#Improvements for next version####
+#This script was written in pieces while assembling the various covariates and is unlikely inefficient. It should be revised for the next iteration of the national models. Potential improvements for next version include:
 
 #This script extracts covariates for every combination of location & year. Efficiency could be improved by ~15% by taking only the unique locations for all rows in the method table with TemporalResolution=="static"
 
@@ -28,7 +26,7 @@
 #WRANGLING - NOT DONE
 #TIDY SCRIPT - NOT DONE
 #ASSIGN LANDCOVER CATEGORIES - NOT DONE
-#FIX COVARIATE NAMES - NOT DONE
+#FIX COVARIATE NAMES - IN PROGRESS
 #SANITY CHECKS - NOT DONE
 
 #PREAMBLE############################
@@ -238,6 +236,9 @@ for(i in 1:length(loop)){
 }
 
 #15. Merge AK & CONUS columns for landfire----
+
+#TO DO: FIX THIS BASED ON NEW NAMING CONVENTIONS####
+
 if("heightcv.2.ak" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd %>% 
     mutate(
@@ -745,31 +746,32 @@ for(i in 1:nrow(meth.gee)){
 files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Match"), full.names = TRUE)) %>%
   separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "covariate", "extent", "year"), sep="_", remove=FALSE)
 
-files.gee.closure <- dplyr::filter(files.gee, covariate=="closure")
-loc.gee.closure <- purrr::map(files.gee.closure$path, read.csv) %>% 
-  data.table::rbindlist()
+vars <- files.gee %>% 
+  dplyr::select(extent, covariate) %>% 
+  unique()
 
-loc.na <- loc.gee.closure %>% 
-  mutate(na = ifelse(is.na(mean), 1, 0))
+for(i in 1:nrow(vars)){
+  
+  files.gee.i <- dplyr::filter(files.gee, covariate==vars$covariate[i],
+                               extent==vars$extent[i])
+  loc.gee.i <- purrr::map(files.gee.i$path, read.csv) %>% 
+    data.table::rbindlist()
+  
+  label <- paste0(vars$covariate[i], "_", vars$extent[i])
 
-ggplot(loc.na) +
-  geom_histogram(aes(x=yearrd, fill=factor(na)))
-
-ggplot(loc.na %>% 
-         sample_n(100000)) +
-  geom_point(aes(x=lon, y=lat, colour=factor(na)))
-
-files.gee.modis <- dplyr::filter(files.gee, covariate=="modisclass")
-loc.gee.modis <- purrr::map(files.gee.modis$path, read.csv) %>% 
-  data.table::rbindlist()
-
-#17. Put together----
+  loc.gee <- loc.gee.i %>% 
+    data.table::setnames(c(colnames(loc.gee.i)[1:6],
+                           label,
+                           colnames(loc.gee.i)[8:11])) %>% 
+    dplyr::select(c(id, all_of(label))) %>% 
+    full_join(loc.gee)
+  
+}
 
 #18. Add landcover classes----
 
 #19. Save again----
 write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
-
 
 #E. ASSEMBLE####
 
