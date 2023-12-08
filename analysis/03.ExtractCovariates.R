@@ -22,12 +22,7 @@
 
 #One way to improve the reproducibility and adding new layers would be to compile the list of layers to extract by comparing the full list to the column names of existing compiled objects instead of using the "running" and "complete" lookup columns. Similarly for GEE extraction and the downloaded files.
 
-#TO DO#####
-#WRANGLING - NOT DONE
-#TIDY SCRIPT - NOT DONE
-#ASSIGN LANDCOVER CATEGORIES - NOT DONE
-#FIX COVARIATE NAMES - IN PROGRESS
-#SANITY CHECKS - NOT DONE
+#TO DO: Investigate landcover NAs
 
 #PREAMBLE############################
 
@@ -605,39 +600,19 @@ write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM5.0_d
 #1. Get list of static layers to run----
 meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="match", Complete==0)
 
-#2. Landcover categories----
-lc.modis <- data.frame(landcover = c(1:17),
-                 lcclass = c("evergreen_needleleaf",
-                             "evergreen_broadleaf",
-                             "deciduous_needleleaf",
-                             "deciduous_broadleaf",
-                             "mixed",
-                             "shrub_closed",
-                             "shrub_open",
-                             "savanna_woody",
-                             "savanna_open",
-                             "grassland",
-                             "wetland",
-                             "crop_dense",
-                             "urban",
-                             "crop_natural",
-                             "snow", 
-                             "barren",
-                             "water"))
-
-#3. Plain dataframe for joining to output----
+#2. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
 #   dplyr::select(-geometry)
 loc.gee <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
 
-#4. Set up to loop through the layers----
+#3. Set up to loop through the layers----
 #not worth stacking because almost all layers have different temporal filtering settings and scales
 for(i in 1:nrow(meth.gee)){
   
-  #5. Identify years of imagery----
+  #4. Identify years of imagery----
   years.gee <- seq(meth.gee$GEEYearMin[i], meth.gee$GEEYearMax[i])
   
-  #6. Match year of data to year of data----
+  #5. Match year of data to year of data----
   #Use only point object because all extractions are point method
   dt = data.table::data.table(year=years.gee, val=years.gee)
   data.table::setattr(dt, "sorted", "year")
@@ -647,7 +622,7 @@ for(i in 1:nrow(meth.gee)){
   loc.n.i$yearrd <- dt[J(loc.n$year), roll = "nearest"]$val
   loc.buff2.i$yearrd <- dt[J(loc.buff2$year), roll = "nearest"]$val
   
-  #7. Set up to loop through years----
+  #6 Set up to loop through years----
   loc.j <- list()
   for(j in 1:length(years.gee)){
     
@@ -658,7 +633,7 @@ for(i in 1:nrow(meth.gee)){
     
     if(nrow(loc.n.yr) > 0){
       
-      #8. Set up to loop through sets----
+      #7. Set up to loop through sets----
       loc.k <- list()
       task.list <- list()
       for(k in 1:max(loc.n.yr$loop)){
@@ -666,11 +641,11 @@ for(i in 1:nrow(meth.gee)){
         loc.n.loop <- dplyr::filter(loc.n.yr, loop==k)
         loc.buff2.loop <- dplyr::filter(loc.buff2.yr, loop==k)
         
-        #9. Send polygons to GEE---
+        #8. Send polygons to GEE---
         point <- sf_as_ee(loc.n.loop)
         poly <- sf_as_ee(loc.buff2.loop)
         
-        #10. Set start & end date for image filtering---
+        #9. Set start & end date for image filtering---
         start.k <- paste0(years.gee[j]+meth.gee$YearMatch[i], "-", meth.gee$GEEMonthMin[i], "-01")
         
         if(meth.gee$GEEMonthMax[i] > meth.gee$GEEMonthMin[i]){
@@ -680,10 +655,10 @@ for(i in 1:nrow(meth.gee)){
           end.k <- paste0(years.gee[j], "-", meth.gee$GEEMonthMax[i], "-28")
         }
 
-        #11. Get the image----
+        #10. Get the image----
         img.i <- ee$ImageCollection(meth.gee$Link[i])$filter(ee$Filter$date(start.k, end.k))$select(meth.gee$GEEBand[i])$mean()
         
-        #12. Extract----
+        #11. Extract----
         if(meth.gee$Extraction[i]=="point"){
           loc.k[[k]] <- ee_extract(x=img.i, y=point, scale=meth$GEEScale[i])
         }
@@ -719,10 +694,10 @@ for(i in 1:nrow(meth.gee)){
         
       }
       
-      #13. Collapse loops for the year----
+      #12. Collapse loops for the year----
       loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE)
       
-      #14. Fix column names----
+      #13. Fix column names----
       colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], meth.gee$Label[i])
       
     }
@@ -731,7 +706,7 @@ for(i in 1:nrow(meth.gee)){
     
   }
   
-  #15. Collapse data across years----
+  #14. Collapse data across years----
   loc.i <- data.table::rbindlist(loc.j, fill=TRUE)
   loc.gee <- cbind(loc.gee, loc.i %>% 
                      dplyr::select(meth.gee$Label[i]))
@@ -742,7 +717,7 @@ for(i in 1:nrow(meth.gee)){
   
 }
 
-#16. Read in output files for radius extraction----
+#15. Read in output files for radius extraction----
 files.gee <- data.frame(path = list.files(file.path(root, "Data", "Covariates", "GEE", "Match"), full.names = TRUE)) %>%
   separate(path, into=c("j1", "j2", "j3", "j4", "j5", "j6", "j7", "covariate", "extent", "year"), sep="_", remove=FALSE)
 
@@ -768,9 +743,7 @@ for(i in 1:nrow(vars)){
   
 }
 
-#18. Add landcover classes----
-
-#19. Save again----
+#16. Save again----
 write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"), row.names=FALSE)
 
 #E. ASSEMBLE####
@@ -787,11 +760,13 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
-
 #3. Add id to visit and join together----
-visit.old <- visit
+meth.use <- meth %>% 
+  dplyr::filter(Complete==1)
 
-visit <- visit.old %>% 
+#Remove lat lon fields due to rounding errors that cause mismatches
+#format landcover classes as factors
+visit.covs <- visit %>% 
   rename(row = id) %>% 
   mutate(id=paste(project, location, lat, lon, year, sep="_")) %>% 
   left_join(loc.gd %>% 
@@ -799,53 +774,48 @@ visit <- visit.old %>%
   left_join(loc.scanfi %>% 
               dplyr::select(-lat, -lon)) %>% 
   left_join(loc.gee.static) %>% 
-  left_join(loc.gee.match %>% 
-              dplyr::select(-lat, -lon)) %>% 
+  left_join(loc.gee.match) %>% 
   dplyr::select(-id) %>% 
-  rename(id = row)
+  rename(id = row) %>% 
+  dplyr::select(all_of(colnames(visit)), all_of(meth.use$Label)) %>% 
+  mutate(MODISLCC_1km = factor(MODISLCC_1km),
+         MODISLCC_5x5 = factor(MODISLCC_5x5),
+         SCANFI_1km = factor(SCANFI_1km),
+         NLCD_1km = factor(NLCD_1km),
+         ABoVE_1km = factor(ABoVE_1km),
+         VLCE_1km = factor(VLCE_1km))
 
-#4. Join to landcover classes----
-if(meth.gee$Name[i]=="landcovermodis"){
-  loc.gee <- left_join(loc.gee, lc.modis, multiple="all")
-}
 
 #5. Sanity checks----
-loc.check <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
-summary(loc.check)
 
-#check missing climate normals - looks like all the coastal data
-loc.na <- dplyr::filter(loc.check, is.na(CMD)) %>% 
-  dplyr::select(project, year, lat, lon, CMD)
-plot(loc.na$lon, loc.na$lat)
+#Take a sample of the visits to look at the NAs for each cov
+set.seed(1234)
+visit.sample <- visit.covs %>% 
+  sample_n(100000)
 
-#check missing hli3cl - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(hli3cl))
-plot(loc.na$lon, loc.na$lat)
+#Plot to a folder
+for(i in 1:nrow(meth.use)){
+  
+  visit.i <- visit.sample %>% 
+    dplyr::select(lat, lon, meth.use$Label[i]) %>% 
+    data.table::setnames(c("lat", "lon", "cov")) %>% 
+    mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
+  
+  plot.i <- ggplot(visit.i) +
+    geom_point(aes(x=lon, y=lat, colour=na))
+  
+  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
+  
+  print(paste0("Finished plot ", i, " of ", nrow(meth.use)))
+  
+  
+}
 
-#check missing peat - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(peat))
-plot(loc.na$lon, loc.na$lat)
-
-#check missing global HF - also looks coastal
-loc.na <- dplyr::filter(loc.check, is.na(HF_5km.2))
-plot(loc.na$lon, loc.na$lat)
-
-#check missing greenup - looks like all of canada?
-loc.na <- dplyr::filter(loc.check, is.na(greenup)) %>% 
-  dplyr::select(project, year, lat, lon, greenup, dormancy)
-ggplot(loc.na) +
-  geom_point(aes(x=lon, y=lat)) +
-  facet_wrap(~year)
-table(loc.na$year)
-
-write.csv(loc.na, file.path(root, "Data", "Covariates", "Greenup_NA.csv"), row.names=FALSE)
-
-#6. Remove things with NAs for certain layers????
-
-
-
-
+#ABoVE and NLCD look weird. Also VLCE?
+#Also note US & Can roads have no NAs
 
 
 #G. SAVE#####
+visit <- visit.covs
+
 save(visit, bird,  offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
