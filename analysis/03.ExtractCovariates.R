@@ -22,7 +22,7 @@
 
 #One way to improve the reproducibility and adding new layers would be to compile the list of layers to extract by comparing the full list to the column names of existing compiled objects instead of using the "running" and "complete" lookup columns. Similarly for GEE extraction and the downloaded files.
 
-#TO DO: Investigate landcover NAs
+#Oh right, and should probably parallelize it all.
 
 #PREAMBLE############################
 
@@ -59,9 +59,8 @@ loc.yr <- visit %>%
 #EXTRA. Test sample dataset----
 # set.seed(1234)
 # loc.n <- loc.yr %>%
-#   sample_n(10)
+#   sample_n(1000)
 loc.n <- loc.yr
-#rm(loc.yr)
 
 #3. Buffer location objects----
 #200 m radius for local extent
@@ -72,17 +71,17 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, Complete==0)
+meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, TemporalResolution=="match")
 
 #2. Plain dataframe for joining to output----
-#loc.gd <- data.frame(loc.n) %>% 
+# loc.gd <- data.frame(loc.n) %>%
 #  dplyr::select(-geometry)
 
 #Read in existing dataframe if not starting from scratch
 loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
 #3. Set up loop----
-loop <- unique(meth.gd$StackCategory)
+loop <- sort(unique(meth.gd$StackCategory))
 for(i in 1:length(loop)){
   
   #4. Filter to stack category----
@@ -104,13 +103,15 @@ for(i in 1:length(loop)){
     if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==200){
       loc.cov <- loc.buff %>% 
         st_transform(crs(rast.i)) %>% 
-        exact_extract(x=rast.i, "mean", force_df=TRUE)
+        exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+        cbind(loc.n)
     }
     
     if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
       loc.cov <- loc.buff2 %>% 
         st_transform(crs(rast.i)) %>% 
-        exact_extract(x=rast.i, "mean", force_df=TRUE)
+        exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+        cbind(loc.n)
     }
     
   }
@@ -191,14 +192,20 @@ for(i in 1:length(loop)){
           st_transform(crs(rast.i)) %>% 
           terra::extract(x=rast.i, ID=FALSE) %>% 
           data.table::setnames(meth.gd.i$Label) %>% 
+          cbind(loc.n.j %>% 
+                  st_drop_geometry() %>% 
+                  dplyr::select(id)) %>% 
           rbind(loc.cov)
       }
       
       if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==200){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
-          exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+          exact_extract(x=rast.i, meth.gd.i$RadiusFunction, force_df=TRUE) %>% 
           data.table::setnames(meth.gd.i$Label) %>% 
+          cbind(loc.n.j %>% 
+                  st_drop_geometry() %>% 
+                  dplyr::select(id)) %>% 
           rbind(loc.cov)
       }
       
@@ -207,7 +214,10 @@ for(i in 1:length(loop)){
           st_transform(crs(rast.i)) %>% 
           exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
           data.table::setnames(meth.gd.i$Label) %>% 
-          rbind(loc.cov)
+          cbind(loc.n.j %>% 
+                  st_drop_geometry() %>% 
+                  dplyr::select(id)) %>% 
+          rbind(loc.cov) 
       }
       
       print(paste0("Finished year ", j, " of ", length(yrs)))
@@ -216,43 +226,39 @@ for(i in 1:length(loop)){
     
   }
 
-  #14. Add to output----
-  #fix column names
-  nms <- c(colnames(loc.gd)[1:ncol(loc.gd)], meth.gd.i$Label)
-  loc.gd <- cbind(loc.gd, loc.cov)
+  #14. Fix column names----
+  if(loop[i] %in% c(19, 20, 23, 24)){
+    colnames(loc.cov) <- c(paste0(meth.gd.i$Label, "_conus"), "id")
+    nms <- c(colnames(loc.gd), paste(meth.gd.i$Label, "_conus"))
+  } else {nms <- c(colnames(loc.gd), meth.gd.i$Label) }
+
+  #15. Add output to main file----
+  loc.gd <- left_join(loc.gd, loc.cov)
   colnames(loc.gd) <- nms
   
-  #15. Save----
+  #16. Save----
   write.csv(loc.gd, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
   
-  #16. Report status----
+  #17. Report status----
   print(paste0("Finished stack category ", i, " of ", length(loop)))
 
 }
 
-#15. Merge AK & CONUS columns for landfire----
+#18. Merge AK & CONUS columns for landfire----
 
-#TO DO: FIX THIS BASED ON NEW NAMING CONVENTIONS####
-
-if("heightcv.2.ak" %in% colnames(loc.gd)){
-  loc.gd2 <- loc.gd %>% 
-    mutate(
-      height.2 = ifelse(!is.na(height.2.ak), height.2.ak, height.2.conus),
-      heightcv.2 = ifelse(!is.na(heightcv.2.ak), heightcv.2.ak, heightcv.2.conus),
-      biomass.2 = ifelse(!is.na(biomass.2.ak), biomass.2.ak, biomass.2.conus),
-      closure.3 = ifelse(!is.na(closure.3.ak), closure.3.ak, closure.3.conus),
-      height_ls.2 = ifelse(!is.na(height_ls.2.ak), height_ls.2.ak, height_ls.2.conus),
-      heightcv_ls.2 = ifelse(!is.na(heightcv_ls.2.ak), heightcv_ls.2.ak, heightcv_ls.2.conus),
-      biomass_ls.2 = ifelse(!is.na(biomass_ls.2.ak), biomass_ls.2.ak, biomass_ls.2.conus),
-      closure_ls.3 = ifelse(!is.na(closure_ls.3.ak), closure_ls.3.ak, closure_ls.3.conus)) %>% 
-    dplyr::select(-height.2.ak, -height.2.conus,
-                  -heightcv.2.ak, -heightcv.2.conus,
-                  -biomass.2.ak, -biomass.2.conus,
-                  -closure.3.ak, -closure.3.conus,
-                  -height_ls.2.ak, -height_ls.2.conus,
-                  -heightcv_ls.2.ak, -heightcv_ls.2.conus,
-                  -biomass_ls.2.ak, -biomass_ls.2.conus,
-                  -closure_ls.3.ak, -closure_ls.3.conus)
+if("LFheigthcv_1km._conus" %in% colnames(loc.gd)){
+  loc.gd2 <- loc.gd  %>% 
+    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1km._conus),
+           LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km._conus),
+           LFheigth_1km = ifelse(!is.na(LFheigth_1km), LFheigth_1km, LFheigth_1km._conus),
+           LFheigthcv_1km = ifelse(!is.na(LFheigthcv_1km), LFheigthcv_1km, LFheigthcv_1km._conus),
+           LFbiomass_5x5 = ifelse(!is.na(LFbiomass_5x5), LFbiomass_5x5, LFbiomass_5x5._conus),
+           LFcrownclosure_5x5 = ifelse(!is.na(LFcrownclosure_5x5), LFcrownclosure_5x5, LFcrownclosure_5x5._conus),
+           LFheigth_5x5 = ifelse(!is.na(LFheigth_5x5), LFheigth_5x5, LFheigth_5x5._conus),
+           LFheigthcv_5x5 = ifelse(!is.na(LFheigthcv_5x5), LFheigthcv_5x5, LFheigthcv_5x5._conus)) %>% 
+    dplyr::select(-LFbiomass_1km._conus, -LFcrownclosure_1km._conus, -LFheigth_1km._conus, -LFheigthcv_1km._conus,
+                  -LFbiomass_5x5._conus, -LFcrownclosure_5x5._conus, -LFheigth_5x5._conus, -LFheigthcv_5x5._conus)
+  
 } else { loc.gd2 <- loc.gd }
 
 write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"), row.names=FALSE)
@@ -801,19 +807,19 @@ for(i in 1:nrow(meth.use)){
     data.table::setnames(c("lat", "lon", "cov")) %>% 
     mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
   
-  plot.i <- ggplot(visit.i) +
+  plot.na.i <- ggplot(visit.i) +
     geom_point(aes(x=lon, y=lat, colour=na))
   
-  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
+  ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
+  
+  plot.i <- ggplot(visit.i) +
+    geom_point(aes(x=lon, y=lat, colour=cov))
+  
+  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
   
   print(paste0("Finished plot ", i, " of ", nrow(meth.use)))
   
-  
 }
-
-#ABoVE and NLCD look weird. Also VLCE?
-#Also note US & Can roads have no NAs
-
 
 #G. SAVE#####
 visit <- visit.covs
