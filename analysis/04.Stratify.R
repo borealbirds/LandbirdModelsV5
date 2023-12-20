@@ -192,7 +192,7 @@ write.csv(bcr.n2, file.path(root, "Regions", "SubUnitSampleSizes_AfterAggregatio
 #THIN FOR EACH BOOTSTRAP##############
 
 #1. Get list of BCRs----
-bcrs <- unique(colnames(bcr.agr)[-1])
+bcrs <- sort(unique(colnames(bcr.agr)[-1]))
 
 #2. Create grid for thinning----
 grid <- dgconstruct(spacing = 2.5, metric=TRUE)
@@ -285,21 +285,27 @@ meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"
 
 #2. Set up dataframe for variables that are global---
 meth.global <- meth %>% 
-  dplyr::filter(is.na(Priority))
+  dplyr::filter(Extent=="global")
 
-covlist <- expand.grid(bcr=bcrs, cov = meth.global$Label.Priority) %>% 
+cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) %>% 
   mutate(val = TRUE) %>% 
   pivot_wider(names_from=cov, values_from=val)
 
-#3. Separate by variables that need prioritization----
+#3. Set up dataframe for variables that need prioritization----
 #collapse AK & CONUS priority fields - only needed for extraction
 meth.prior <- meth %>% 
-  dplyr::filter(!is.na(Priority)) %>% 
-  mutate(Priority = as.numeri(str_sub(Priority, 1, 1))) %>% 
-  dplyr::select(Category, Type, Label, Priority) %>% 
+  dplyr::filter(Extent!="global") %>% 
+  mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) %>% 
+  dplyr::select(Category, Subcategory, Label, Priority) %>% 
   unique() %>% 
-  arrange(Category, Type, Priority) %>%  
-  pivot_wider(values_from=Label, names_from=Priority)
+  arrange(Category, Subcategory, Priority)
+
+cov.prior <- matrix(ncol=nrow(meth.prior), nrow=length(bcrs),
+                    dimnames=list(bcrs, meth.prior$Label)) %>% 
+  data.frame()
+
+#4. Loop for subcateogries of variables that need prioritization----
+subcat <- unique(meth.prior$Subcategory)
 
 #4. Set up bcr loop----
 for(i in 1:length(bcrs)){
@@ -309,19 +315,58 @@ for(i in 1:length(bcrs)){
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(use==TRUE) %>% 
     dplyr::select(-use) %>% 
-    left_join(visit.use)
+    left_join(visit.use, by="id")
   
-  #6. Set up cov loop----
-  for(j in 1:nrow(meth.prior)){
+  #6. Set up subcategory loop----
+  for(j in 1:length(subcat)){
+    
+    #7. Select covs to compare----
+    meth.j <- dplyr::filter(meth.prior, Subcategory %in% subcat[j])
     
     cov.j <- visit.i %>% 
-      dplyr::select(meth.prior$Pr)
+      dplyr::select(all_of(Smeth.j$Label))
+    
+    #8. Determine which cov to use----
+    #Count non-na and non-zero values per cov, round to nearest 100 to avoid slight differences, and choose highest priority to use for that subcategory
+    na.j <- cov.j %>% 
+      mutate(id = row_number()) %>% 
+      pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") %>% 
+      dplyr::filter(!is.na(Value) & as.numeric(Value) > 0) %>% 
+      group_by(Label) %>% 
+      summarize(n = round(n(), -2)) %>% 
+      ungroup() %>% 
+      left_join(meth.prior, by="Label")
+    
+    use.j <- na.j %>% 
+      dplyr::filter(n==max(n, na.rm=TRUE)) %>% 
+      dplyr::filter(Priority==min(Priority, na.rm=TRUE)) %>% 
+      mutate(use = 1) %>% 
+      right_join(meth.j, by = join_by(Label, Category, Subcategory, Priority)) %>% 
+      mutate(use = ifelse(is.na(use), 0, use))
+    
+    #9. Update lookup dataframe----
+    for(k in 1:nrow(use.j)){
+      
+      if(use.j$use[k]==1){
+        cov.prior[bcrs[i],use.j$Label[k]] <- TRUE
+      } else {
+        cov.prior[bcrs[i],use.j$Label[k]] <- FALSE
+      }
+    }
+    
+    #10. Remove covariates with only 1 option and are in Canada----
+    if(nrow(use.j)==1){
+      cov.prior[20:34, use.j$Label[1]] <- FALSE
+    }
     
   }
   
+  print(paste0("Finished BCR ", i, " of ", length(bcrs)))
+  
 }
 
-
+#11. Put them together----
+covlist <- cbind(cov.global, cov.prior)
 
 #SAVE#####
 
@@ -330,4 +375,4 @@ visit <- visit.use
 bird <- bird.use
 offsets <- offsets.use
 
-save(visit, bird, offsets, bootlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+save(visit, bird, offsets, bootlist, covlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
