@@ -585,8 +585,10 @@ loc.gee <- loc.gee.cv.200 %>%
                                      lab.mean.2000$Label[3],
                                      colnames(loc.gee.mean.2000)[10:12])) %>% 
               dplyr::select(c(id, lab.mean.2000$Label))) %>% 
-  mutate(heightcv.3 = heightcv.3/height.3,
-         heightcv_ls.3 = heightcv_ls.3/height_ls.3)
+  mutate(ETHheightcv_1km = ETHheighcv_1km/ETHheight_1km,
+         ETHheightcv_5x5 = ETHheighcv_5x5/ETHheight_5x5) %>% 
+  mutate(ETHheightcv_1km = ifelse(is.infinite(ETHheightcv_1km), 0, ETHheightcv_1km),
+         ETHheightcv_5x5 = ifelse(is.infinite(ETHheightcv_5x5), 0, ETHheightcv_5x5))
 
 #15. Zerofill----
 zerocols <- meth.gee %>% 
