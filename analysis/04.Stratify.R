@@ -151,7 +151,7 @@ bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
                     n = colSums(bcr.use[-1]==TRUE)) %>% 
   arrange(n)
 
-write.csv(bcr.n, file.path(root, "Data", "SubUnitSampleSizes.csv"), row.names=FALSE)
+write.csv(bcr.n, file.path(root, "Regions", "SubUnitSampleSizes.csv"), row.names=FALSE)
 
 #2. Plot sample sizes----
 bcr.sf <- bcr.country %>% 
@@ -164,15 +164,35 @@ ggplot(bcr.sf) +
 
 ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8, height = 4)
 
-#3. Set sample size minimum----
+#3. Aggregate subunits----
+#CA: merge 42 with 41
+#USA: merge 41 with 42
+#USA: merge 3 with 41
 
+#Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
 
-#4. Aggregate subunits----
+#Also try:
+#merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
+#merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
+
+bcr.agr <- bcr.use %>% 
+  mutate(ca_4142 = ifelse(ca_41==TRUE | ca_42==TRUE, TRUE, FALSE),
+         usa_41423 = ifelse(usa_42==TRUE | usa_41==TRUE | usa_3==TRUE, TRUE, FALSE),
+         usa_414232 = ifelse(usa_42==TRUE | usa_41==TRUE | usa_3==TRUE | usa_2==TRUE, TRUE, FALSE),
+         ca_8182 = ifelse(ca_82==TRUE | ca_81==TRUE, TRUE, FALSE)) %>% 
+  dplyr::select(-ca_41, -usa_42, -usa_3, -ca_42, -usa_41)
+
+#4. Check sample sizes again
+bcr.n2 <- data.frame(bcr = unique(colnames(bcr.agr)[-1]),
+                    n = colSums(bcr.agr[-1]==TRUE)) %>% 
+  arrange(n)
+
+write.csv(bcr.n2, file.path(root, "Regions", "SubUnitSampleSizes_AfterAggregation.csv"), row.names=FALSE)
 
 #THIN FOR EACH BOOTSTRAP##############
 
 #1. Get list of BCRs----
-bcrs <- unique(colnames(bcr.use)[-1])
+bcrs <- unique(colnames(bcr.agr)[-1])
 
 #2. Create grid for thinning----
 grid <- dgconstruct(spacing = 2.5, metric=TRUE)
@@ -191,7 +211,7 @@ bootlist <- list()
 for(i in 1:length(bcrs)){
   
   #5. Select visits within BCR----
-  bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
+  bcr.i <- bcr.agr[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(use==TRUE)
   
@@ -200,7 +220,7 @@ for(i in 1:length(bcrs)){
      dplyr::filter(id %in% bcr.i$id)
   
   #6. Set up bootstrap loop----
-  out <- data.frame(id=bcr.use$id)
+  out <- data.frame(id=bcr.agr$id)
   for(j in 1:boot){
     
     #7. Set seed----
@@ -215,7 +235,7 @@ for(i in 1:length(bcrs)){
       dplyr::filter(rowid==use)
     
     #9. Set up output----
-    out[,(j+1)] <- bcr.use$id %in% visit.j$id
+    out[,(j+1)] <- bcr.agr$id %in% visit.j$id
     
   }
   
@@ -242,7 +262,7 @@ birdlist <- data.frame(bcr=bcrs)
 for(i in 1:length(bcrs)){
   
   #3. Select visits within BCR----
-  bcr.i <- bcr.use[,c("id", bcrs[i])] %>%
+  bcr.i <- bcr.agr[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(use==TRUE)
   
@@ -285,7 +305,7 @@ meth.prior <- meth %>%
 for(i in 1:length(bcrs)){
   
   #5. Filter data to BCR----
-  visit.i <- bcr.use[,c("id", bcrs[i])] %>%
+  visit.i <- bcr.agr[,c("id", bcrs[i])] %>%
     data.table::setnames(c("id", "use")) %>%
     dplyr::filter(use==TRUE) %>% 
     dplyr::select(-use) %>% 
@@ -310,4 +330,4 @@ visit <- visit.use
 bird <- bird.use
 offsets <- offsets.use
 
-save(visit, bird, offsets, bootlist, birdlist, file=file.path(root, "04_NM5.0_data_stratify.Rdata"))
+save(visit, bird, offsets, bootlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
