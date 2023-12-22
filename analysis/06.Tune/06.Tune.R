@@ -72,6 +72,8 @@ tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "bootlist", "birdlist",
 
 brt_tune <- function(i){
   
+  t0 <- proc.time()
+  
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
@@ -105,8 +107,20 @@ brt_tune <- function(i){
                          learning.rate = lr.i,
                          family="poisson")
   
-  #8. Save output----
+  #8. Get performance metrics----
+  out[[i]] <- loop[i,] %>% 
+    cbind(data.frame(trees = m.i$n.trees,
+                     deviance.mean = m.i$cv.statistics$deviance.mean,
+                     deviance.se = m.i$cv.statistics$deviance.se,
+                     null = m.i$self.statistics$mean.null,
+                     resid = m.i$self.statistics$mean.resid,
+                     correlation = m.i$self.statistics$correlation,
+                     correlation.mean = m.i$cv.statistics$correlation.mean,
+                     correlation.se = m.i$cv.statistics$correlation.se,
+                     time = (proc.time()-t0)[3]))
   
+  #9. Save----
+  save(out, file=file.path("results", "ModelTuning.Rdata"))
   
 }
 
@@ -154,16 +168,14 @@ if(test) {loop <- loop[1:2,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#6. Run BRT function in parallel----
+#6. Make object to store output----
+out <- list()
+
+#7. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   1:nrow(loop),
                   fun=brt_tune)
-
-
-#SELECT PARAMETERS####
-
-
 
 #CONCLUDE####
 
@@ -174,5 +186,3 @@ print("* Shutting down clusters *")
 stopCluster(cl)
 
 if(!test){ q() }
-
-
