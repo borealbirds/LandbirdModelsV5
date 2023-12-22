@@ -18,6 +18,8 @@
 
 #There is an object at the beginning of the script that can be set to TRUE if running this script on a local machine, which will then overwrite objects to local testing settings. Set this object to FALSE before running on compute canada.
 
+#Potential improvements for next iteration: perhaps reformat lookups for bird and covariates given 
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -50,6 +52,7 @@ cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 #6. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
+tmpcl <- clusterEvalQ(cl, library(dplyr))
 
 #7. Load data----
 print("* Loading data on master *")
@@ -58,12 +61,59 @@ print("* Loading data on master *")
 if(!test){ load(file.path("04_NM5.0_data_stratify.Rdata")) }
 
 #For testing on local
-if(test){ load(file.path(root, "Data", "04_NM5.0_data_stratify.Rdata")) }
+if(test){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
 
 print("* Loading data on workers *")
 
 if(!test){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NM")) }
-tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "bootstraps", "birdlist"))
+tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "bootlist", "birdlist", "covlist"))
+
+#WRITE FUNCTION##########
+
+brt_tune <- function(i){
+  
+  #1. Get model settings---
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  boot.i <- loop$boot[i]
+  lr.i <- loop$lr[i]
+  id.i <- loop$id[i]
+  
+  #2. Get visits to include----
+  visit.i <- visit[bootlist[[bcr.i]][,boot.i+1],]
+  
+  #3. Get response data (bird data)----
+  bird.i <- bird[bird$id %in% visit.i$id, spp.i]
+  
+  #4. Get covariates----
+  covlist.i <- bcr.cov %>% 
+    dplyr::filter(bcr==bcr.i)
+  cov.i <- visit.i[,colnames(visit.i) %in% covlist.i$cov]
+  
+  #5. Put together data object----
+  dat.i <- cbind(bird.i, cov.i)
+  
+  #6. Get offsets----
+  off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
+  
+  #7. Run model----
+  m.i <- dismo::gbm.step(data=dat.i,
+                         gbm.x=c(2:ncol(dat.i)),
+                         gbm.y=1,
+                         offset=off.i,
+                         tree.complexity = id.i,
+                         learning.rate = lr.i,
+                         family="poisson")
+  
+  #8. Save output----
+  
+  
+}
+
+#9. Export to clusters----
+print("* Loading function on workers *")
+
+tmpcl <- clusterExport(cl, c("brt_tune"))
 
 #RUN MODELS###############
 
@@ -80,29 +130,35 @@ boot <- 1
 
 #3. Get BCR & bird combo list----
 bcr.spp <- birdlist %>% 
-  rename(bcr=id) %>% 
   pivot_longer(ABDU:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE)
 
-#4. Make dataframe of models to run----
+#4. Reformat covariate list----
+bcr.cov <- covlist %>% 
+  pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+  dplyr::filter(use==TRUE)
+
+print("* Loading covariate list on workers *")
+tmpcl <- clusterExport(cl, c("bcr.cov"))
+
+#5. Make dataframe of models to run----
 
 #For running on cluster
 loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
   merge(bcr.spp) %>% 
   dplyr::select(-use)
-tmpcl <- clusterExport(cl, c("loop"))
 
 #For testing on local
 if(test) {loop <- loop[1:2,]}
 
-#5. Load BRT function----
-load("00.BRTFunction.R")
+print("* Loading model loop on workers *")
+tmpcl <- clusterExport(cl, c("loop"))
 
 #6. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   1:nrow(loop),
-                  fun=brt.tune)
+                  fun=brt_tune)
 
 
 #SELECT PARAMETERS####
