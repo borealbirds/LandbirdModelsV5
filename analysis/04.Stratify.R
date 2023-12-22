@@ -324,7 +324,7 @@ for(i in 1:length(bcrs)){
     meth.j <- dplyr::filter(meth.prior, Subcategory %in% subcat[j])
     
     cov.j <- visit.i %>% 
-      dplyr::select(all_of(Smeth.j$Label))
+      dplyr::select(all_of(meth.j$Label))
     
     #8. Determine which cov to use----
     #Count non-na and non-zero values per cov, round to nearest 100 to avoid slight differences, and choose highest priority to use for that subcategory
