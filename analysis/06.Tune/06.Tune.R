@@ -18,7 +18,7 @@
 
 #There is an object at the beginning of the script that can be set to TRUE if running this script on a local machine, which will then overwrite objects to local testing settings. Set this object to FALSE before running on compute canada.
 
-#Potential improvements for next iteration: perhaps reformat lookups for bird and covariates given 
+#Files must be transferred between local computer and compute canada's servers using Globus Connect.
 
 #PREAMBLE############################
 
