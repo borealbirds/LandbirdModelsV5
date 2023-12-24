@@ -370,9 +370,15 @@ covlist <- cbind(cov.global, cov.prior)
 
 #SAVE#####
 
-#1. Rename objects----
-visit <- visit.use
+#1. Rename objects & thin for optimizing memory during model running----
+cov <- visit.use %>% 
+  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
+
+visit <- visit.use %>% 
+  dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday)
+
 bird <- bird.use
 offsets <- offsets.use
+bcrlist <- bcr.ag
 
-save(visit, bird, offsets, bootlist, covlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+save(visit, cov, bird, offsets, bootlist, covlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
