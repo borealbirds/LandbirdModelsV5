@@ -28,8 +28,9 @@ library(tidyverse)
 library(dismo)
 library(parallel)
 
-#2. Determine if testing on local----
+#2. Determine if testing and on local or cluster----
 test <- TRUE
+cc <- TRUE
 
 #3. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -41,7 +42,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 2 }
+if(test){ nodeslist <- 32 }
 
 print(nodeslist)
 
@@ -52,21 +53,21 @@ cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 #6. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
-tmpcl <- clusterEvalQ(cl, library(dplyr))
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
 
 #7. Load data----
 print("* Loading data on master *")
 
 #For running on cluster
-if(!test){ load(file.path("04_NM5.0_data_stratify.Rdata")) }
+if(cc){ load(file.path("04_NM5.0_data_stratify.R")) }
 
 #For testing on local
-if(test){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
+if(!cc){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
 
 print("* Loading data on workers *")
 
-if(!test){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NM")) }
-tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "bootlist", "birdlist", "covlist"))
+if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
+tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "birdlist", "covlist"))
 
 #WRITE FUNCTION##########
 
@@ -92,13 +93,16 @@ brt_tune <- function(i){
     dplyr::filter(bcr==bcr.i)
   cov.i <- visit.i[,colnames(visit.i) %in% covlist.i$cov]
   
-  #5. Put together data object----
-  dat.i <- cbind(bird.i, cov.i)
+  #5. Get PC vs SPT vs SPM----
+  meth.i <- factor(visit.i$tagMethod)
   
-  #6. Get offsets----
+  #6. Put together data object----
+  dat.i <- cbind(bird.i, meth.i, cov.i)
+  
+  #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #7. Run model----
+  #8. Run model----
   m.i <- dismo::gbm.step(data=dat.i,
                          gbm.x=c(2:ncol(dat.i)),
                          gbm.y=1,
@@ -107,7 +111,7 @@ brt_tune <- function(i){
                          learning.rate = lr.i,
                          family="poisson")
   
-  #8. Get performance metrics----
+  #9. Get performance metrics----
   out[[i]] <- loop[i,] %>% 
     cbind(data.frame(trees = m.i$n.trees,
                      deviance.mean = m.i$cv.statistics$deviance.mean,
@@ -119,8 +123,11 @@ brt_tune <- function(i){
                      correlation.se = m.i$cv.statistics$correlation.se,
                      time = (proc.time()-t0)[3]))
   
-  #9. Save----
+  #10. Save----
   save(out, file=file.path("results", "ModelTuning.Rdata"))
+  
+  #11. Tidy up----
+  rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
   
 }
 
@@ -137,7 +144,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 lr <- c(0.01, 0.005, 0.001, 0.0005, 0.0001)
 
 #Interaction depth
-id <- c(2, 3, 4)
+id <- c(3)
 
 #2. Set number of bootstraps----
 boot <- 1
@@ -157,19 +164,23 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #5. Make dataframe of models to run----
 
-#For running on cluster
+#Full combinations
 loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
   merge(bcr.spp) %>% 
-  dplyr::select(-use)
+  dplyr::select(-use) %>% 
+  arrange(bcr, lr, id, spp)
 
-#For testing on local
-if(test) {loop <- loop[1:2,]}
+#For testing
+if(test) {loop <- loop[1:32,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
 #6. Make object to store output----
 out <- list()
+
+print("* Loading output object on workers *")
+tmpcl <- clusterExport(cl, c("out"))
 
 #7. Run BRT function in parallel----
 print("* Fitting models *")
@@ -179,10 +190,8 @@ mods <- parLapply(cl,
 
 #CONCLUDE####
 
-#1. Save----
-
-#2. Close clusters----
+#1. Close clusters----
 print("* Shutting down clusters *")
 stopCluster(cl)
 
-if(!test){ q() }
+if(cc){ q() }
