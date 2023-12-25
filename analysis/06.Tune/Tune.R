@@ -16,9 +16,26 @@
 
 #This script is written to be run on the compute canada cluster in parallel. Messages are therefore printed in the output for each step in the script to help with debugging. Use the .sh object to run the script on the cluster.
 
-#There is an object at the beginning of the script that can be set to TRUE if running this script on a local machine, which will then overwrite objects to local testing settings. Set this object to FALSE before running on compute canada.
+#There are two object at the beginning of the script that can be set to TRUE if running tests. One controls whether you are running on a subset of model iterations (i.e., testing), and one controls whether you are running on your local machine or compute canada. Ideally you would:
+#1. set test to true and cc to false (test on local)
+#2. set cc to true (test on compute canada)
+#3. set test to false (run full model set on compute canada)
 
-#Files must be transferred between local computer and compute canada's servers using Globus Connect.
+#The steps for running on compute canada (for this and other scripts are):
+#1. Transfer this script and your data object between local computer and compute canada's servers using Globus Connect.
+#2. Create any folders you need for saving output into (as per your script).
+#3. Log in to compute canada in the terminal with the ssh function.
+#4. Figure out which modules you need to run your R packages (if making any changes) and load them.
+#5. Load an instance of R in the test node and install the packages you need. Close it.
+#6. Use the nano function to create a shell script that tells the slurm the resources you need, the modules you need, and the script to run. NOTE: You have to do this via the terminal or with a Linux machine. The slurm can't read the encoding if you create it on a windows machine and transfer it over via Globus.
+#7. Use the cd function to navigate to the write working directory within copute canada's file servers (i.e., where you put your files with globus connect)
+#8. Run your script with sbatch and the name of your sh file!
+#9. Use squeue -u and your username to check on the status of your job.
+
+#see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
+
+#TO DO: CHANGE THIS TO THINNING####
+#TO DO: EXPLORE SPARSE MATRICES####
 
 #PREAMBLE############################
 
@@ -30,7 +47,7 @@ library(parallel)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -42,7 +59,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 32 }
+if(test){ nodeslist <- 2 }
 
 print(nodeslist)
 
@@ -83,10 +100,16 @@ brt_tune <- function(i){
   id.i <- loop$id[i]
   
   #2. Get visits to include----
-  visit.i <- visit[bootlist[[bcr.i]][,boot.i+1],]
+  set.seed(i)
+  visit.i <- gridlist[bcrlist[,bcr.i],] %>% 
+    group_by(year, cell) %>% 
+    mutate(rowid = row_number(),
+           use = sample(1:max(rowid), 1)) %>% 
+    ungroup() %>% 
+    dplyr::filter(rowid==use)
   
   #3. Get response data (bird data)----
-  bird.i <- bird[bird$id %in% visit.i$id, spp.i]
+  bird.i <- bird[visit.i$id, spp.i]
   
   #4. Get covariates----
   covlist.i <- bcr.cov %>% 
@@ -141,7 +164,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 #1. Set grid search parameters----
 
 #Learning rate
-lr <- c(0.01, 0.005, 0.001, 0.0005, 0.0001)
+lr <- c(0.01, 0.001, 0.0001)
 
 #Interaction depth
 id <- c(3)
@@ -171,7 +194,7 @@ loop <- expand.grid(lr=lr, id=id, boot=boot) %>%
   arrange(bcr, lr, id, spp)
 
 #For testing
-if(test) {loop <- loop[1:32,]}
+if(test) {loop <- loop[1:2,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))

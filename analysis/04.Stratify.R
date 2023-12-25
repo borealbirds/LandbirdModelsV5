@@ -189,7 +189,7 @@ bcr.n2 <- data.frame(bcr = unique(colnames(bcr.agr)[-1]),
 
 write.csv(bcr.n2, file.path(root, "Regions", "SubUnitSampleSizes_AfterAggregation.csv"), row.names=FALSE)
 
-#THIN FOR EACH BOOTSTRAP##############
+#SPATIAL GRID FOR BOOTSTRAP THINNING##############
 
 #1. Get list of BCRs----
 bcrs <- sort(unique(colnames(bcr.agr)[-1]))
@@ -201,55 +201,6 @@ visit.grid <- visit.use %>%
   mutate(cell = dgGEO_to_SEQNUM(grid, lon, lat)$seqnum)
 
 length(unique(visit.grid$cell))
-
-#3. Set number of bootlist----
-boot <- 100
-
-#4. Set up loop----
-bootlist <- list()
-
-for(i in 1:length(bcrs)){
-  
-  #5. Select visits within BCR----
-  bcr.i <- bcr.agr[,c("id", bcrs[i])] %>%
-    data.table::setnames(c("id", "use")) %>%
-    dplyr::filter(use==TRUE)
-  
-  #6. Filter visits----
-  visit.i <- visit.grid %>% 
-     dplyr::filter(id %in% bcr.i$id)
-  
-  #6. Set up bootstrap loop----
-  out <- data.frame(id=bcr.agr$id)
-  for(j in 1:boot){
-    
-    #7. Set seed----
-    set.seed(j)
-    
-    #8. Random sample----
-    visit.j <- visit.i %>% 
-      group_by(year, cell) %>% 
-      mutate(rowid = row_number(),
-             use = sample(1:max(rowid), 1)) %>% 
-      ungroup() %>% 
-      dplyr::filter(rowid==use)
-    
-    #9. Set up output----
-    out[,(j+1)] <- bcr.agr$id %in% visit.j$id
-    
-  }
-  
-  #10. Fix column names----
-  x <- seq(1, boot, 1)
-  colnames(out) <- c("id", paste0("X", x))
-  bootlist[[i]] <- out
-  
-  print(paste0("Finished thinning ", bcrs[i], ": ", i, " of ", length(bcrs)))
-  
-}
-
-#11. Label list items by BCR----
-names(bootlist) <- bcrs
 
 #UPDATE BIRD LIST BY BCR##############
 
@@ -296,16 +247,16 @@ cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) %>%
 meth.prior <- meth %>% 
   dplyr::filter(Extent!="global") %>% 
   mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) %>% 
-  dplyr::select(Category, Subcategory, Label, Priority) %>% 
+  dplyr::select(Category, Name, Label, Priority) %>% 
   unique() %>% 
-  arrange(Category, Subcategory, Priority)
+  arrange(Category, Name, Priority)
 
 cov.prior <- matrix(ncol=nrow(meth.prior), nrow=length(bcrs),
                     dimnames=list(bcrs, meth.prior$Label)) %>% 
   data.frame()
 
 #4. Loop for subcateogries of variables that need prioritization----
-subcat <- unique(meth.prior$Subcategory)
+subcat <- unique(meth.prior$Name)
 
 #4. Set up bcr loop----
 for(i in 1:length(bcrs)){
@@ -317,17 +268,17 @@ for(i in 1:length(bcrs)){
     dplyr::select(-use) %>% 
     left_join(visit.use, by="id")
   
-  #6. Set up subcategory loop----
+  #6. Set up Name loop----
   for(j in 1:length(subcat)){
     
     #7. Select covs to compare----
-    meth.j <- dplyr::filter(meth.prior, Subcategory %in% subcat[j])
+    meth.j <- dplyr::filter(meth.prior, Name %in% subcat[j])
     
     cov.j <- visit.i %>% 
       dplyr::select(all_of(meth.j$Label))
     
     #8. Determine which cov to use----
-    #Count non-na and non-zero values per cov, round to nearest 100 to avoid slight differences, and choose highest priority to use for that subcategory
+    #Count non-na and non-zero values per cov, round to nearest 100 to avoid slight differences, and choose highest priority to use for that Name
     na.j <- cov.j %>% 
       mutate(id = row_number()) %>% 
       pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") %>% 
@@ -341,7 +292,7 @@ for(i in 1:length(bcrs)){
       dplyr::filter(n==max(n, na.rm=TRUE)) %>% 
       dplyr::filter(Priority==min(Priority, na.rm=TRUE)) %>% 
       mutate(use = 1) %>% 
-      right_join(meth.j, by = join_by(Label, Category, Subcategory, Priority)) %>% 
+      right_join(meth.j, by = join_by(Label, Category, Name, Priority)) %>% 
       mutate(use = ifelse(is.na(use), 0, use))
     
     #9. Update lookup dataframe----
@@ -370,15 +321,25 @@ covlist <- cbind(cov.global, cov.prior)
 
 #SAVE#####
 
-#1. Rename objects & thin for optimizing memory during model running----
+#1. Package----
+#rename objects
+#thin out covariate fields for minimizing RAM
+#convert bird object to sparse matrix for minimizing RAM (doesn't save space to do this for other objects because they don't have enough zeros)
 cov <- visit.use %>% 
   dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
 
 visit <- visit.use %>% 
-  dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday)
+  dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
 
-bird <- bird.use
+gridlist <- visit.grid %>% 
+  dplyr::select(id, year, cell)
+
+bird <- bird.use %>% 
+  column_to_rownames("id") %>% 
+  as.matrix() %>% 
+  as("dgCMatrix")
 offsets <- offsets.use
-bcrlist <- bcr.ag
+bcrlist <- bcr.agr
 
-save(visit, cov, bird, offsets, bootlist, covlist, birdlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+#2. Save----
+save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
