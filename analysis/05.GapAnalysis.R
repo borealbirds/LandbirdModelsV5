@@ -8,7 +8,7 @@
 
 # This code uses dsextra to quantify extrapolation
 # The package calls the ExDet function which needs it's
-# tolerances adjusted to avoid singular matrices (it rounds low values down to 0)
+# tolerances adjusted to avoid singular matrices (rounding low values down)
 
 # The first analysis uses all sampling data (-) to assess coverage of the predictor 
 # variable environment
@@ -30,16 +30,18 @@ crs<-"+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellp
   #if (!require("remotes")) install.packages("remotes")
   #remotes::install_github("densitymodelling/dsmextra")
 
-pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2,
-               rlang, tools, dplyr, plyr,terra, smoothr, utils, 
+pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, lattice,
+               rlang, rgeos, tools, dplyr, plyr, terra, smoothr, utils, 
                knitr, ecospat, magrittr, utils, readr)
 
 # Tweak ExDet function in dsmextra:
 # increase the tolerance of the Mahalanobis function, 
-# Remove conditional computation for single variables: causing combitorial calculation to fail. Haven't had time to troubleshoot, so I've just cut it out... 
+# cut out conditional computation for single variables: causing combitorial calculation to fail. Haven't had time to troubleshoot, so I just cut it out... 
 
 #getAnywhere(ExDet) 
-ExDet<-function (ref, tg, xp) {
+
+ExDet<-function (ref, tg, xp) 
+{
   tg <- as.matrix(tg)
   ref <- as.matrix(ref)
   a <- apply(ref, 2, min, na.rm = TRUE)
@@ -57,175 +59,218 @@ ExDet<-function (ref, tg, xp) {
   tg.univ <- matrix(tg[univ.rge, ], ncol = ncol(tg))
   aa <- apply(ref, 2, mean, na.rm = TRUE)
   bb <- stats::var(ref, na.rm = TRUE)
-  mah.ref <- stats::mahalanobis(x = ref, center = aa, cov = bb, tol=1e-20 ) # increased tolerance
-  mah.pro <- stats::mahalanobis(x = tg.univ, center = aa, cov = bb, tol=1e-20 )# increased tolerance
+  mah.ref <- stats::mahalanobis(x = ref, center = aa, cov = bb, tol=1e-20) # increase tolerance
+  mah.pro <- stats::mahalanobis(x = tg.univ, center = aa, cov = bb, tol=1e-20)# increase tolerance
   mah.max <- max(mah.ref[is.finite(mah.ref)])
   nt2 <- mah.pro/mah.max
   nt1[univ.rge] <- nt2
-  
-  #if (length(xp) == 1)  # treating xp as never == 1 as throwing error 
-  #  cov.combs <- matrix(1)
-  #if (length(xp) > 1) 
-  cov.combs <- utils::combn(x = 1:ncol(tg.univ), m = length(xp) - 1)
+  if (length(xp) == 1) 
+    cov.combs <- matrix(1)
+  if (length(xp) > 1) 
+    cov.combs <- utils::combn(x = 1:ncol(tg.univ), m = length(xp) - 
+                                1)
   cov.combs <- as.list(data.frame(cov.combs))
-  #if (length(xp) == 1) {
-  #  cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[,.]), 2, mean))
-  #  cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[,.])))
-  #}
-  #else {
-  cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[,.]), 2, mean, na.rm = TRUE))
-  cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[,.]), na.rm = TRUE))
-  #}
+  if (length(xp) == 1) {
+    cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[, 
+                                                               .]), 2, mean))
+    cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[, 
+                                                             .])))
+  }
+  else {
+    cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[, 
+                                                               .]), 2, mean, na.rm = TRUE))
+    cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[, 
+                                                             .]), na.rm = TRUE))
+  }
   if (nrow(tg.univ) < 2) {
     warning("Only one prediction point within analogue conditions. Mahalanobis distances cannot be calculated.")
     mah_nt2 <- vector(mode = "list", length = length(cov.combs))
-    
-  } else {
+  }
+  else {
     mah_nt2 <- purrr::pmap(.l = list(cov.combs, cov.aa, cov.bb), 
-                           .f = function(a, b, c) stats::mahalanobis(x = as.matrix(tg.univ[,a]), center = b, cov = c, tol=1e-20 ))
+                           .f = function(a, b, c) stats::mahalanobis(x = as.matrix(tg.univ[, 
+                                                                                           a]), center = b, cov = c, tol=1e-20))# increase tolerance
   }
   mah_nt2 <- mah_nt2 %>% purrr::set_names(., xp)
   mah_nt2 <- mah_nt2 %>% purrr::map_df(., cbind)
   mah_nt2 <- as.matrix(mah_nt2)
   mic_nt2 <- 100 * (mah.pro - mah_nt2)/mah_nt2
   mic_nt2 <- apply(mic_nt2, 1, FUN = function(x) base::which.max(x))
-  results <- tibble::tibble(XDet = nt1, mic_univariate = mic_nt1, mic_combinatorial = NA) #changed ExDet to XDet as creates confusion with function
+  results <- tibble::tibble(ExDet = nt1, mic_univariate = mic_nt1, 
+                            mic_combinatorial = NA)
   if (nrow(tg.univ) > 1) 
     results$mic_combinatorial[univ.rge] <- mic_nt2
-  results <- results %>% dplyr::mutate(mic_combinatorial = ifelse(XDet >=0 & XDet <= 1, NA, mic_combinatorial))
-  results <- results %>% dplyr::mutate(mic = rowSums(.[2:3], na.rm = TRUE))
+  results <- results %>% dplyr::mutate(mic_combinatorial = ifelse(ExDet >= 
+                                                                    0 & ExDet <= 1, NA, mic_combinatorial))
+  results <- results %>% dplyr::mutate(mic = rowSums(.[2:3], 
+                                                     na.rm = TRUE))
   return(results)
 }
+
 
 #2. Set root path for data on google drive----
 root <- "/Volumes/GoogleDrive/Shared drives/BAM_NationalModels/NationalModels5.0"
 
-#3. Load data packages with offsets and covariates ----
-load(file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
+#3. Load data package with covariates and BCR lists ----
+load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+rm(bird,birdlist,gridlist,offsets)
 
-#4. Load prediction raster lookup ----
-Lookup <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
-
-Lookup$Label[3]<-"ERAPPTsm_1km" # remove the "t" label for this (t vs t-1)
-Lookup$Label[6]<-"ERATavesm_1km"# remove the "t" label for this (t vs t-1)
-
-#list for stripping paths down to just variable names
-cleanup = unique(paste(c(Lookup$PredictPath,"/",".tif"), collapse = "|")) 
-
-#5. Get Canadian prediction variables for each variable grouping ----
-Canada<-Lookup %>% dplyr::filter(Extent %in% c("Canada","global","north america","Canada-forested"))
-Grouping<-unique(Canada$Category) #Groupings
-
-#6. Get BCR boundaries----
-
+#4. Get BCR boundaries----
 can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
-  st_transform(crs=5072) # Political boundaries
+  st_transform(crs=crs) # Canadian boundary
 
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% 
-  st_transform(crs=5072) #BCR shapefiles & remove subunit 1
-
-bcr.ca <- bcr %>% 
+bcr.ca <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
+  dplyr::filter(subUnit!=1) %>% # remove BCR 1
+  st_transform(crs=crs) %>%
   st_intersection(can) %>% 
   mutate(country="ca") # Restrict to Canadian BCRs
 
+#5. Produce look-up table: "BCR label"-"spatial sf subunit" 
+BCR_Names <- colnames(bcrlist)%>%.[grep('ca',.)]
+BCR_lookup <- data.frame(matrix(nrow=length(BCR_Names),ncol=0))
+BCR_lookup$Names<-BCR_Names
+
+BCR_lookup$subUnit<-as.numeric(gsub("\\D", "", BCR_Names))
+
+Left<-Right<-subset(BCR_lookup,BCR_lookup$subUnit>100) #set both component BCRs to link to merged BCR
+Left$subUnit<-as.numeric(substr(Left$subUnit,1,2))
+Right$subUnit<-as.numeric(substr(Right$subUnit,3,4))
+
+BCR_lookup<-rbind(subset(BCR_lookup,BCR_lookup$subUnit<100),Left,Right)
+rm(Left,Right,BCR_Names)
+
+#5. Load prediction raster look-up, get Canadian prediction variables ----
+
+Canada <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), 
+                             sheet = "ExtractionLookup") %>%
+                             dplyr::filter(Extent %in% c("Canada","global","north america","Canada-forested"))
+
+Canada$Raster<-Canada$Label
+Canada$Raster[Canada$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
+Canada$Raster[Canada$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
+
+Grouping<-unique(Canada$Category) #Groupings
+Grouping<-Grouping[-c(1,6,7)] ##**dropping annual climate for now with labelling issue unresolved
+
 #7. Functions to get and prep data for analysis -----
 
-#(1) Function to extract raster list - returns matrix of early [1,] and late [2,] variables
-Get_paths<- function(Grouping){
-  Early_list<-Late_list<-c()
-  Group.j<-dplyr::filter(Canada,Canada$Category==Grouping)
+#(1) Function to extract raster list - returns matrix of raster pathways [1,] + variable names [2,]
+Get_paths<- function(Grouping, YR){
   
-  for (k in (1:nrow(Group.j))){ # Get variables within group
+  Path_list<-Name_list<-c()
+  Group.j<-dplyr::filter(Canada,Canada$Category==Grouping)
+
+for (k in (1:nrow(Group.j))){ # Get variables within each group
     
-    Early<-Late<-Static<-NULL
+Period<-Static<-Name<-NULL
     
-    if(Group.j$TemporalResolution[k]=="match"){
-      Early<-paste(Group.j$PredictPath[k],"/",Group.j$Label[k],"_",Group.j$Early[k]+Group.j$YearMatch[k],".tif",sep="")
-      Late<-paste(Group.j$PredictPath[k],"/",Group.j$Label[k],"_",Group.j$Late[k]+Group.j$YearMatch[k],".tif",sep="")
-      
-    }else{
-      Static<-paste(Group.j$PredictPath[k],"/",Group.j$Label[k],".tif",sep="")
+# Return the closest year to desired period
+if(Group.j$TemporalResolution[k]=="match") {
+  
+  years<-dir(file.path(root,Group.j$PredictPath[k]))%>%
+    stringr::str_sub(.,-8,-5)%>%as.numeric(.)%>%suppressWarnings()  #pull all years
+    
+  Match<-which(abs(years - YR) == min(abs(years - YR),na.rm=T))%>%
+    years[.]%>%unique(.)  #ID closest year (minimum value when multiple options)
+
+if(Group.j$YearMatch[k]==0){
+    
+    Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Match,".tif",sep="")
+}    
+  
+else if (Group.j$YearMatch[k]==(-1)){
+    
+    Lag<-min(which(abs(years[years!=Match]- (YR-1)) == min(abs(years[years!=Match] - (YR-1)),na.rm=T)))%>%
+      years[.]%>%unique(.)
+    
+    Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Lag,".tif",sep="")
+}
+  
+} else {
+      Static<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],".tif",sep="")
     }
     
-    Early_list<-c(Early_list,Early,Static) #early and static list
-    
-    if (unique(Group.j$Category) %notin% c("Climate Normals","Topography","Wetland"))
-    Late_list<-c(Late_list,Late,Static) #late list only where temporally variable
-    
-  } # close group
+Path_list<-c(Path_list,Period,Static) #early and static list
+Name_list<-c(Name_list,Group.j$Label[k]) 
+ 
+} # close group
   
-  return(list(Early_list,Late_list))
+  return(list(Path_list,Name_list))
 }
 
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
-create_df <- function(Var){
+# uses "Get_paths" function to extract rasters for stacking
+
+create_df <- function(Grouping,YR,bcr.i){
   
-  Names<-str_remove_all(Var,cleanup)
-  Stack<-list()  
- 
-if(!is.null(Var)) {  
-  for (k in 1:length(Var)) { #stack rasters
-   Stack[[k]]<-terra::rast(file.path(root, Var[k])) %>% 
-        project(.,crs) %>%
-        crop(x = ., y = ext(bcr.i)) %>%
-        mask(x = ., mask = bcr.i)
-    }
-    
-   DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
-       as.data.frame(., xy=TRUE) %>% 
-       .[rowSums(.[,-c(1:2)], na.rm=T) > 0,] #get rid of fully masked rows
-    
-    names(DF) <- c("x","y",Names)
-    
-}else{
-    DF<-NULL 
+Stack<-list()  
+e<-ext(bcr.i)
+
+call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr name
+covariates<-covlist%>%dplyr::filter(bcr==call)%>%.[,.==TRUE]%>% colnames()#get covariates
+
+Var<-sapply(Grouping,Get_paths,YR=2000) #get raster paths
+
+Names<-Var[2,]%>%unlist(.)
+Retain<-Names %in% covariates  # ID ones we want by names [2,]
+
+Path<-data.frame(unlist(Var[1,]),Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
+Label<-data.frame(Names,Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
+
+for (k in 1:length(Path)) { #stack rasters
+   Stack[[k]]<-terra::rast(file.path(root, Path[k])) %>% 
+        project(.,crs)  %>%
+        crop(.,e) %>%
+        mask(.,bcr.i) 
   }
-  return(DF)
+  
+DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
+    as.data.frame(., xy=TRUE) 
+names(DF)<-c("x","y",Label)
+
+return(DF)
 }
 
 #8. Compile raster lists for each category + early and late periods----
-Variables<-mapply(Grouping,Get_paths)
 
-# Split early and late periods...
-Early<-Variables[1,]
-Late<-Variables[2,]
-
-#9. Run analysis across each BCR ----
-
-BCR<-list()
-
+# Analysis ----------
+i=3
 for(i in 1:nrow(bcr.ca)){  
 
- bcr.buff <- bcr.ca %>% 
+#Buffer BCR    
+bcr.i <-  bcr.ca %>% 
     dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000) # Filter & buffer shapefile
+    st_buffer(100000)%>%  # Filter & buffer shapefile
+    st_intersection(., can) #crop at Canadian border
+  
+# Extract BCR specific data frames for each group. Year=2000
+Early_Dataframes<-purrr::map(Grouping,create_df, YR=2000, bcr.i=bcr.i)
+Late_Dataframes<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i)
 
- bcr.i <- st_intersection(bcr.buff, can) #crop at Canadian border
+#Get reference sample
+call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr.i to bcr name
+ids <- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,2]==TRUE)%>%.$id
 
-#Extract data frame for each grouping within BCR
-Early_Dataframes<-purrr::map(Early,create_df)
-Late_Dataframes<-purrr::map(Late,create_df)
+sample<-subset(cov,cov$id %in% ids)
 
-# Calculate extrapolation
+# 12. Calculate extrapolation
 EarlyExt<-LateExt<-list()
 
 # Early period
+
 for (j in 1:length(Early_Dataframes)){
 
-#create a toy sample
-ref=Early_Dataframes[[j]][c(1:1000,4000:5000,70000:80000,100000:200000),] 
+target=Early_Dataframes[[j]]
 
-#eliminate variables with no training data
-nodata<-colSums(ref, na.rm=T)%>%subset(.==0)%>% names(.) #which variables have no data
+# Ensure match training-predictor variables
+sample<-sample%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
+target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
 
-target=Early_Dataframes[[j]]%>%.[, which(names(.) %notin% nodata)] #drop those in target
-ref=ref[, which(names(ref) %notin% nodata)] #drop those in training
+xp = names(sample)
 
-xp = names(ref[,-c(1,2)]) 
-samples = ref[,-c(1,2)]
+sample[sapply(sample, is.infinite)] <- NA #covariance returns infinite...
 
-EarlyExt[[j]] <- compute_extrapolation(samples = samples,
+EarlyExt[[j]] <- compute_extrapolation(samples = sample,
               covariate.names = xp,
               prediction.grid = target,
               coordinate.system = crs)
@@ -234,17 +279,15 @@ EarlyExt[[j]] <- compute_extrapolation(samples = samples,
 # Late period
 for (j in 1:length(Late_Dataframes)){
    
-   #create a toy sample
-   ref=Late_Dataframes[[j]][c(1:1000,4000:5000,70000:80000,100000:200000),] 
-   
-   #eliminate variables with no training data
-   nodata<-colSums(ref, na.rm=T)%>%subset(.==0)%>% names(.) #which variables have no data
-   
-   target=Late_Dataframes[[j]]%>%.[, which(names(.) %notin% nodata)] #drop those in target
-   ref=ref[, which(names(ref) %notin% nodata)] #drop those in training
-   
-   xp = names(ref[,-c(1,2)]) 
-   samples = ref[,-c(1,2)]
+  target=Early_Dataframes[[j]]%>%.[, which(names(.) %notin% nodata)] #drop those in target
+  sample=ref.i%>%.[, which(names(.) %notin% nodata)] #drop those in training
+  
+  # Match training-predictor variables
+  ref.i<-ref.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
+  target<-target%>%dplyr::select(c("x","y",names(ref.i))) #drop any in target not present in ref
+  
+  xp = names(ref.j) 
+  samples = ref.j
    
    LateExt[[j]] <- compute_extrapolation(samples = samples,
                                           covariate.names = xp,
@@ -257,35 +300,3 @@ for (j in 1:length(Late_Dataframes)){
 BCR[[i]]<- list(EarlyExt,LateExt)
 names(BCR)<-bcr.ca$subUnit
 #} # end of BCRs
-
-
-#11. Plot output
-pal.a <- colorRampPalette(c("lightgreen","darkgreen"))
-pal.c <- colorRampPalette(c("lightpurple","violet"))
-pal.u <- colorRampPalette(c("yellow","red"))
-dev.off()
-#Early 
-par(mfrow=c(3,3))
-i=1
-for (i in 1:length(Grouping)){
-  u<-EarlyExt[[1]]$rasters$ExDet$univariate
-  c<-EarlyExt[[1]]$rasters$ExDet$combinatorial
-  a<-EarlyExt[[1]]$rasters$ExDet$analogue
-  
-  if(!is.null(u)) terra::plot(u, main=paste(Grouping[i]," Early"), col=pal.u(300)) 
-  if(!is.null(c)) terra::plot(c, col=pal.c(300), add=T) 
-  if(!is.null(a)) terra::plot(a, col=pal.a(300), add=T) 
-}
- 
-# Late
-for (i in 1:length(Grouping)){
-  u<-VarGroup[[i]][[2]]$rasters$ExDet$univariate
-  c<-VarGroup[[i]][[2]]$rasters$ExDet$combinatorial
-  a<-VarGroup[[i]][[2]]$rasters$ExDet$analogue
-  
-  if(!is.null(u)) terra::plot(u, main=paste(Grouping[i]," Late"),col=pal.u(300)) 
-  if(!is.null(c)) terra::plot(c, col=pal.c(300), add=T) 
-  if(!is.null(a)) terra::plot(a, col=pal.a(300), add=T) 
-}
-
-### end of code
