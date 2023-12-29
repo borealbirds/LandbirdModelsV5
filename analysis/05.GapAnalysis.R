@@ -139,7 +139,7 @@ Right$subUnit<-as.numeric(substr(Right$subUnit,3,4))
 BCR_lookup<-rbind(subset(BCR_lookup,BCR_lookup$subUnit<100),Left,Right)
 rm(Left,Right,BCR_Names)
 
-#5. Load prediction raster look-up, get Canadian prediction variables ----
+#6. Load prediction raster look-up, get Canadian prediction variables ----
 
 Canada <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), 
                              sheet = "ExtractionLookup") %>%
@@ -231,10 +231,8 @@ names(DF)<-c("x","y",Label)
 return(DF)
 }
 
-#8. Compile raster lists for each category + early and late periods----
+#8. Analysis ----------
 
-# Analysis ----------
-i=3
 for(i in 1:nrow(bcr.ca)){  
 
 #Buffer BCR    
@@ -253,7 +251,7 @@ ids <- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,2]==TRUE)%>%.$id
 
 sample<-subset(cov,cov$id %in% ids)
 
-# 12. Calculate extrapolation
+#9. Calculate extrapolation ----------
 EarlyExt<-LateExt<-list()
 
 # Early period
@@ -278,18 +276,14 @@ EarlyExt[[j]] <- compute_extrapolation(samples = sample,
 
 # Late period
 for (j in 1:length(Late_Dataframes)){
-   
-  target=Early_Dataframes[[j]]%>%.[, which(names(.) %notin% nodata)] #drop those in target
-  sample=ref.i%>%.[, which(names(.) %notin% nodata)] #drop those in training
   
   # Match training-predictor variables
-  ref.i<-ref.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
-  target<-target%>%dplyr::select(c("x","y",names(ref.i))) #drop any in target not present in ref
+  sample<-sample%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
+  target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
   
-  xp = names(ref.j) 
-  samples = ref.j
-   
-   LateExt[[j]] <- compute_extrapolation(samples = samples,
+  xp = names(sample)
+
+ LateExt[[j]] <- compute_extrapolation(samples = sample,
                                           covariate.names = xp,
                                           prediction.grid = target,
                                           coordinate.system = crs)
