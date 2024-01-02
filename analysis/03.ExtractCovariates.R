@@ -71,7 +71,7 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", Running==1, TemporalResolution=="match")
+meth.gd <- dplyr::filter(meth, Source=="Google Drive", Complete==0)
 
 #2. Plain dataframe for joining to output----
 # loc.gd <- data.frame(loc.n) %>%
@@ -212,7 +212,7 @@ for(i in 1:length(loop)){
       if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
         loc.cov <- loc.buff.j %>% 
           st_transform(crs(rast.i)) %>% 
-          exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
+          exact_extract(x=rast.i, meth.gd.i$RadiusFunction, force_df=TRUE) %>% 
           data.table::setnames(meth.gd.i$Label) %>% 
           cbind(loc.n.j %>% 
                   st_drop_geometry() %>% 
@@ -768,12 +768,15 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
-#3. Add id to visit and join together----
+#3. Add id to visit and join together and wrangle----
 meth.use <- meth %>% 
   dplyr::filter(Complete==1)
 
 #Remove lat lon fields due to rounding errors that cause mismatches
 #format landcover classes as factors
+#zero out heights < 0.1 and NA the height cv values for those
+#remove landfire values < 0, not sure what's going on there
+
 visit.covs <- visit %>% 
   rename(row = id) %>% 
   mutate(id=paste(project, location, lat, lon, year, sep="_")) %>% 
@@ -791,12 +794,31 @@ visit.covs <- visit %>%
          SCANFI_1km = factor(SCANFI_1km),
          NLCD_1km = factor(NLCD_1km),
          ABoVE_1km = factor(ABoVE_1km),
-         VLCE_1km = factor(VLCE_1km))
-
+         VLCE_1km = factor(VLCE_1km)) %>% 
+  mutate(LFheigth_1km = ifelse(LFheigth_1km < 0, NA, LFheigth_1km),
+         LFheigth_5x5 = ifelse(LFheigth_5x5 < 0, NA, LFheigth_5x5),
+         LFheigthcv_1km = ifelse(LFheigthcv_1km < 0, NA, LFheigthcv_1km),
+         LFheigthcv_5x5 = ifelse(LFheigthcv_5x5 < 0, NA, LFheigthcv_5x5),
+         LFbiomass_1km = ifelse(LFbiomass_1km < 0, NA, LFbiomass_1km),
+         LFbiomass_5x5 = ifelse(LFbiomass_5x5 < 0, NA, LFbiomass_5x5),
+         LFcrownclosure_1km = ifelse(LFcrownclosure_1km < 0, NA, LFcrownclosure_1km),
+         LFcrownclosure_5x5 = ifelse(LFcrownclosure_5x5 < 0, NA, LFcrownclosure_5x5)) %>% 
+  mutate(SCANFIheight_1km = ifelse(SCANFIheight_1km < 0.1, 0, SCANFIheight_1km),
+         SCANFIheight_5x5 = ifelse(SCANFIheight_5x5 < 0.1, 0, SCANFIheight_5x5),
+         SCANFIheightcv_1km = ifelse(SCANFIheight_1km < 0.1, NA, SCANFIheightcv_1km),
+         SCANFIheightcv_5x5 = ifelse(SCANFIheight_1km < 0.1, NA, SCANFIheightcv_5x5),
+         ETHheight_1km = ifelse(ETHheight_1km < 0.1, 0, ETHheight_1km),
+         ETHheight_5x5 = ifelse(ETHheight_5x5 < 0.1, 0, ETHheight_5x5),
+         ETHheightcv_1km = ifelse(ETHheight_1km < 0.1, NA, ETHheightcv_1km),
+         ETHheightcv_5x5 = ifelse(ETHheight_1km < 0.1, NA, ETHheightcv_5x5),
+         LFheigth_1km = ifelse(LFheigth_1km < 0.1, 0, LFheigth_1km),
+         LFheigth_5x5 = ifelse(LFheigth_5x5 < 0.1, 0, LFheigth_5x5),
+         LFheigthcv_1km = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_1km),
+         LFheigthcv_5x5 = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_5x5))
 
 #5. Sanity checks----
 
-#Take a sample of the visits to look at the NAs for each cov
+#Take a sample of the visits to look at each cov
 set.seed(1234)
 visit.sample <- visit.covs %>% 
   sample_n(100000)
