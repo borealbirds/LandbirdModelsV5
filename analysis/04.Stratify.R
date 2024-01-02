@@ -4,8 +4,6 @@
 # created: September 29, 2022
 # ---
 
-#TO DO: FINISH COVARIATE LOOKUP####
-
 #NOTES################################
 
 #In this script, we stratify & prepare the data for modelling. Steps include:
@@ -326,7 +324,8 @@ covlist <- cbind(cov.global, cov.prior)
 #thin out covariate fields for minimizing RAM
 #convert bird object to sparse matrix for minimizing RAM (doesn't save space to do this for other objects because they don't have enough zeros)
 cov <- visit.use %>% 
-  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
+  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday) %>% 
+  mutate(tagMethod = as.factor(tagMethod))
 
 visit <- visit.use %>% 
   dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
