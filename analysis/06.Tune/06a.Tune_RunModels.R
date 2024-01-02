@@ -21,6 +21,8 @@
 #2. set cc to true (test on compute canada)
 #3. set test to false (run full model set on compute canada)
 
+#The script is set to inventory the models already run and remove them from the to-do list ("loop" object) every time the script is run. This means you can submit it as a [relatively] small job on compute canada instead of requesting enough resources for the entire list of models (which is a lot). Just make sure you keep the "results" folder with all the output in it until you are finished running everything, because this is what is being used to inventory the models already run.
+
 #The steps for running on compute canada (for this and other scripts are):
 #1. Transfer this script and your data object between local computer and compute canada's servers using Globus Connect.
 #2. Create any folders you need for saving output into (as per your script).
@@ -31,6 +33,7 @@
 #7. Use the cd function to navigate to the write working directory within copute canada's file servers (i.e., where you put your files with globus connect)
 #8. Run your script with sbatch and the name of your sh file!
 #9. Use squeue -u and your username to check on the status of your job.
+#10. Rerun the script as many times as you need to work through all the required models (see note above).
 
 #see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
 
