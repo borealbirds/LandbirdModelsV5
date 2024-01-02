@@ -34,9 +34,6 @@
 
 #see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
 
-#TO DO: CHANGE THIS TO THINNING####
-#TO DO: EXPLORE SPARSE MATRICES####
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -44,10 +41,11 @@ print("* Loading packages on master *")
 library(tidyverse)
 library(dismo)
 library(parallel)
+library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -59,7 +57,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 2 }
+if(test){ nodeslist <- 32 }
 
 print(nodeslist)
 
@@ -71,6 +69,7 @@ cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
+tmpcl <- clusterEvalQ(cl, library(Matrix))
 
 #7. Load data----
 print("* Loading data on master *")
@@ -84,7 +83,7 @@ if(!cc){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
 print("* Loading data on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("visit", "bird", "offsets", "birdlist", "covlist"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist"))
 
 #WRITE FUNCTION##########
 
@@ -109,18 +108,21 @@ brt_tune <- function(i){
     dplyr::filter(rowid==use)
   
   #3. Get response data (bird data)----
-  bird.i <- bird[visit.i$id, spp.i]
+  bird.i <- bird[as.character(visit.i$id), spp.i]
   
   #4. Get covariates----
-  covlist.i <- bcr.cov %>% 
-    dplyr::filter(bcr==bcr.i)
-  cov.i <- visit.i[,colnames(visit.i) %in% covlist.i$cov]
+  covlist.i <- covlist %>% 
+    dplyr::filter(bcr==bcr.i) %>% 
+    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+    dplyr::filter(use==TRUE)
+  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$cov]
   
   #5. Get PC vs SPT vs SPM----
-  meth.i <- factor(visit.i$tagMethod)
+  meth.i <- cov[cov$id %in% visit.i$id, "tagMethod"]
   
   #6. Put together data object----
-  dat.i <- cbind(bird.i, meth.i, cov.i)
+  dat.i <- cbind(bird.i, meth.i, cov.i) %>% 
+    rename(count = bird.i)
   
   #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
@@ -135,7 +137,7 @@ brt_tune <- function(i){
                          family="poisson")
   
   #9. Get performance metrics----
-  out[[i]] <- loop[i,] %>% 
+  out.i <- loop[i,] %>% 
     cbind(data.frame(trees = m.i$n.trees,
                      deviance.mean = m.i$cv.statistics$deviance.mean,
                      deviance.se = m.i$cv.statistics$deviance.se,
@@ -144,10 +146,12 @@ brt_tune <- function(i){
                      correlation = m.i$self.statistics$correlation,
                      correlation.mean = m.i$cv.statistics$correlation.mean,
                      correlation.se = m.i$cv.statistics$correlation.se,
+                     n = nrow(dat.i),
+                     ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
   #10. Save----
-  save(out, file=file.path("results", "ModelTuning.Rdata"))
+  write.csv(out.i, file=file.path("results", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")))
   
   #11. Tidy up----
   rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
@@ -185,25 +189,25 @@ bcr.cov <- covlist %>%
 print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
-#5. Make dataframe of models to run----
+#5. Get list of models already run----
+files <- data.frame(file = list.files("results", pattern="*.csv")) %>% 
+  separate(file, into=c("step", "spp", "bcr1", "bcr2", "lr"), sep="_", remove=FALSE) %>% 
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)),
+         bcr = paste0(bcr1, "_", bcr2))
+
+#6. Make dataframe of models to run----
 
 #Full combinations
 loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
   merge(bcr.spp) %>% 
   dplyr::select(-use) %>% 
-  arrange(bcr, lr, id, spp)
+  anti_join(files)
 
 #For testing
-if(test) {loop <- loop[1:2,]}
+if(test) {loop <- loop[1:32,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
-
-#6. Make object to store output----
-out <- list()
-
-print("* Loading output object on workers *")
-tmpcl <- clusterExport(cl, c("out"))
 
 #7. Run BRT function in parallel----
 print("* Fitting models *")
