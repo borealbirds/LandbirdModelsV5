@@ -43,7 +43,7 @@ vignettes/*.pdf
 *login.R
 
 # Local results folder for testing
-*/results/
+*results/
 
 # Local data folder for uploading to compute canada
 *data/
