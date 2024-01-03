@@ -47,8 +47,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -60,7 +60,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 32 }
+if(test){ nodeslist <- 2 }
 
 print(nodeslist)
 
@@ -204,10 +204,11 @@ files <- data.frame(file = list.files("results", pattern="*.csv")) %>%
 loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
   merge(bcr.spp) %>% 
   dplyr::select(-use) %>% 
-  anti_join(files)
+  anti_join(files) %>% 
+  arrange(spp, bcr, lr)
 
 #For testing
-if(test) {loop <- loop[1:32,]}
+if(test) {loop <- loop[1:2,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
