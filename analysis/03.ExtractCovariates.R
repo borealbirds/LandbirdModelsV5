@@ -71,7 +71,7 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", Complete==0)
+meth.gd <- dplyr::filter(meth, Source=="Google Drive", RadiusExtent==2000, TemporalResolution=="match")
 
 #2. Plain dataframe for joining to output----
 # loc.gd <- data.frame(loc.n) %>%
@@ -210,7 +210,7 @@ for(i in 1:length(loop)){
       }
       
       if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
-        loc.cov <- loc.buff.j %>% 
+        loc.cov <- loc.buff2.j %>% 
           st_transform(crs(rast.i)) %>% 
           exact_extract(x=rast.i, meth.gd.i$RadiusFunction, force_df=TRUE) %>% 
           data.table::setnames(meth.gd.i$Label) %>% 
