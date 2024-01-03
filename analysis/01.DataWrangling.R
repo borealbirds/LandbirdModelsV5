@@ -180,7 +180,7 @@ colnms <- c("source", "organization", "project", "sensor", "tagMethod", "equipme
 
 #2. Wrangle wildtrax data-----
 
-load(file.path(root, "wildtrax_raw_2023-01-20.Rdata"))
+load(file.path(root,"WildTrax/", "wildtrax_raw_2023-01-20.Rdata"))
 
 #2a. A bit of prep----
 dat.wt <- raw.wt %>% 
@@ -266,13 +266,14 @@ tmtt <- read.csv("C:/Users/elly/Documents/ABMI/WildTrax/TMTT/data/tmtt_predictio
   rename(species = species_code)
 
 tmtt.wt <- aru.wt %>% 
-  dplyr::filter(abundance=="TMTT") %>%
+ dplyr::filter(abundance=="TMTT") %>%
   mutate(species = ifelse(species %in% tmtt$species, species, "species"),
          observer_id = as.integer(ifelse(observer %in% tmtt$observer_id, observer, 0))) %>% 
   data.frame() %>% 
   left_join(tmtt) %>% 
   mutate(abundance = round(pred)) %>% 
   dplyr::select(colnames(aru.wt))
+
 
 #2e. Put back together----
 #summarize abundance
@@ -291,7 +292,7 @@ ebd.files.done <- list.files(file.path(root, "eBird", "ebd_filtered"), pattern="
 raw.ebd <- purrr::map(.x=ebd.files.done, .f=~read_ebd(.)) %>% 
   rbindlist()
 
-tax.wt <- read.csv(file.path(root, "lu_species.csv")) %>% 
+tax.wt <- read.csv(file.path(root, "Lookups/", "lu_species.csv")) %>% 
   mutate(scientific_name = paste(species_genus, species_name)) %>% 
   rename(species = species_code) %>% 
   dplyr::select(scientific_name, species)
