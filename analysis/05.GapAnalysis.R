@@ -12,8 +12,8 @@
 
 # The first analysis uses all sampling data (-) to assess coverage of the predictor 
 # variable environment
-# The second analysis looks at temporal variation in coverage (assuming year * predictor)
-# interactions occur. We use sampling of 10-year windows straddling 5-year 
+# The second analysis will look at temporal variation in coverage (assuming year * predictor
+# interactions occur). We use sampling of 10-year windows straddling 5-year 
 # predictor rasters (2000,2005,2010,2015,2020).
 
 # extra function
@@ -32,11 +32,9 @@ crs<-"+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellp
 
 pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, lattice,
                rlang, rgeos, tools, dplyr, plyr, terra, smoothr, utils, 
-               knitr, ecospat, magrittr, utils, readr)
+               knitr, ecospat, magrittr, utils, readr, mapview, htmlwidgets)
 
-# Tweak ExDet function in dsmextra:
-# increase the tolerance of the Mahalanobis function, 
-# cut out conditional computation for single variables: causing combitorial calculation to fail. Haven't had time to troubleshoot, so I just cut it out... 
+# Tweak ExDet function in dsmextra: increase the tolerance of the Mahalanobis function 
 
 #getAnywhere(ExDet) 
 
@@ -108,14 +106,20 @@ ExDet<-function (ref, tg, xp)
 }
 
 
-#2. Set root path for data on google drive----
+#2. Set root path for data on google drive ----
 root <- "/Volumes/GoogleDrive/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Load data package with covariates and BCR lists ----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
 rm(bird,birdlist,gridlist,offsets)
 
-#4. Get BCR boundaries----
+#clean sample covariates
+cov_clean<-cov%>%dplyr::select(where(is.numeric))
+
+#temp value correction for negative biomass values
+cov_clean[c(10:23,30:53)][cov_clean[c(10:23,30:53)]<0]<- NA
+
+#4. Get BCR boundaries ----
 can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
   st_transform(crs=crs) # Canadian boundary
 
@@ -125,7 +129,7 @@ bcr.ca <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>%
   st_intersection(can) %>% 
   mutate(country="ca") # Restrict to Canadian BCRs
 
-#5. Produce look-up table: "BCR label"-"spatial sf subunit" 
+#5. Produce look-up table: "BCR label"-"spatial sf subunit"   ----
 BCR_Names <- colnames(bcrlist)%>%.[grep('ca',.)]
 BCR_lookup <- data.frame(matrix(nrow=length(BCR_Names),ncol=0))
 BCR_lookup$Names<-BCR_Names
@@ -150,7 +154,7 @@ Canada$Raster[Canada$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" l
 Canada$Raster[Canada$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
 
 Grouping<-unique(Canada$Category) #Groupings
-Grouping<-Grouping[-c(1,6,7)] ##**dropping annual climate for now with labelling issue unresolved
+Grouping<-Grouping[-c(1,3,6,7,9)] ##**dropping annual climate for now with labelling issue unresolved
 
 #7. Functions to get and prep data for analysis -----
 
@@ -207,7 +211,7 @@ Stack<-list()
 e<-ext(bcr.i)
 
 call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr name
-covariates<-covlist%>%dplyr::filter(bcr==call)%>%.[,.==TRUE]%>% colnames()#get covariates
+covariates<-covlist%>%dplyr::filter(bcr==call[1])%>%.[,.==TRUE]%>% colnames()#get co-variates, assumes that BCR covariates don't differ from pooled BCRs (81,82 and 41,42)
 
 Var<-sapply(Grouping,Get_paths,YR=2000) #get raster paths
 
@@ -226,43 +230,60 @@ for (k in 1:length(Path)) { #stack rasters
   
 DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
     as.data.frame(., xy=TRUE) 
+
 names(DF)<-c("x","y",Label)
 
 return(DF)
 }
 
-#8. Analysis ----------
+#8. Compile raster lists for each category + early and late periods ----
 
-for(i in 1:nrow(bcr.ca)){  
+BCR_list<-list() # for storing output by BCR
+                   
+# Analysis ----
+for(i in 1:nrow(bcr.ca)){  # select BCR
 
-#Buffer BCR    
+#Buffer BCR  ---  
 bcr.i <-  bcr.ca %>% 
     dplyr::filter(row_number()==i) %>% 
     st_buffer(100000)%>%  # Filter & buffer shapefile
     st_intersection(., can) #crop at Canadian border
   
-# Extract BCR specific data frames for each group. Year=2000
-Early_Dataframes<-purrr::map(Grouping,create_df, YR=2000, bcr.i=bcr.i)
-Late_Dataframes<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i)
+# Extract BCR specific data frames for each group. Year=2000  ---  
+Early_Dataframes<-purrr::map(Grouping,create_df, YR=2000, bcr.i=bcr.i,.progress = T)
+#Late_Dataframes<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)
 
-#Get reference sample
+#Get BCR reference sample - pool samples for the pooled BCRs  ---  
 call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr.i to bcr name
 ids <- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,2]==TRUE)%>%.$id
 
-sample<-subset(cov,cov$id %in% ids)
+if(length(call)==2) {
+id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
+ids<-unique(c(ids,id2))  }
 
-#9. Calculate extrapolation ----------
+# Get sample data for BCR ---
+sample.i<-cov_clean%>%subset(.,.$id %in% ids) 
+sample.i<-sample.i %>%.[,colSums(.,na.rm=T)!=0] # remove covariates with no data
+
+#Convert sample locations to SPDF (for Leaflet plots)  ---  
+pnts<-visit%>% subset(.,.$id %in% ids)%>%.[10:11]%>% #sample lon, lat
+  st_as_sf(., coords = c("lon", "lat"),crs = 4326)%>% 
+  st_transform(crs=crs) %>%
+  as(.,"Spatial") 
+
+# Calculate extrapolation ---
 EarlyExt<-LateExt<-list()
 
-# Early period
+# Run through variable grouping for Early period -------
 
-for (j in 1:length(Early_Dataframes)){
+for (j in 1:length(Early_Dataframes)){ #run through each group
 
 target=Early_Dataframes[[j]]
 
 # Ensure match training-predictor variables
-sample<-sample%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
+sample<-sample.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
 target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
+
 
 xp = names(sample)
 
@@ -271,26 +292,36 @@ sample[sapply(sample, is.infinite)] <- NA #covariance returns infinite...
 EarlyExt[[j]] <- compute_extrapolation(samples = sample,
               covariate.names = xp,
               prediction.grid = target,
-              coordinate.system = crs)
-} # end of early variable group
+              coordinate.system = crs,
+              verbose=F)
 
-# Late period
-for (j in 1:length(Late_Dataframes)){
-  
-  # Match training-predictor variables
-  sample<-sample%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
-  target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
-  
-  xp = names(sample)
+#9. Plot output ---
 
- LateExt[[j]] <- compute_extrapolation(samples = sample,
-                                          covariate.names = xp,
-                                          prediction.grid = target,
-                                          coordinate.system = crs)
- } # end of late variable group
- 
+Map1M<-map_extrapolation(map.type="mic",sightings= pnts, 
+                         extrapolation.object=EarlyExt[[j]],
+                         verbose=F)
+
+saveWidget(Map1M, file=paste("BCR_", bcr.i$subUnit,
+                             "_2000_",
+                             Grouping[j],
+                             "_MIC",".html", sep=""))
+
+if(j!=4){ # skip issue with plotting road data: unable to find an inherited method for function ‘Which’ for signature ‘"logical"’
+Map1E<-map_extrapolation(map.type="extrapolation",sightings= pnts, 
+                         extrapolation.object=EarlyExt[[j]],
+                         verbose=F)
+
+saveWidget(Map1E, file=paste("BCR_", bcr.i$subUnit,
+                             "_2000_",
+                             Grouping[j],
+                             "_Ext",".html", sep=""))
 }
+  
+} # end of Grouping
+  
+BCR_list[[i]]<- EarlyExt
+saveRDS(BCR_list, file = "/Volumes/GoogleDrive/Shared drives/BAM_NationalModels/NationalModels5.0/GapAnalysis/Extrapolation_object.rds", overwrite=T)
 
-BCR[[i]]<- list(EarlyExt,LateExt)
-names(BCR)<-bcr.ca$subUnit
-#} # end of BCRs
+} # end of BCR
+                   
+#################### End of Code ######################
