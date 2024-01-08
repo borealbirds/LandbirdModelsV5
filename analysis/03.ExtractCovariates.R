@@ -57,10 +57,10 @@ loc.yr <- visit %>%
   st_transform(crs=5072)
 
 #EXTRA. Test sample dataset----
-# set.seed(1234)
-# loc.n <- loc.yr %>%
-#   sample_n(1000)
-loc.n <- loc.yr
+set.seed(1234)
+loc.n <- loc.yr %>%
+  sample_n(100000)
+#loc.n <- loc.yr
 
 #3. Buffer location objects----
 #200 m radius for local extent
@@ -71,14 +71,14 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", RadiusExtent==2000, TemporalResolution=="match")
+meth.gd <- dplyr::filter(meth, Source=="Google Drive")
 
 #2. Plain dataframe for joining to output----
-# loc.gd <- data.frame(loc.n) %>%
-#  dplyr::select(-geometry)
+loc.gd <- data.frame(loc.n) %>%
+ dplyr::select(-geometry)
 
 #Read in existing dataframe if not starting from scratch
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
+# loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- sort(unique(meth.gd$StackCategory))
@@ -95,23 +95,33 @@ for(i in 1:length(loop)){
     
     #7. Extract - determine point or buffer extraction and buffer extent---
     if(meth.gd.i$Extraction[1]=="point"){
+      
+      #Just extract for everything because point extraction is fast
       loc.cov <- loc.n %>% 
         st_transform(crs(rast.i)) %>% 
         terra::extract(x=rast.i, ID=FALSE)
     }
     
-    if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==200){
-      loc.cov <- loc.buff %>% 
+    if(meth.gd.i$Extraction[1]=="radius"){
+      
+      #Extract point value, filter out NAs, reproject to UTM, buffer, reproject to raster CRS, extract value, rejoin to full df
+      
+      loc.cov.i <- loc.n %>% 
         st_transform(crs(rast.i)) %>% 
-        exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
-        cbind(loc.n)
-    }
-    
-    if(meth.gd.i$Extraction[1]=="radius" & meth.gd.i$RadiusExtent[1]==2000){
-      loc.cov <- loc.buff2 %>% 
-        st_transform(crs(rast.i)) %>% 
-        exact_extract(x=rast.i, "mean", force_df=TRUE) %>% 
-        cbind(loc.n)
+        terra::extract(x=rast.i, bind=TRUE) %>% 
+        st_as_sf() %>% 
+        rename(cov = names(rast.i)[1]) %>% 
+        dplyr::filter(!is.na(cov)) %>% 
+        dplyr::select(-cov) %>% 
+        st_transform(crs=5072) %>% 
+        st_buffer(meth.gd.i$RadiusExtent[1]) %>% 
+        st_transform(crs(rast.i))
+      
+      loc.cov <- cbind(loc.cov.i,
+                       exact_extract(x=rast.i, y=loc.cov.i, "mean", force_df=TRUE)) %>% 
+        st_drop_geometry() %>% 
+        right_join(loc.n)
+        
     }
     
   }
