@@ -27,6 +27,8 @@
 #The filter by temporal covariates and study area components of the code should be moved from script 4 to this script for the next iteration for efficiency's sake.
 
 #TODO: UPDATE WRANGLING TO WILDRTRAX FUNCTIONS
+#TODO: BIRD OBJECT HAS NO PKEY
+#TODO: THINK ABOUT MAKING MODULAR BY BCR FROM ONSET
 
 #PREAMBLE############################
 
