@@ -164,8 +164,7 @@ ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8
 
 #3. Aggregate subunits----
 #CA: merge 42 with 41
-#USA: merge 41 with 42
-#USA: merge 3 with 41
+#USA: merge 42 and 3 with 41
 
 #Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
 
