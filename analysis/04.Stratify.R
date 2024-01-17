@@ -32,6 +32,7 @@ library(sf) #basic shapefile handling
 library(fasterize) #fast rasterization of shapefiles
 library(exactextractr) #fast & efficient raster extraction
 library(dggridR) #grid for spatial thinning
+library(Matrix) #for sparse matrix conversion
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -69,7 +70,7 @@ ggplot(bcr) +
 #4. Identify BCRs for each country----
 bcr.ca <- bcr %>% 
   st_intersection(can) %>% 
-  mutate(country="ca")
+  mutate(country="can")
 
 bcr.usa <- bcr %>% 
   st_intersection(usa) %>% 
@@ -87,7 +88,7 @@ for(i in 1:nrow(bcr.country)){
     st_buffer(100000)
   
   #7. Crop to international boundary----
-  if(bcr.buff$country=="ca"){ bcr.i <- st_intersection(bcr.buff, can)}
+  if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
   
   #8. Convert to raster for fast extraction----
@@ -103,7 +104,7 @@ for(i in 1:nrow(bcr.country)){
   
 }
 
-colnames(bcr.df) <- c("id", paste0(bcr.country$country, "_", bcr.country$subUnit))
+colnames(bcr.df) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 
 #FILTERING######################
 
@@ -173,11 +174,11 @@ ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8
 #merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
 
 bcr.agr <- bcr.use %>% 
-  mutate(ca_4142 = ifelse(ca_41==TRUE | ca_42==TRUE, TRUE, FALSE),
-         usa_41423 = ifelse(usa_42==TRUE | usa_41==TRUE | usa_3==TRUE, TRUE, FALSE),
-         usa_414232 = ifelse(usa_42==TRUE | usa_41==TRUE | usa_3==TRUE | usa_2==TRUE, TRUE, FALSE),
-         ca_8182 = ifelse(ca_82==TRUE | ca_81==TRUE, TRUE, FALSE)) %>% 
-  dplyr::select(-ca_41, -usa_42, -usa_3, -ca_42, -usa_41)
+  mutate(can4142 = ifelse(can41==TRUE | can42==TRUE, TRUE, FALSE),
+         usa41423 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE, TRUE, FALSE),
+         usa414232 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE | usa2==TRUE, TRUE, FALSE),
+         can8182 = ifelse(can82==TRUE | can81==TRUE, TRUE, FALSE)) %>% 
+  dplyr::select(-can41, -usa42, -usa3, -can42, -usa41)
 
 #4. Check sample sizes again
 bcr.n2 <- data.frame(bcr = unique(colnames(bcr.agr)[-1]),
