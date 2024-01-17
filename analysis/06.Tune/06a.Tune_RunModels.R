@@ -6,11 +6,11 @@
 
 #NOTES################################
 
-#This script uses a grid search of tuning parameters to determine ideal BRT parameters for each model subunit (BCR*country)
+#This script finds the best learning rate for each combination of model subunt (BCR*country) and bird species.
 
-#Parameters to tune include interaction depth & learning rate
+#It starts with a learning rate of 0.001 and then drops up or down one order of magnitude if the model has less than 1000 or 10000 trees (the max). Interaction depth is held constant at 3 (i.e., 3-way interactions are biologicaly plausible).
 
-#Best parameters are defined as the highest deviation explained that produces a model with 2000-10000 trees
+#The other approach to tuning boosted regression trees is using a grid search of interaction depth & learning rate and picking the best parameters as the highest deviation explained. This approach was not used for the national models in the interest of efficiency.
 
 #Tuning process is only run once using bootstrap #1, assuming that tuning parameters are relatively insensitive to bootstrap.
 
@@ -47,34 +47,37 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
-#3. Set root path for data on google drive (for local testing)----
+#3. Set species subset if desired----
+spplist <- c("OVEN", "OSFL", "CONW", "PAWA")
+
+#4. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
-#4. Create nodes list----
+#5. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 2 }
+if(test){ nodeslist <- 32 }
 
 print(nodeslist)
 
-#5. Create and register clusters----
+#6. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#6. Load packages on clusters----
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#7. Load data----
+#8. Load data----
 print("* Loading data on master *")
 
 #For running on cluster
@@ -97,9 +100,9 @@ brt_tune <- function(i){
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
-  boot.i <- loop$boot[i]
-  lr.i <- loop$lr[i]
-  id.i <- loop$id[i]
+  boot.i <- 1
+  lr.i <- 0.001
+  id.i <- 3
   
   #2. Get visits to include----
   set.seed(i)
@@ -131,6 +134,7 @@ brt_tune <- function(i){
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
   #8. Run model----
+  set.seed(i)
   m.i <- dismo::gbm.step(data=dat.i,
                          gbm.x=c(2:ncol(dat.i)),
                          gbm.y=1,
@@ -153,10 +157,45 @@ brt_tune <- function(i){
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
-  #10. Save----
-  write.csv(out.i, file=file.path("results", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")))
+  #10. Save model----
+  write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+  saveRDS(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS"))
   
-  #11. Tidy up----
+  #11. Run again if ntrees is suboptimal----
+  if(out.i$trees < 1000 | out.i$trees==10000){
+    
+    if(out.i$trees < 1000){lr.i <- 0.01}
+    if(out.i$trees ==10000){lr.i <- 0.0001}
+
+    
+    set.seed(i)
+    m.i <- dismo::gbm.step(data=dat.i,
+                           gbm.x=c(2:ncol(dat.i)),
+                           gbm.y=1,
+                           offset=off.i,
+                           tree.complexity = id.i,
+                           learning.rate = lr.i,
+                           family="poisson")
+    
+    out.i <- loop[i,] %>% 
+      cbind(data.frame(trees = m.i$n.trees,
+                       deviance.mean = m.i$cv.statistics$deviance.mean,
+                       deviance.se = m.i$cv.statistics$deviance.se,
+                       null = m.i$self.statistics$mean.null,
+                       resid = m.i$self.statistics$mean.resid,
+                       correlation = m.i$self.statistics$correlation,
+                       correlation.mean = m.i$cv.statistics$correlation.mean,
+                       correlation.se = m.i$cv.statistics$correlation.se,
+                       n = nrow(dat.i),
+                       ncount = nrow(dplyr::filter(dat.i, count > 0)),
+                       time = (proc.time()-t0)[3]))
+    
+    write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+    saveRDS(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS"))
+    
+  }
+  
+  #12. Tidy up----
   rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
   
 }
@@ -168,23 +207,13 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 
 #RUN MODELS###############
 
-#1. Set grid search parameters----
-
-#Learning rate
-lr <- c(0.01, 0.001, 0.0001)
-
-#Interaction depth
-id <- c(3)
-
-#2. Set number of bootstraps----
-boot <- 1
-
-#3. Get BCR & bird combo list----
+#1. Get BCR & bird combo list----
 bcr.spp <- birdlist %>% 
   pivot_longer(ABDU:YTVI, names_to="spp", values_to="use") %>% 
-  dplyr::filter(use==TRUE)
+  dplyr::filter(use==TRUE) %>% 
+  dplyr::filter(spp %in% spplist)
 
-#4. Reformat covariate list----
+#2. Reformat covariate list----
 bcr.cov <- covlist %>% 
   pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
   dplyr::filter(use==TRUE)
@@ -192,28 +221,27 @@ bcr.cov <- covlist %>%
 print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
-#5. Get list of models already run----
+#3. Get list of models already run----
 files <- data.frame(file = list.files("results", pattern="*.csv")) %>% 
   separate(file, into=c("step", "spp", "bcr1", "bcr2", "lr"), sep="_", remove=FALSE) %>% 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)),
          bcr = paste0(bcr1, "_", bcr2))
 
-#6. Make dataframe of models to run----
+#4. Make dataframe of models to run----
 
 #Full combinations
-loop <- expand.grid(lr=lr, id=id, boot=boot) %>% 
-  merge(bcr.spp) %>% 
+loop <- bcr.spp %>% 
   dplyr::select(-use) %>% 
   anti_join(files) %>% 
-  arrange(spp, bcr, lr)
+  arrange(spp, bcr)
 
 #For testing
-if(test) {loop <- loop[1:2,]}
+if(test) {loop <- loop[1:32,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#7. Run BRT function in parallel----
+#5. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   1:nrow(loop),
