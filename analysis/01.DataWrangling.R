@@ -529,44 +529,26 @@ bird.ak <- wide.ak %>%
 
 #6. Load the existing data object----
 #did this for convenience the first time around, but the above sections C-H should be run in future iterations because this object has been overwritten
-# load(file.path(root, "01_NM5.0_data_clean.R"))
+load(file.path(root, "01_NM5.0_data_clean.R"))
 
-#7. Figure out which datasets to replace in the existing object----
-visit.usgs <- dplyr::filter(visit, organization=="USGS-ALASKA")
+#7. Take out the duplicate datasets from the existing object----
+visit.new <- visit %>%
+  dplyr::filter(!project %in% c("Alaska Landbird Monitoring Survey",
+                                "Alaska Landbird Monitoring Survey - Denali",
+                                "Alaska Landbird Monitoring Survey and Off Road 2"))
 
-visit.dup <- inner_join(visit.usgs %>% 
-                          dplyr::select(project, lat, lon, date) %>% 
-                          rename(projectold = project),
-                        visit.ak %>%
-                          dplyr::select(project, lat, lon, date) %>% 
-                          rename(projectnew = project),
-                        multiple="all")
+bird.new <- bird %>% 
+  dplyr::filter(id %in% visit.new$id)
 
-visit.both <- rbind(visit.usgs, visit.ak) %>% 
-  arrange(date, lat, lon)
-
-ggplot(visit.both %>% 
-         dplyr::filter(project %in% c("Alaska Landbird Monitoring Survey", "ALMS2002-22"))) +
-  geom_point(aes(x=lon, y=lat, colour=project))
-
-#8. Take out the duplicates from the existing data object----
-visit.new <- visit %>% 
-  anti_join(visit.dup) %>% 
-  arrange(id)
-bird.new <- bird %>% dplyr::filter(id %in% visit.new$id) %>% 
-  arrange(id)
-
-#9. Put things together and fix the ids----
+#8. Put things together and fix the ids----
 visit <- visit.ak %>% 
   mutate(id = id + max(visit.new$id)) %>% 
   rbind(visit.new)
 
-#TO DO: FIGURE OUT HOW TO FILL WITH ZEROS EFFICIENTLY####
 bird <- bird.ak %>% 
-  sample_n(1000) %>% 
   mutate(id = id + max(bird.new$id)) %>% 
   bind_rows(bird.new) %>% 
-  mutate_all(ifelse(is.na(.), 0, .))
+  replace(is.na(.), 0)
 
 #10. Save it----
 save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))
