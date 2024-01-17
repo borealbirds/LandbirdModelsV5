@@ -6,6 +6,8 @@
 
 #NOTES################################
 
+#The data download done for version 5 of the national models was done using Elly Knight's personal Wildtrax account. Future versions of the national models should use the bamp account, which will likely negate the need for the "projectInstructions.csv" file described below.
+
 #The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in national (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
 
 #The "projectInstructions.csv" file also contains information on which ARU projects are processed for a single species or taxa (instructions=="DO NOT USE") and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. These projects are currently not included in the models.
@@ -25,6 +27,8 @@
 #The replace TMTTs script will be replaced by a wildRtrax function in the near future.
 
 #The filter by temporal covariates and study area components of the code should be moved from script 4 to this script for the next iteration for efficiency's sake.
+
+#This script has a section to add a dataset for Alaska after the initial dataset was compiled. It is included here for reproducibility purposes but should be removed for the next iteration of models.
 
 #TODO: UPDATE WRANGLING TO WILDRTRAX FUNCTIONS
 #TODO: BIRD OBJECT HAS NO PKEY
@@ -51,16 +55,16 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
 #A. DOWNLOAD DATA FROM WILDTRAX#######################
 
 #1. Login to WildTrax----
-config <- "script/login.R"
+config <- "login.R"
 source(config)
+wt_auth()
 
 #1. Get list of projects from WildTrax----
-wt_auth()
 
 #sensor = PC gives all ARU and point count projects
 project.list <- wt_get_download_summary(sensor_id = 'PC')
 
-#2. Convert to a plain dataframe----
+#2. metadata to a plain dataframe----
 projects <- data.frame(project = as.character(project.list$project),
                        project_id = as.numeric(project.list$project_id),
                        sensorId = as.character(project.list$sensorId),
@@ -469,4 +473,100 @@ bird <- dat %>%
   pivot_wider(id_cols=id, names_from=species, values_from=abundance, values_fn=sum, values_fill=0, names_sort=TRUE)
 
 #G. SAVE!####
+save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))
+
+#H. ADD ALASKA DATA####
+
+#1. Login to WildTrax----
+config <- "login.R"
+source(config)
+wt_auth()
+
+#2. Download data----
+raw.ak <- wt_download_report(project_id=2355, sensor="PC", report="main", weather_cols = FALSE)
+
+#3. Make wide----
+wide.ak <- raw.ak %>% 
+  wt_tidy_species(sensor="PC") %>% 
+  dplyr::mutate(individual_count = case_when(grepl("^C", individual_count) ~ NA_real_,
+                                             TRUE ~ individual_count) %>% 
+                  as.numeric()) %>%
+  dplyr::filter(!is.na(individual_count)) %>% 
+  tidyr::pivot_wider(id_cols = organization:survey_duration_method, 
+                     names_from = "species_code", values_from = "individual_count", 
+                     values_fn = sum, values_fill = 0, names_sort = TRUE)
+
+#4. Make the visit object----
+#Fix one positive longitude value
+visit.ak <- wide.ak %>% 
+  mutate(source="WildTrax",
+         sensor="PC",
+         equipment="human",
+         tagMethod="PC",
+         date = ymd_hms(survey_date),
+         year = year(date),
+         id = row_number()) %>% 
+  rename(buffer=location_buffer_m,
+         lat=latitude,
+         lon=longitude) %>% 
+  rowwise() %>% 
+  mutate(survey_duration_method2 = ifelse(str_sub(survey_duration_method, -1, -1)=="+", str_sub(survey_duration_method, -100, -2), survey_duration_method),
+         chardur = str_locate_all(survey_duration_method2, "-"),
+         chardurmax = max(chardur),
+         duration = as.numeric(str_sub(survey_duration_method2, chardurmax+1, -4)),
+         chardis = str_locate_all(survey_distance_method, "-"),
+         chardismax = max(chardis),
+         distance1 = str_sub(survey_distance_method, chardismax+1, -2),
+         distance = ifelse(distance1 %in% c("AR", "IN"), Inf, as.numeric(distance1))) %>% 
+  ungroup() %>% 
+  dplyr::select(all_of(colnames(visit))) %>% 
+  mutate(lon = ifelse(lon > 0, -lon, lon))
+
+#5. Make the bird object----
+bird.ak <- wide.ak %>% 
+  mutate(id = row_number()) %>% 
+  dplyr::select(id, AGOS:YRWA)
+
+#6. Load the existing data object----
+#did this for convenience the first time around, but the above sections C-H should be run in future iterations because this object has been overwritten
+# load(file.path(root, "01_NM5.0_data_clean.R"))
+
+#7. Figure out which datasets to replace in the existing object----
+visit.usgs <- dplyr::filter(visit, organization=="USGS-ALASKA")
+
+visit.dup <- inner_join(visit.usgs %>% 
+                          dplyr::select(project, lat, lon, date) %>% 
+                          rename(projectold = project),
+                        visit.ak %>%
+                          dplyr::select(project, lat, lon, date) %>% 
+                          rename(projectnew = project),
+                        multiple="all")
+
+visit.both <- rbind(visit.usgs, visit.ak) %>% 
+  arrange(date, lat, lon)
+
+ggplot(visit.both %>% 
+         dplyr::filter(project %in% c("Alaska Landbird Monitoring Survey", "ALMS2002-22"))) +
+  geom_point(aes(x=lon, y=lat, colour=project))
+
+#8. Take out the duplicates from the existing data object----
+visit.new <- visit %>% 
+  anti_join(visit.dup) %>% 
+  arrange(id)
+bird.new <- bird %>% dplyr::filter(id %in% visit.new$id) %>% 
+  arrange(id)
+
+#9. Put things together and fix the ids----
+visit <- visit.ak %>% 
+  mutate(id = id + max(visit.new$id)) %>% 
+  rbind(visit.new)
+
+#TO DO: FIGURE OUT HOW TO FILL WITH ZEROS EFFICIENTLY####
+bird <- bird.ak %>% 
+  sample_n(1000) %>% 
+  mutate(id = id + max(bird.new$id)) %>% 
+  bind_rows(bird.new) %>% 
+  mutate_all(ifelse(is.na(.), 0, .))
+
+#10. Save it----
 save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))
