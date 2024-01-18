@@ -31,7 +31,6 @@
 #This script has a section to add a dataset for Alaska after the initial dataset was compiled. It is included here for reproducibility purposes but should be removed for the next iteration of models.
 
 #TODO: UPDATE WRANGLING TO WILDRTRAX FUNCTIONS
-#TODO: BIRD OBJECT HAS NO PKEY
 #TODO: THINK ABOUT MAKING MODULAR BY BCR FROM ONSET
 
 #PREAMBLE############################
