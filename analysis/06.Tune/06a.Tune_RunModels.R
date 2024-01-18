@@ -47,8 +47,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -105,7 +105,7 @@ brt_tune <- function(i){
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- 1
-  lr.i <- loop$lr[i]
+  lr.i <- 0.001
   id.i <- 3
   
   #2. Get visits to include----
@@ -239,45 +239,13 @@ if(!cc){
     mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 }
 
-#If there are runs already done
-if(length(files) > 0){
-  
-  #4. Read in the performance for those models----
-  run <- do.call(rbind, lapply(files$path, function(x) read.csv(x)))
-  
-  #5. Separate ok and not ok runs----
-  ok <- run %>% 
-    dplyr::filter(trees > 1000,
-                  trees!=10000)
-  
-  notok <- anti_join(run, ok)
-  
-  #6. Figure out the ones that need another run----
-  redo <- notok %>% 
-    dplyr::select(spp, bcr) %>% 
-    unique() %>% 
-    anti_join(ok) %>% 
-    left_join(notok %>% 
-                dplyr::select(spp, bcr, trees)) %>% 
-    mutate(lr = ifelse(trees==10000, 0.0001, 0.01)) %>% 
-    dplyr::select(-trees)
-  
-  #7. Make dataframe of models to run----
-  
-  #Full combinations
-  loop <- bcr.spp %>% 
-    dplyr::select(-use) %>% 
-    mutate(lr = 0.001) %>% 
-    anti_join(run) %>% 
-    arrange(spp, bcr) %>% 
-    rbind(redo)
-  
-} else {
-  loop <- bcr.spp %>% 
-    dplyr::select(-use) %>% 
-    mutate(lr = 0.001) %>% 
-    arrange(spp, bcr)
-}
+#5. Make dataframe of models to run----
+
+#Full combinations
+loop <- bcr.spp %>% 
+  dplyr::select(-use) %>% 
+  anti_join(files) %>% 
+  arrange(spp, bcr)
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
