@@ -576,12 +576,15 @@ write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 #1. Load data----
 load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 
-#2. Load extracted covariates----
-loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv"))
+#2. Load previously extracted covariates and bind with new ones----
+loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv")) %>% 
+  bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv")))
 
-loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv"))
+loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv")) %>% 
+  bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static_AK.csv")))
 
-loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv")) %>% 
+  bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD_AK.csv")))
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
@@ -632,35 +635,6 @@ visit.covs <- visit %>%
          LFheigth_5x5 = ifelse(LFheigth_5x5 < 0.1, 0, LFheigth_5x5),
          LFheigthcv_1km = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_1km),
          LFheigthcv_5x5 = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_5x5))
-
-#5. Sanity checks----
-
-#Take a sample of the visits to look at each cov
-set.seed(1234)
-visit.sample <- visit.covs %>% 
-  sample_n(10000)
-
-#Plot to a folder
-for(i in 1:nrow(meth.use)){
-  
-  visit.i <- visit.sample %>% 
-    dplyr::select(lat, lon, meth.use$Label[i]) %>% 
-    data.table::setnames(c("lat", "lon", "cov")) %>% 
-    mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
-  
-  plot.na.i <- ggplot(visit.i) +
-    geom_point(aes(x=lon, y=lat, colour=na))
-  
-  ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
-  
-  plot.i <- ggplot(visit.i) +
-    geom_point(aes(x=lon, y=lat, colour=cov))
-  
-  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
-  
-  print(paste0("Finished plot ", i, " of ", nrow(meth.use)))
-  
-}
 
 #G. SAVE#####
 visit <- visit.covs
