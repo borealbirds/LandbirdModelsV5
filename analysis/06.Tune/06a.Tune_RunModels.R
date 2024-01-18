@@ -47,8 +47,12 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
+
+#3. Set nodes for local vs cluster----
+if(cc){ nodes <- 32}
+if(!cc){ nodes <- 2}
 
 #3. Set species subset if desired----
 spplist <- c("OVEN", "OSFL", "CONW", "PAWA")
@@ -63,7 +67,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- 32 }
+if(test){ nodeslist <- nodes }
 
 print(nodeslist)
 
@@ -101,7 +105,7 @@ brt_tune <- function(i){
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- 1
-  lr.i <- 0.001
+  lr.i <- loop$lr[i]
   id.i <- 3
   
   #2. Get visits to include----
@@ -159,14 +163,13 @@ brt_tune <- function(i){
   
   #10. Save model----
   write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-  saveRDS(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS"))
+  saveRDS(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS")))
   
   #11. Run again if ntrees is suboptimal----
   if(out.i$trees < 1000 | out.i$trees==10000){
     
     if(out.i$trees < 1000){lr.i <- 0.01}
     if(out.i$trees ==10000){lr.i <- 0.0001}
-
     
     set.seed(i)
     m.i <- dismo::gbm.step(data=dat.i,
@@ -222,21 +225,62 @@ print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-files <- data.frame(file = list.files("results", pattern="*.csv")) %>% 
-  separate(file, into=c("step", "spp", "bcr1", "bcr2", "lr"), sep="_", remove=FALSE) %>% 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5)),
-         bcr = paste0(bcr1, "_", bcr2))
+if(cc){
+  files <- data.frame(file = list.files("tuning", pattern="*.csv"),
+                      file = list.files("tuning", pattern="*.csv", full.names = TRUE)) %>% 
+    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+}
 
-#4. Make dataframe of models to run----
+if(!cc){
+  files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
+                      file = list.files("output/tuning", pattern="*.csv")) %>% 
+    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+}
 
-#Full combinations
-loop <- bcr.spp %>% 
-  dplyr::select(-use) %>% 
-  anti_join(files) %>% 
-  arrange(spp, bcr)
+#If there are runs already done
+if(length(files) > 0){
+  
+  #4. Read in the performance for those models----
+  run <- do.call(rbind, lapply(files$path, function(x) read.csv(x)))
+  
+  #5. Separate ok and not ok runs----
+  ok <- run %>% 
+    dplyr::filter(trees > 1000,
+                  trees!=10000)
+  
+  notok <- anti_join(run, ok)
+  
+  #6. Figure out the ones that need another run----
+  redo <- notok %>% 
+    dplyr::select(spp, bcr) %>% 
+    unique() %>% 
+    anti_join(ok) %>% 
+    left_join(notok %>% 
+                dplyr::select(spp, bcr, trees)) %>% 
+    mutate(lr = ifelse(trees==10000, 0.0001, 0.01)) %>% 
+    dplyr::select(-trees)
+  
+  #7. Make dataframe of models to run----
+  
+  #Full combinations
+  loop <- bcr.spp %>% 
+    dplyr::select(-use) %>% 
+    mutate(lr = 0.001) %>% 
+    anti_join(run) %>% 
+    arrange(spp, bcr) %>% 
+    rbind(redo)
+  
+} else {
+  loop <- bcr.spp %>% 
+    dplyr::select(-use) %>% 
+    mutate(lr = 0.001) %>% 
+    arrange(spp, bcr)
+}
 
 #For testing
-if(test) {loop <- loop[1:32,]}
+if(test) {loop <- loop[1:nodes,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
