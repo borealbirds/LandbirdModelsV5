@@ -571,6 +571,8 @@ for(i in 1:nrow(meth.gee)){
 #16. Save again----
 write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv"), row.names=FALSE)
 
+loc.gee.match.ak <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv"))
+
 #E. ASSEMBLE####
 
 #1. Load data----
@@ -578,7 +580,8 @@ load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
 
 #2. Load previously extracted covariates and bind with new ones----
 loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv")) %>% 
-  bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv")))
+  bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv")) %>% 
+              dplyr::select(-project, -location, -lat, -lon, -year))
 
 loc.gee.static <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static.csv")) %>% 
   bind_rows(read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-static_AK.csv")))
