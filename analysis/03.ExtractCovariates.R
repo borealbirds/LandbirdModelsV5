@@ -74,11 +74,11 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 meth.gd <- dplyr::filter(meth, Source=="Google Drive")
 
 #2. Plain dataframe for joining to output----
-loc.gd <- data.frame(loc.n) %>%
-  dplyr::select(-geometry)
+# loc.gd <- data.frame(loc.n) %>%
+#   dplyr::select(-geometry)
 
 #Read in existing dataframe if not starting from scratch
-# loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
+loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GD.csv"))
 
 #3. Set up loop----
 loop <- sort(unique(meth.gd$StackCategory))
@@ -241,8 +241,8 @@ for(i in 1:length(loop)){
   
   #14. Fix column names----
   if(loop[i] %in% c(19, 20, 23, 24)){
-    colnames(loc.cov) <- c(paste0(meth.gd.i$Label, "_conus"), "id")
-    nms <- c(colnames(loc.gd), paste(meth.gd.i$Label, "_conus"))
+    colnames(loc.cov) <- c(paste0(str_sub(meth.gd.i$Label, -100, -2), "_conus"), "id")
+    nms <- c(colnames(loc.gd), paste(str_sub(meth.gd.i$Label, -100, -2), "_conus"))
   } else {nms <- c(colnames(loc.gd), meth.gd.i$Label) }
   
   #15. Add output to main file----
@@ -261,16 +261,16 @@ for(i in 1:length(loop)){
 
 if("LFheigthcv_1km _conus" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd  %>%
-    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1km._conus),
-           LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km._conus),
-           LFheigth_1km = ifelse(!is.na(LFheigth_1km), LFheigth_1km, LFheigth_1km._conus),
-           LFheigthcv_1km = ifelse(!is.na(LFheigthcv_1km), LFheigthcv_1km, LFheigthcv_1km._conus),
-           LFbiomass_5x5 = ifelse(!is.na(LFbiomass_5x5), LFbiomass_5x5, 'LFbiomass_5x5 _conus'),
-           LFcrownclosure_5x5 = ifelse(!is.na(LFcrownclosure_5x5), LFcrownclosure_5x5, 'LFcrownclosure_5x5 _conus'),
-           LFheigth_5x5 = ifelse(!is.na(LFheigth_5x5), LFheigth_5x5, 'LFheigth_5x5 _conus'),
-           LFheigthcv_5x5 = ifelse(!is.na(LFheigthcv_5x5), LFheigthcv_5x5, 'LFheigthcv_5x5 _conus')) %>%
-    dplyr::select(-'LFbiomass_1km _conus', -'LFcrownclosure_1km _conus', -'LFheigth_1km _conus', -'LFheigthcv_1km _conus',
-                  -'LFbiomass_5x5 _conus', -'LFcrownclosure_5x5 _conus', -'LFheigth_5x5 _conus', -'LFheigthcv_5x5 _conus')
+    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1km_conus),
+           LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km_conus),
+           LFheigth_1km = ifelse(!is.na(LFheigth_1km), LFheigth_1km, LFheigth_1km_conus),
+           LFheigthcv_1km = ifelse(!is.na(LFheigthcv_1km), LFheigthcv_1km, LFheigthcv_1km_conus),
+           LFbiomass_5x5 = ifelse(!is.na(LFbiomass_5x5), LFbiomass_5x5, LFbiomass_5x5_conus),
+           LFcrownclosure_5x5 = ifelse(!is.na(LFcrownclosure_5x5), LFcrownclosure_5x5, LFcrownclosure_5x5_conus),
+           LFheigth_5x5 = ifelse(!is.na(LFheigth_5x5), LFheigth_5x5, LFheigth_5x5_conus),
+           LFheigthcv_5x5 = ifelse(!is.na(LFheigthcv_5x5), LFheigthcv_5x5, LFheigthcv_5x5_conus)) %>%
+    dplyr::select(-LFbiomass_1km_conus, -LFcrownclosure_1km_conus, -LFheigth_1km_conus, -LFheigthcv_1km_conus,
+                  -LFbiomass_5x5_conus, -LFcrownclosure_5x5_conus, -LFheigth_5x5_conus, -LFheigthcv_5x5_conus)
   
 } else { loc.gd2 <- loc.gd }
 
@@ -834,7 +834,7 @@ visit.covs <- visit %>%
 #Take a sample of the visits to look at each cov
 set.seed(1234)
 visit.sample <- visit.covs %>% 
-  sample_n(100000)
+  sample_n(10000)
 
 #Plot to a folder
 for(i in 1:nrow(meth.use)){
@@ -861,4 +861,4 @@ for(i in 1:nrow(meth.use)){
 #G. SAVE#####
 visit <- visit.covs
 
-save(visit, bird,  offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
+save(visit, bird, offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
