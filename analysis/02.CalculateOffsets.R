@@ -12,6 +12,10 @@
 
 # This script uses the traditional QPAD method for offset calculation. Future versions of the models should consider the joint estimation approach for more accurate density estimation.
 
+#This script uses the development version (dev-v4) of the QPAD package and qpad-offsets repo.
+
+#wt_qpad_offsets() is now available as a function in wildRtrax and should replace much of the code below in future versions.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -64,9 +68,9 @@ visit.x.utc <- visit.x %>%
   dplyr::filter(source=="eBird")
 
 #4. Format for offset calculation----
-x.local <- make_x(visit.x.local, tz="local")
+x.local <- make_x(visit.x.local, tz="local", check_xy=FALSE)
 x.local$id <- visit.x.local$id
-x.utc <- make_x(visit.x.utc, tz="utc")
+x.utc <- make_x(visit.x.utc, tz="utc",  check_xy=FALSE)
 x.utc$id <- visit.x.utc$id
 x <- rbind(x.local, x.utc)
 
@@ -97,4 +101,4 @@ colnames(offsets) <- c("id", spp)
 #E. SAVE####
 
 #1. Save----
-save(visit, bird, offsets, file=file.path(root, "Data", "02_NM5.0_data_offsets.R"))
+save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.R"))
