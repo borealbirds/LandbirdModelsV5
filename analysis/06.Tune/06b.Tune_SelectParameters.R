@@ -28,17 +28,33 @@ bcr.spp <- birdlist %>%
   dplyr::filter(use==TRUE)
 
 #2. Get list of results files----
-files <- list.files(file.path(root, "Output", "Tuning"))
+files <- data.frame(path = list.files(file.path(root, "Output", "tuning"), full.names = TRUE),
+                    file = list.files(file.path(root, "Output", "tuning"))) 
+  separate(file, into=c("step", "species", "country", "BCR", "lr"), sep="_") %>% 
+  mutate(lr = ifelse(lr=="1e-04.csv", 0.0001, as.numeric(str_sub(lr, -100, -5))))
 
 #3. Read them in----
-tune <- purrr::map(.x = files, .f = ~ read.csv())
+tune <- data.frame()
+for(i in 1:nrow(files)){
+  csv.i <- read.csv(files$path[i])
+  tune <- rbind(tune, csv.i)
+}
 
 #4. Pick the learning rate with 1000 - 9999 trees AND highest deviance
 ratelist <- tune %>% 
   dplyr::filter(trees < 10000,
                 trees > 1000) %>% 
   group_by(spp, bcr) %>% 
-  dplyr::filter(deviance.mean = max(deviance.mean))
+  dplyr::filter(deviance.mean == max(deviance.mean))
+
+#5. Try modelling----
+ggplot(ratelist) +
+  geom_histogram(aes(x=ncount, fill=factor(lr))) +
+  facet_wrap(~factor(lr))
+
+ggplot(ratelist) +
+  geom_point(aes(x=ncount, y=log(lr))) +
+  geom_smooth(aes(x=ncount, y=log(lr)))
 
 #5. Save-----
 save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, ratelist, file=file.path(root, "Data", "06_NM5.0_data_tune.R"))
