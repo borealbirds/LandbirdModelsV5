@@ -47,8 +47,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -168,9 +168,11 @@ brt_tune <- function(i){
   #11. Run again if ntrees is suboptimal----
   if(out.i$trees < 1000 | out.i$trees==10000){
     
+    #12. Change the learning rate----
     if(out.i$trees < 1000){lr.i <- 0.01}
     if(out.i$trees ==10000){lr.i <- 0.0001}
     
+    #13. Fit the model----
     set.seed(i)
     m.i <- dismo::gbm.step(data=dat.i,
                            gbm.x=c(2:ncol(dat.i)),
@@ -180,6 +182,7 @@ brt_tune <- function(i){
                            learning.rate = lr.i,
                            family="poisson")
     
+    #14. Get performance metrics----
     out.i <- loop[i,] %>% 
       cbind(data.frame(trees = m.i$n.trees,
                        deviance.mean = m.i$cv.statistics$deviance.mean,
@@ -193,17 +196,18 @@ brt_tune <- function(i){
                        ncount = nrow(dplyr::filter(dat.i, count > 0)),
                        time = (proc.time()-t0)[3]))
     
+    #15. Save again----
     write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
     saveRDS(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS"))
     
   }
   
-  #12. Tidy up----
+  #16. Tidy up----
   rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
   
 }
 
-#9. Export to clusters----
+#17. Export to clusters----
 print("* Loading function on workers *")
 
 tmpcl <- clusterExport(cl, c("brt_tune"))
@@ -212,7 +216,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 
 #1. Get BCR & bird combo list----
 bcr.spp <- birdlist %>% 
-  pivot_longer(ABDU:YTVI, names_to="spp", values_to="use") %>% 
+  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE) %>% 
   dplyr::filter(spp %in% spplist)
 
