@@ -37,6 +37,8 @@
 
 #see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
 
+#Things to change for next version: move eBird tagmethod wrangling to script 1.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -47,15 +49,16 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
 if(!cc){ nodes <- 2}
 
 #3. Set species subset if desired----
-spplist <- c("OVEN", "OSFL", "CONW", "PAWA")
+sppuse <- c("OVEN", "OSFL", "CONW", "PAWA")
+bcruse <- c("can71", "can80")
 
 #4. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -81,19 +84,26 @@ tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#8. Load data----
+#8. Load data package----
 print("* Loading data on master *")
 
 #For running on cluster
-if(cc){ load(file.path("04_NM5.0_data_stratify.R")) }
+if(cc){ load(file.path("data", "04_NM5.0_data_stratify.R")) }
 
 #For testing on local
 if(!cc){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
 
+#9. Wrangle method----
+meth <- cbind(cov %>% dplyr::select(id, tagMethod),
+              visit %>% dplyr::select(source)) %>% 
+  mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
+         method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT")))
+
+#10. Load data objects----
 print("* Loading data on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "meth", "visit"))
 
 #WRITE FUNCTION##########
 
@@ -127,11 +137,14 @@ brt_tune <- function(i){
     dplyr::filter(use==TRUE)
   cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$cov]
   
-  #5. Get PC vs SPT vs SPM----
-  meth.i <- cov[cov$id %in% visit.i$id, "tagMethod"]
+  #5. Get PC vs SPT vs SPM vs eBird----
+  meth.i <- meth[meth$id %in% visit.i$id, "method"]
+
+  #6. Get year----
+  year.i <- visit[visit$id %in% visit.i$id, "year"]
   
   #6. Put together data object----
-  dat.i <- cbind(bird.i, meth.i, cov.i) %>% 
+  dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
     rename(count = bird.i)
   
   #7. Get offsets----
@@ -163,7 +176,7 @@ brt_tune <- function(i){
   
   #10. Save model----
   write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-  saveRDS(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS")))
+  save(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
   
   #11. Run again if ntrees is suboptimal----
   if(out.i$trees < 1000 | out.i$trees==10000){
@@ -198,7 +211,7 @@ brt_tune <- function(i){
     
     #15. Save again----
     write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-    saveRDS(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".RDS"))
+    save(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R"))
     
   }
   
@@ -218,7 +231,8 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist %>% 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE) %>% 
-  dplyr::filter(spp %in% spplist)
+  dplyr::filter(spp %in% sppuse,
+                bcr %in% bcruse)
 
 #2. Reformat covariate list----
 bcr.cov <- covlist %>% 
