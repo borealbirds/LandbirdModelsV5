@@ -92,6 +92,7 @@ for(i in 1:length(loop)){
     
     #6. Read in raster----
     rast.i <- rast(meth.gd.i$Link)
+    names(rast.i) <- meth.gd.i$Label
     
     #7. Extract - determine point or buffer extraction and buffer extent---
     if(meth.gd.i$Extraction[1]=="point"){
@@ -100,6 +101,8 @@ for(i in 1:length(loop)){
       loc.cov <- loc.n %>% 
         st_transform(crs(rast.i)) %>% 
         terra::extract(x=rast.i, ID=FALSE)
+      
+      loc.cov$id <- loc.n$id
     }
     
     if(meth.gd.i$Extraction[1]=="radius"){
@@ -123,7 +126,8 @@ for(i in 1:length(loop)){
                                      meth.gd.i$RadiusFunction[1],
                                      force_df=TRUE)) %>% 
         st_drop_geometry() %>% 
-        right_join(loc.n)
+        right_join(loc.n %>% 
+                     st_drop_geometry())
       
     }
     
@@ -198,6 +202,7 @@ for(i in 1:length(loop)){
       #12. Read in raster----
       files.j <- dplyr::filter(files.i, year==yrs[j])
       rast.i <- rast(files.j$Link)
+      names(rast.i) <- meth.gd.i$Label
       
       #13. Extract - determine point or buffer extraction and buffer extent---
       if(meth.gd.i$Extraction[1]=="point"){
@@ -501,6 +506,7 @@ for(h in 1:nrow(loop)){
   task.list <- list()
   for(i in 1:max(loc.gee$loop)){
     
+    set.seed(1234)
     loc.gee.i <- dplyr::filter(loc.gee, loop==i)
     
     #8. Send polygons to GEE---
@@ -589,7 +595,11 @@ loc.gee <- loc.gee.cv.200 %>%
   full_join(loc.gee.mean.200 %>% 
               data.table::setnames(c(colnames(loc.gee.mean.200)[1],
                                      lab.mean.200$Label[1:2],
-                                     colnames(loc.gee.mean.200)[4:14])) %>% 
+                                     colnames(loc.gee.mean.200)[4:8],
+                                     lab.mean.200$Label[3],
+                                     colnames(loc.gee.mean.200)[10],
+                                     lab.mean.200$Label[4:5],
+                                     colnames(loc.gee.mean.200)[13:14])) %>% 
               dplyr::select(c(id, lab.mean.200$Label))) %>% 
   full_join(loc.gee.mean.2000 %>% 
               data.table::setnames(c(colnames(loc.gee.mean.2000)[1],
@@ -598,8 +608,8 @@ loc.gee <- loc.gee.cv.200 %>%
                                      lab.mean.2000$Label[3],
                                      colnames(loc.gee.mean.2000)[10:12])) %>% 
               dplyr::select(c(id, lab.mean.2000$Label))) %>% 
-  mutate(ETHheightcv_1km = ETHheighcv_1km/ETHheight_1km,
-         ETHheightcv_5x5 = ETHheighcv_5x5/ETHheight_5x5) %>% 
+  mutate(ETHheightcv_1km = ETHheightcv_1km/ETHheight_1km,
+         ETHheightcv_5x5 = ETHheightcv_5x5/ETHheight_5x5) %>% 
   mutate(ETHheightcv_1km = ifelse(is.infinite(ETHheightcv_1km), 0, ETHheightcv_1km),
          ETHheightcv_5x5 = ifelse(is.infinite(ETHheightcv_5x5), 0, ETHheightcv_5x5))
 
@@ -619,7 +629,7 @@ write.csv(loc.gee.static, file=file.path(root, "Data", "Covariates", "03_NM5.0_d
 #E. EXTRACT COVARIATES FROM GEE - TEMPORALLY MATCHED####
 
 #1. Get list of static layers to run----
-meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", Running==1, TemporalResolution=="match", Complete==0)
+meth.gee <- dplyr::filter(meth, Source=="Google Earth Engine", TemporalResolution=="match")
 
 #2. Plain dataframe for joining to output----
 #loc.gee <- data.frame(loc.n) %>% 
@@ -715,17 +725,29 @@ for(i in 1:nrow(meth.gee)){
         
       }
       
-      #12. Collapse loops for the year----
-      loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE)
+      if(meth.gee$Extraction[i]=="point"){
+        
+        #12. Collapse loops for the year----
+        loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE) 
+        
+        #13. Fix column names----
+        colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], meth.gee$Label[i])
+      }
       
-      #13. Fix column names----
-      colnames(loc.j[[j]]) <- c(colnames(loc.j[[j]])[1:ncol(loc.j[[j]])-1], meth.gee$Label[i])
+      if(meth.gee$Extraction[i]=="radius"){
+        
+        #12. Collapse loops for the year----
+        loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE) %>% 
+          dplyr::select(id, mode)
+        
+        #13. Fix column names----
+        colnames(loc.j[[j]]) <- c("id", meth.gee$Label[i])
+      }
+      
       
     }
     
     print(paste0("Finished year ", j, " of ", length(years.gee)))
-    
-  }
   
   #14. Collapse data across years----
   loc.i <- data.table::rbindlist(loc.j, fill=TRUE)

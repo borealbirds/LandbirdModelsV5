@@ -533,6 +533,7 @@ for(i in 1:nrow(meth.gee)){
       }
       
       if(meth.gee$Extraction[i]=="point"){
+        
         #12. Collapse loops for the year----
         loc.j[[j]] <- data.table::rbindlist(loc.k, fill=TRUE) 
         
@@ -570,8 +571,6 @@ for(i in 1:nrow(meth.gee)){
 
 #16. Save again----
 write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv"), row.names=FALSE)
-
-loc.gee.match.ak <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match_AK.csv"))
 
 #E. ASSEMBLE####
 
