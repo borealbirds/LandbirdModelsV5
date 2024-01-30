@@ -50,7 +50,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -58,7 +58,6 @@ if(!cc){ nodes <- 2}
 
 #3. Set species subset if desired----
 sppuse <- c("OVEN", "OSFL", "CONW", "PAWA")
-bcruse <- c("can71", "can80")
 
 #4. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -88,7 +87,7 @@ tmpcl <- clusterEvalQ(cl, library(Matrix))
 print("* Loading data on master *")
 
 #For running on cluster
-if(cc){ load(file.path("data", "04_NM5.0_data_stratify.R")) }
+if(cc){ load(file.path("04_NM5.0_data_stratify.R")) }
 
 #For testing on local
 if(!cc){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
@@ -211,7 +210,7 @@ brt_tune <- function(i){
     
     #15. Save again----
     write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-    save(m.i, "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R"))
+    save(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
     
   }
   
@@ -231,8 +230,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist %>% 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE) %>% 
-  dplyr::filter(spp %in% sppuse,
-                bcr %in% bcruse)
+  dplyr::filter(spp %in% sppuse)
 
 #2. Reformat covariate list----
 bcr.cov <- covlist %>% 
