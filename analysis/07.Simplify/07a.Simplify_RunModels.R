@@ -20,10 +20,14 @@ library(Matrix)
 test <- FALSE
 cc <- TRUE
 
-#3. Set root path for data on google drive (for local testing)----
+#3. Set nodes for local vs cluster----
+if(cc){ nodes <- 32}
+if(!cc){ nodes <- 2}
+
+#4. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
-#4. Create nodes list----
+#5. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
@@ -34,17 +38,17 @@ if(test){ nodeslist <- 32 }
 
 print(nodeslist)
 
-#5. Create and register clusters----
+#6. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#6. Load packages on clusters----
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#7. Load data----
+#8. Load data----
 print("* Loading data on master *")
 
 #For running on cluster
@@ -56,7 +60,7 @@ if(!cc){ load(file.path(root, "Data", "06_NM5.0_data_tune.R")) }
 print("* Loading data on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "lrlist"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "meth", "visit"))
 
 #WRITE FUNCTION##########
 
@@ -65,7 +69,7 @@ brt_simplify <- function(i){
   t0 <- proc.time()
   
   #1. Read in the model----
-  m.i <- readRDS("SOMETHING HERE")
+  load(mods$path[i])
   
   #2. Simplify model----
   s.i <- dismo::gbm.simplify(m.i)
@@ -90,10 +94,16 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 #RUN MODELS###############
 
 #1. Get model list----
-
+mods <- data.frame(path = list.files("output/fullmodels", full.names = TRUE),
+                   file = list.files("output/fullmodels")) %>% 
+  separate(file, into=c("species", "bcr", "lr", "filetype")) %>% 
+  group_by(species) %>% 
+  mutate(mods = n()) %>% 
+  ungroup() %>% 
+  dplyr::filter(!(mods> 1 & lr=="0.001"))
 
 #For testing
-if(test) {loop <- loop[1:32,]}
+if(test) {loop <- loop[1:nodes,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
