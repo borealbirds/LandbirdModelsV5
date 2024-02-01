@@ -49,7 +49,7 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- FALSE
 
 #3. Set nodes for local vs cluster----
@@ -114,7 +114,7 @@ brt_tune <- function(i){
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- 1
-  lr.i <- 0.001
+  lr.i <- loop$spp[i]
   id.i <- 3
   
   #2. Get visits to include----
@@ -171,18 +171,19 @@ brt_tune <- function(i){
                      correlation.se = m.i$cv.statistics$correlation.se,
                      n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                     time = (proc.time()-t0)[3]))
+                     time = (proc.time()-t0)[3],
+                     lr = lr.i))
   
   #10. Save model----
   write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
   save(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
   
   #11. Run again if ntrees is suboptimal----
-  if(out.i$trees < 1000 | out.i$trees==10000){
+  while(out.i$trees < 1000 | out.i$trees==10000){
     
     #12. Change the learning rate----
-    if(out.i$trees < 1000){lr.i <- 0.01}
-    if(out.i$trees ==10000){lr.i <- 0.0001}
+    if(out.i$trees < 1000){lr.i <- lr.i*10}
+    if(out.i$trees ==10000){lr.i <- lr.i/10}
     
     #13. Fit the model----
     set.seed(i)
@@ -206,7 +207,8 @@ brt_tune <- function(i){
                        correlation.se = m.i$cv.statistics$correlation.se,
                        n = nrow(dat.i),
                        ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3]))
+                       time = (proc.time()-t0)[3],
+                       lr = lr.i))
     
     #15. Save again----
     write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
@@ -227,6 +229,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 #RUN MODELS###############
 
 #1. Get BCR & bird combo list----
+#filter by list of desired species
 bcr.spp <- birdlist %>% 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE) %>% 
@@ -255,12 +258,35 @@ if(!cc){
     mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 }
 
-#5. Make dataframe of models to run----
+#4. Read in performance of those models----
+#Take out the mutate after running next time
+perf <- map_dfr(read.csv, .x=files$path) %>% 
+  mutate(lr = files$lr)
 
-#Full combinations
+#5. Determine which ones are done----
+done <- perf %>% 
+  dplyr::filter(trees >= 1000,
+                trees < 10000)
+
+#6. Determine learning rate for those that need rerunning----
+redo <- perf %>% 
+  anti_join(done %>% dplyr::select(spp, bcr)) %>% 
+  group_by(spp, bcr) %>% 
+  dplyr::filter(lr == min(lr)) %>% 
+  mutate(lr.next = case_when(trees < 1000 ~ 0.01,
+                             trees == 10000 ~ lr/10)) %>% 
+  ungroup()
+
+#7. Make dataframe of models to run----
+#Full combinations, take out done models and redo models, then add redo models back in
 loop <- bcr.spp %>% 
   dplyr::select(-use) %>% 
-  anti_join(files) %>% 
+  anti_join(done) %>% 
+  anti_join(redo) %>% 
+  mutate(lr = 0.001) %>% 
+  rbind(redo %>% 
+          dplyr::select(spp, bcr, lr.next) %>% 
+          rename(lr = lr.next)) %>% 
   arrange(spp, bcr)
 
 #For testing
@@ -269,7 +295,7 @@ if(test) {loop <- loop[1:nodes,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#5. Run BRT function in parallel----
+#8. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   1:nrow(loop),
