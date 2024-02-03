@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -114,7 +114,7 @@ brt_tune <- function(i){
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- 1
-  lr.i <- loop$spp[i]
+  lr.i <- loop$lr[i]
   id.i <- 3
   
   #2. Get visits to include----
@@ -182,8 +182,8 @@ brt_tune <- function(i){
   while(out.i$trees < 1000 | out.i$trees==10000){
     
     #12. Change the learning rate----
-    if(out.i$trees < 1000){lr.i <- lr.i*10}
-    if(out.i$trees ==10000){lr.i <- lr.i/10}
+    if(out.i$trees < 1000){lr.i <- lr.i/10}
+    if(out.i$trees ==10000){lr.i <- lr.i*10}
     
     #13. Fit the model----
     set.seed(i)
@@ -245,8 +245,8 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
 if(cc){
-  files <- data.frame(file = list.files("tuning", pattern="*.csv"),
-                      file = list.files("tuning", pattern="*.csv", full.names = TRUE)) %>% 
+  files <- data.frame(path = list.files("tuning", pattern="*.csv", full.names=TRUE),
+                      file = list.files("tuning", pattern="*.csv")) %>% 
     separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
     mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 }
@@ -261,7 +261,7 @@ if(!cc){
 #4. Read in performance of those models----
 #Take out the mutate after running next time
 perf <- map_dfr(read.csv, .x=files$path) %>% 
-  mutate(lr = files$lr)
+  cbind(data.frame(lr = files$lr))
 
 #5. Determine which ones are done----
 done <- perf %>% 
@@ -272,9 +272,10 @@ done <- perf %>%
 redo <- perf %>% 
   anti_join(done %>% dplyr::select(spp, bcr)) %>% 
   group_by(spp, bcr) %>% 
-  dplyr::filter(lr == min(lr)) %>% 
-  mutate(lr.next = case_when(trees < 1000 ~ 0.01,
-                             trees == 10000 ~ lr/10)) %>% 
+  mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
+  dplyr::filter(lr == last) %>% 
+  mutate(lr.next = case_when(trees == 10000 ~ 0.01,
+                             trees < 1000 ~ lr/10)) %>% 
   ungroup()
 
 #7. Make dataframe of models to run----
