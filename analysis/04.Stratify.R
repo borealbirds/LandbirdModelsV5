@@ -122,7 +122,7 @@ minday <- 135 #May 15
 maxday <- 196 #July 15
 
 #2. Remove points outside study area
-bcr.in <- bcr.df[rowSums(ifelse(bcr.df==TRUE, 1, 0)) > 0,]
+bcr.in <- bcr.df[rowSums(ifelse(bcr.df[,2:length(bcr.df)]==TRUE, 1, 0)) > 0,]
 
 #3. Filter visits----
 visit.use <- visit %>% 
