@@ -1,7 +1,7 @@
 # ---
-# title: National Models 5.0 - tune models
+# title: National Models 5.0 - simplify models
 # author: Elly Knight
-# created: January 2, 2024
+# created: February 5, 2024
 # ---
 
 #NOTES################################
@@ -17,8 +17,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -48,20 +48,6 @@ tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#8. Load data----
-print("* Loading data on master *")
-
-#For running on cluster
-if(cc){ load(file.path("06_NM5.0_data_tune.R")) }
-
-#For testing on local
-if(!cc){ load(file.path(root, "Data", "06_NM5.0_data_tune.R")) }
-
-print("* Loading data on workers *")
-
-if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "meth", "visit"))
-
 #WRITE FUNCTION##########
 
 brt_simplify <- function(i){
@@ -69,17 +55,24 @@ brt_simplify <- function(i){
   t0 <- proc.time()
   
   #1. Read in the model----
-  load(mods$path[i])
+  if(cc){
+    load(paste0("fullmodels/", use$spp[i], "_", use$bcr[i], "_", use$lr[i], ".R"))
+  }
+  
+  if(!cc){
+    load(paste0("output/fullmodels/", use$spp[i], "_", use$bcr[i], "_", use$lr[i], ".R"))
+  }
+  
   
   #2. Simplify model----
   s.i <- dismo::gbm.simplify(m.i)
   
   #3. Get performance metrics----
-  out.i <- ????
-  #TO DO: DECIDE WHAT TO SAVE####
+  out.i <- cbind(s.i[["final.drops"]])
   
   #4. Save----
-  write.csv(out.i, file=file.path("results", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
+  write.csv(out.i, file=file.path("simplification", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
+  save(s.i, file=file.path("simplifiedmodels", paste0(use$spp[i], "_", use$bcr[i], ".R")))
   
   #5. Tidy up----
   rm(m.i, s.i, out.i)
@@ -93,25 +86,50 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 
 #RUN MODELS###############
 
-#1. Get model list----
-mods <- data.frame(path = list.files("output/fullmodels", full.names = TRUE),
-                   file = list.files("output/fullmodels")) %>% 
-  separate(file, into=c("species", "bcr", "lr", "filetype")) %>% 
-  group_by(species) %>% 
-  mutate(mods = n()) %>% 
-  ungroup() %>% 
-  dplyr::filter(!(mods> 1 & lr=="0.001"))
+#1. Get list of models already run----
+if(cc){
+  files <- data.frame(path = list.files("tuning", pattern="*.csv", full.names=TRUE),
+                      file = list.files("tuning", pattern="*.csv")) %>% 
+    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+}
+
+if(!cc){
+  files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
+                      file = list.files("output/tuning", pattern="*.csv")) %>% 
+    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+}
+
+#2. Read in performance of those models----
+#Take out the mutate after running next time
+perf <- map_dfr(read.csv, .x=files$path) %>%
+  dplyr::select(-lr, -lr.1) %>% 
+  cbind(data.frame(lr = files$lr))
+
+#3. Pick the best model for each spp*bcr----
+use <- perf %>% 
+  dplyr::filter(trees!=10000,
+                trees >= 1000) 
+
+#4. Check you have one model for each spp*bcr----
+mods <- perf %>% 
+  dplyr::select(spp, bcr) %>% 
+  unique()
+
+missing <- anti_join(mods, use) %>% 
+  left_join(perf)
 
 #For testing
-if(test) {loop <- loop[1:nodes,]}
+if(test) {use <- use[1:nodes,]}
 
 print("* Loading model loop on workers *")
-tmpcl <- clusterExport(cl, c("loop"))
+tmpcl <- clusterExport(cl, c("use"))
 
 #7. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
-                  1:nrow(loop),
+                  1:nrow(use),
                   fun=brt_simplify)
 
 #CONCLUDE####
