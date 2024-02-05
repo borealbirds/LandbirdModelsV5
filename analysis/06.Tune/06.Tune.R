@@ -171,8 +171,8 @@ brt_tune <- function(i){
                      correlation.se = m.i$cv.statistics$correlation.se,
                      n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                     time = (proc.time()-t0)[3],
-                     lr = lr.i))
+                     time = (proc.time()-t0)[3])) %>% 
+    mutate(lr = lr.i)
   
   #10. Save model----
   write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
@@ -207,8 +207,8 @@ brt_tune <- function(i){
                        correlation.se = m.i$cv.statistics$correlation.se,
                        n = nrow(dat.i),
                        ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3],
-                       lr = lr.i))
+                       time = (proc.time()-t0)[3])) %>% 
+      mutate(lr = lr.i)
     
     #15. Save again----
     write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
