@@ -261,6 +261,7 @@ if(!cc){
 #4. Read in performance of those models----
 #Take out the mutate after running next time
 perf <- map_dfr(read.csv, .x=files$path) %>% 
+  dplyr::select(-lr, -lr.1) %>% 
   cbind(data.frame(lr = files$lr))
 
 #5. Determine which ones are done----
@@ -274,7 +275,7 @@ redo <- perf %>%
   group_by(spp, bcr) %>% 
   mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
   dplyr::filter(lr == last) %>% 
-  mutate(lr.next = case_when(trees == 10000 ~ 0.01,
+  mutate(lr.next = case_when(trees == 10000 ~ lr*10,
                              trees < 1000 ~ lr/10)) %>% 
   ungroup()
 
