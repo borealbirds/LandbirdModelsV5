@@ -48,6 +48,9 @@ tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
+#8. Set working directory----
+if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
+
 #WRITE FUNCTION##########
 
 brt_simplify <- function(i){
@@ -66,7 +69,7 @@ brt_simplify <- function(i){
            bcr = use$bcr[i])
   
   #4. Save----
-  write.csv(out.i, file=file.path("output/simplification", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
+  write.csv(out.i, file=file.path("output/simplifying", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
   save(s.i, file=file.path("output/simplifiedmodels", paste0(use$spp[i], "_", use$bcr[i], ".R")))
   
   #5. Tidy up----
