@@ -70,7 +70,7 @@ visit.x.utc <- visit.x %>%
 #4. Format for offset calculation----
 x.local <- make_x(visit.x.local, tz="local", check_xy=FALSE, tm=FALSE)
 x.local$id <- visit.x.local$id
-x.utc <- make_x(visit.x.utc, tz="utc",  check_xy=FALSE)
+x.utc <- make_x(visit.x.utc, tz="utc",  check_xy=FALSE, tm=FALSE)
 x.utc$id <- visit.x.utc$id
 x <- rbind(x.local, x.utc)
 
