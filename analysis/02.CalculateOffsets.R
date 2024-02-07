@@ -59,7 +59,7 @@ load(file.path(root, "01_NM5.0_data_clean.R"))
 visit.x <- visit %>% 
   mutate(time = str_sub(date, 12, 16),
          date = as.character(date(date))) %>% 
-  rename(dur = duration, dis = distance, tm = tagMethod)
+  rename(dur = duration, dis = distance, tagmeth = tagMethod)
 
 #3. Split into local and utc time zone objects----
 visit.x.local <- visit.x %>% 
