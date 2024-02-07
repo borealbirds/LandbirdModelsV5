@@ -55,24 +55,19 @@ brt_simplify <- function(i){
   t0 <- proc.time()
   
   #1. Read in the model----
-  if(cc){
-    load(paste0("fullmodels/", use$spp[i], "_", use$bcr[i], "_", use$lr[i], ".R"))
-  }
-  
-  if(!cc){
-    load(paste0("output/fullmodels/", use$spp[i], "_", use$bcr[i], "_", use$lr[i], ".R"))
-  }
-  
+  load(paste0("output/fullmodels/", use$spp[i], "_", use$bcr[i], "_", use$lr[i], ".R"))
   
   #2. Simplify model----
   s.i <- dismo::gbm.simplify(m.i)
   
   #3. Get performance metrics----
-  out.i <- cbind(s.i[["final.drops"]])
+  out.i <- s.i[["final.drops"]] %>% 
+    mutate(spp = use$spp[i],
+           bcr = use$bcr[i])
   
   #4. Save----
-  write.csv(out.i, file=file.path("simplification", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
-  save(s.i, file=file.path("simplifiedmodels", paste0(use$spp[i], "_", use$bcr[i], ".R")))
+  write.csv(out.i, file=file.path("output/simplification", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
+  save(s.i, file=file.path("output/simplifiedmodels", paste0(use$spp[i], "_", use$bcr[i], ".R")))
   
   #5. Tidy up----
   rm(m.i, s.i, out.i)
@@ -82,24 +77,15 @@ brt_simplify <- function(i){
 #9. Export to clusters----
 print("* Loading function on workers *")
 
-tmpcl <- clusterExport(cl, c("brt_tune"))
+tmpcl <- clusterExport(cl, c("brt_simplify"))
 
 #RUN MODELS###############
 
 #1. Get list of models already run----
-if(cc){
-  files <- data.frame(path = list.files("tuning", pattern="*.csv", full.names=TRUE),
-                      file = list.files("tuning", pattern="*.csv")) %>% 
-    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
-}
-
-if(!cc){
-  files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
-                      file = list.files("output/tuning", pattern="*.csv")) %>% 
-    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
-}
+files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
+                    file = list.files("output/tuning", pattern="*.csv")) %>% 
+  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #2. Read in performance of those models----
 #Take out the mutate after running next time
@@ -127,7 +113,7 @@ print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("use"))
 
 #7. Run BRT function in parallel----
-print("* Fitting models *")
+print("* Simplifying models *")
 mods <- parLapply(cl,
                   1:nrow(use),
                   fun=brt_simplify)
