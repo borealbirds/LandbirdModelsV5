@@ -50,7 +50,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -175,8 +175,8 @@ brt_tune <- function(i){
     mutate(lr = lr.i)
   
   #10. Save model----
-  write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-  save(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+  write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+  save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
   
   #11. Run again if ntrees is suboptimal----
   while(out.i$trees < 1000 | out.i$trees==10000){
@@ -211,8 +211,8 @@ brt_tune <- function(i){
       mutate(lr = lr.i)
     
     #15. Save again----
-    write.csv(out.i, file=file.path("tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-    save(m.i, file=file.path("fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+    save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
     
   }
   
@@ -244,19 +244,10 @@ print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-if(cc){
-  files <- data.frame(path = list.files("tuning", pattern="*.csv", full.names=TRUE),
-                      file = list.files("tuning", pattern="*.csv")) %>% 
-    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
-}
-
-if(!cc){
-  files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
-                      file = list.files("output/tuning", pattern="*.csv")) %>% 
-    separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-    mutate(lr = as.numeric(str_sub(lr, -100, -5)))
-}
+files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
+                    file = list.files("output/tuning", pattern="*.csv")) %>% 
+  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Read in performance of those models----
 #Take out the mutate after running next time
