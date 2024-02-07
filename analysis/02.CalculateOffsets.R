@@ -68,7 +68,7 @@ visit.x.utc <- visit.x %>%
   dplyr::filter(source=="eBird")
 
 #4. Format for offset calculation----
-x.local <- make_x(visit.x.local, tz="local", check_xy=FALSE)
+x.local <- make_x(visit.x.local, tz="local", check_xy=FALSE, tm=FALSE)
 x.local$id <- visit.x.local$id
 x.utc <- make_x(visit.x.utc, tz="utc",  check_xy=FALSE)
 x.utc$id <- visit.x.utc$id
