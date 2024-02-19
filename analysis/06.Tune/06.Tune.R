@@ -151,13 +151,28 @@ brt_tune <- function(i){
   
   #8. Run model----
   set.seed(i)
-  m.i <- dismo::gbm.step(data=dat.i,
+  m.i <- try(dismo::gbm.step(data=dat.i,
                          gbm.x=c(2:ncol(dat.i)),
                          gbm.y=1,
                          offset=off.i,
                          tree.complexity = id.i,
                          learning.rate = lr.i,
-                         family="poisson")
+                         family="poisson"))
+  
+  #rerun if lr too high (small sample size e.g., can3)
+  if(class(m.i)=="NULL"){
+    
+    lr.i <- lr.i/10
+    
+    m.i <- try(dismo::gbm.step(data=dat.i,
+                               gbm.x=c(2:ncol(dat.i)),
+                               gbm.y=1,
+                               offset=off.i,
+                               tree.complexity = id.i,
+                               learning.rate = lr.i,
+                               family="poisson"))
+    
+  }
   
   #9. Get performance metrics----
   out.i <- loop[i,] %>% 
@@ -233,7 +248,8 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist %>% 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
   dplyr::filter(use==TRUE) %>% 
-  dplyr::filter(spp %in% sppuse)
+  dplyr::filter(spp %in% sppuse) %>% 
+  dplyr::select(-use)
 
 #2. Reformat covariate list----
 bcr.cov <- covlist %>% 
@@ -273,7 +289,6 @@ redo <- perf %>%
 #7. Make dataframe of models to run----
 #Full combinations, take out done models and redo models, then add redo models back in
 loop <- bcr.spp %>% 
-  dplyr::select(-use) %>% 
   anti_join(done) %>% 
   anti_join(redo) %>% 
   mutate(lr = 0.001) %>% 
