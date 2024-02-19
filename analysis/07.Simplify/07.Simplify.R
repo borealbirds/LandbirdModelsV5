@@ -17,8 +17,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -66,7 +66,8 @@ brt_simplify <- function(i){
   #3. Get performance metrics----
   out.i <- s.i[["final.drops"]] %>% 
     mutate(spp = use$spp[i],
-           bcr = use$bcr[i])
+           bcr = use$bcr[i],
+           time = (proc.time()-t0)[3])
   
   #4. Save----
   write.csv(out.i, file=file.path("output/simplifying", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
@@ -97,9 +98,11 @@ perf <- map_dfr(read.csv, .x=files$path) %>%
   cbind(data.frame(lr = files$lr))
 
 #3. Pick the best model for each spp*bcr----
+#Sort by time
 use <- perf %>% 
   dplyr::filter(trees!=10000,
-                trees >= 1000) 
+                trees >= 1000) %>% 
+  arrange(time)
 
 #4. Check you have one model for each spp*bcr----
 mods <- perf %>% 
