@@ -1,5 +1,5 @@
 ################################################3
-#  BAM NAM 4.1 - Producing Prediction Rasters for landcover Hermosilla data 
+#  BAM NAM 5.0- Producing Prediction Rasters for landcover Hermosilla data 
 #  The script download from GEE, reproject and rescale to 1km
 #  Temporal raster are saved on disk and transfered to Google SharedDrive
 #################################################
@@ -15,7 +15,7 @@ ee_check()
 ee_Initialize()
 
 # workdir
-setwd("E:/MelinaStuff/BAM/NationalModelv4.1")
+setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
 
 # Set extent 
 rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = "EPSG:5072")
