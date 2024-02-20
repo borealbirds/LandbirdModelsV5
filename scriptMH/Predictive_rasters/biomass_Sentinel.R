@@ -9,10 +9,15 @@ library(terra)
 library(sp)
 library(rgee)
 library(reticulate)
+library(googledrive)
 
 # Initialize Earth Engine
 ee_check()
-ee_Initialize()
+ee_Authenticate()
+ee_Initialize(user = "houle.melina@gmail.com")
+googledrive::drive_auth("houle.melina@gmail.com")
+
+
 
 # workdir
 setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
@@ -22,7 +27,7 @@ EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0
 rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
 
 # Set output and download folder
-out_f <- "./PredictionRasters/ETH"
+out_f <- "./PredictionRasters/ETH2"
 if (!file.exists(out_f)) {
   dir.create(out_f, showWarnings = FALSE)
 }
@@ -49,7 +54,7 @@ setwd(out_f)
 imageextract <- ETHheight(img_name)
 geomPoly <- ee$Geometry$BBox(-180, 38, -45, 70);
 
-temp <- ee_as_raster(
+temp <- ee_as_rast(
     image = imageextract,
     region = geomPoly,
     container = "ETH",
@@ -74,12 +79,18 @@ ETHfocal5k<-terra::focal(r_ETHheight,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5
 ETH5k <- terra::crop(ETHfocal5k, rast1k, extend = TRUE) # Extend to NatMod extent
 
 #cv
-r_ETHheight <- project(raster_mosaic, rast1km, method = "bilinear", align = TRUE) # Reproject
-r_ETHheightcv <- aggregate(r_ETHheight, fact=10, fun="sd") #coef var
-r_ETHheightcv1k <- project(r_ETHheightcv, rast1km, res = 1000, method = "bilinear", align = TRUE) # Reproject
+cv <- function(x){
+  y <- na.omit(sample(x, size=10, replace =F))
+  sd(y) / mean(y)
+}
+
+r_ETHheight <- project(raster_mosaic, rast1k, method = "bilinear", align = TRUE) # Reproject
+r_ETHheightcv <- aggregate(r_ETHheight, fact=10, fun=cv) #coefficient of variation
+r_ETHheightcv1k <- project(r_ETHheightcv, rast1k, res = 1000, method = "bilinear", align = TRUE) # Reproject
 ETHheightcv1k <- terra::crop(r_ETHheightcv1k, rast1k, extend = TRUE) # Extend to NatMod extent
 r_ETHheightcv5k<-terra::focal(r_ETHheightcv1k,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
 ETHheightcv5k <- terra::crop(r_ETHheightcv5k, rast1k, extend = TRUE) # Extend to NatMod extent
+
 
 #write output
 writeRaster(ETHheight, filename="./ETHheight.tif", filetype="GTiff", overwrite=TRUE)
@@ -87,3 +98,5 @@ writeRaster(ETH5k, filename="./ETHheight5k.tif", filetype="GTiff", overwrite=TRU
 writeRaster(ETHheightcv1k, filename="./ETHheightcv.tif", filetype="GTiff", overwrite=TRUE)
 writeRaster(ETHheightcv5k, filename="./ETHheightcv5k.tif", filetype="GTiff", overwrite=TRUE)
 
+
+#### test

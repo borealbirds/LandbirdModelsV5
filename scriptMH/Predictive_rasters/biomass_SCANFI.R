@@ -19,7 +19,7 @@ EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0
 rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
 
 # output folder
-out_f <- "./PredictionRasters/SCANFI"
+out_f <- "./PredictionRasters/SCANFI2"
 if (!file.exists(out_f)) {
   dir.create(out_f, showWarnings = FALSE)
 }
@@ -78,14 +78,20 @@ for (j in 1:length(SCANFI_list)){
 }
 
 # batch process
+#cv
+cv <- function(x){
+  y <- na.omit(sample(x, size=10, replace =F))
+  sd(y) / mean(y)
+}
+
 height_list <- list.files(path = "./CovariateRasters/SCANFI/", pattern = "height*", full.names = TRUE)
 for (j in 1:length(height_list)){
   outfile <- basename(height_list[j])
   height<-rast(height_list[j])
   height_pj <- terra::project(height, rast1k)
   height5k<-terra::focal(height_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
-  heightcv <- aggregate(height, fact=33, fun="sd")
-  heightcv_pj <- terra::project(heightcv, rast1k)
+  heightcv <- aggregate(height, fact=33, fun=cv)
+  heightcv_pj <- terra::project(heightcv, rast1k, res = 1000, method = "bilinear", align = TRUE)
   heightcv5k<-terra::focal(heightcv_pj,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
   
   height_cp<-crop(height_pj, ext(rast1k))
