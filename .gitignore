@@ -41,3 +41,12 @@ vignettes/*.pdf
 
 # Wt login credentials
 *login.R
+
+# Local results folder for testing
+*results/
+
+# Local data folder for uploading to compute canada
+*data/
+
+# Local output folder for download from compute canada
+*output/

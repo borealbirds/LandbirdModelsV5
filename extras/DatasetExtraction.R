@@ -22,7 +22,7 @@ library(gridExtra)
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
 #3. Load data----
-load(file=file.path(root, "Data", "03_NM5.0_data_stratify.R"))
+load(file=file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
 
 #BC COVERAGE FOR DAN#####
 
@@ -45,3 +45,25 @@ visit.dan <- visit.bc %>%
   ungroup()
 
 write.csv(visit.dan, file.path(root, "Data", "BAM_visits_BC_rounded.csv"), row.names = FALSE)
+
+#BOREAL DATASET WITH OFFSETS FOR TATI####
+
+#1. Filter visits----
+visit.use <- visit %>% 
+  dplyr::filter(source=="WildTrax") %>% 
+  dplyr::select(source:jday)
+
+#2. Filter bird and offset data by visits----
+bird.use <- bird %>% 
+  dplyr::filter(id %in% visit.use$id)
+
+offsets.use <- offsets %>% 
+  dplyr::filter(id %in% visit.use$id)
+
+#3. Rename----
+visit <- visit.use
+bird <- bird.use
+offset <- offsets.use
+
+#4. Save----
+save(visit, bird, offset, file="G:/Shared drives/BAM_Core/DataStuff/Data.Reqs/UBC-TatiMichelleti-Nov2023/BAM_NationalModelDataset_5_WildTraxOnly.R")
