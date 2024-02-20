@@ -160,7 +160,7 @@ brt_tune <- function(i){
                          family="poisson"))
   
   #rerun if lr too high (small sample size e.g., can3)
-  if(class(m.i)=="NULL"){
+  while(class(m.i)=="NULL"){
     
     lr.i <- lr.i/10
     
@@ -198,17 +198,35 @@ brt_tune <- function(i){
     
     #12. Change the learning rate----
     if(out.i$trees < 1000){lr.i <- lr.i/10}
-    if(out.i$trees ==10000){lr.i <- lr.i*10}
+    if(out.i$trees==10000){lr.i <- lr.i*10}
+    
+    #Remove the previous model
+    rm(m.i)
     
     #13. Fit the model----
     set.seed(i)
-    m.i <- dismo::gbm.step(data=dat.i,
+    m.i <- try(dismo::gbm.step(data=dat.i,
                            gbm.x=c(2:ncol(dat.i)),
                            gbm.y=1,
                            offset=off.i,
                            tree.complexity = id.i,
                            learning.rate = lr.i,
-                           family="poisson")
+                           family="poisson"))
+    
+    #rerun if lr too high (small sample size e.g., can3)
+    while(class(m.i)=="NULL"){
+      
+      lr.i <- lr.i/10
+      
+      m.i <- try(dismo::gbm.step(data=dat.i,
+                                 gbm.x=c(2:ncol(dat.i)),
+                                 gbm.y=1,
+                                 offset=off.i,
+                                 tree.complexity = id.i,
+                                 learning.rate = lr.i,
+                                 family="poisson"))
+      
+    }
     
     #14. Get performance metrics----
     out.i <- loop[i,] %>% 
