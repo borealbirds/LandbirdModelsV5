@@ -70,7 +70,7 @@ brt_simplify <- function(i){
            time = (proc.time()-t0)[3])
   
   #4. Save----
-  write.csv(out.i, file=file.path("output/simplifying", paste0("ModelSimplification_", spp.i, "_", bcr.i, ".csv")))
+  write.csv(out.i, file=file.path("output/simplifying", paste0("ModelSimplification_", use$spp[i], "_", use$bcr[i], ".csv")))
   save(s.i, file=file.path("output/simplifiedmodels", paste0(use$spp[i], "_", use$bcr[i], ".R")))
   
   #5. Tidy up----
