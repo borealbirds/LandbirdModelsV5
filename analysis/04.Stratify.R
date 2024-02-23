@@ -20,6 +20,8 @@
 
 #6. Determining which covariates should be used for each subunit. This is done using the same extraction lookup table as the '03.ExtractCovariates.R' script. For each subunit, we choose the version of a covariate with the highest priority that has full coverage for that subunit. We then rename the covariates so that they match the naming conventions of the prediction layers for the prediction step.
 
+#7. Using variance inflation factor (VIF) with a threshold of 10 to remove highly collinear variables to improve efficiency and interpretibility.
+
 #Removal of non-dawn surveys is a secondary line of defense in case temporal patterns of QPAD offsets are unrealistic. In other words, we are restricting the dataset to times of day when p(availability) should be relatively high. This filter should be removed once QPAD offsets have been revisited. It should also be revisited if/when the national models include nocturnal species.
 
 #PREAMBLE############################
@@ -257,6 +259,7 @@ cov.prior <- matrix(ncol=nrow(meth.prior), nrow=length(bcrs),
 subcat <- unique(meth.prior$Name)
 
 #4. Set up bcr loop----
+covlist <- data.frame()
 for(i in 1:length(bcrs)){
   
   #5. Filter data to BCR----
@@ -310,12 +313,44 @@ for(i in 1:length(bcrs)){
     
   }
   
+  #11. Get covariate list for this BCR-----
+  covlist.i <- cbind(cov.global, cov.prior) %>% 
+    dplyr::filter(bcr==bcrs[i]) %>% 
+    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+    dplyr::filter(use==TRUE)
+  
+  #12. Thin visits to be realistic of a model run----
+  set.seed(i)
+  visit.i.sub <- visit.grid %>% 
+    dplyr::select(id, year, cell) %>% 
+    group_by(year, cell) %>% 
+    mutate(rowid = row_number(),
+           use = sample(1:max(rowid), 1)) %>% 
+    ungroup() %>% 
+    dplyr::filter(rowid==use) %>% 
+    inner_join(visit.i)
+  
+  #13. Get the covariates----
+  #Drop factors, use them always
+  cov.i <- visit %>% 
+    dplyr::filter(id %in% visit.i.sub$id) %>% 
+    dplyr::select(all_of(covlist.i$cov)) %>% 
+    select_if(is.numeric) %>% 
+    data.frame()
+  
+  #14. Run VIF----
+  vif.i <- vifstep(cov.i, th=10)
+  
+  #15. Update covariate list----
+  covlist.out <- cbind(cov.global, cov.prior)
+  covlist.out[bcrs[i], vif.i@excluded] <- FALSE
+  
+  #16. Keep the row for this bcr----
+  covlist <- rbind(covlist, covlist.out[bcrs[i],])
+  
   print(paste0("Finished BCR ", i, " of ", length(bcrs)))
   
 }
-
-#11. Put them together----
-covlist <- cbind(cov.global, cov.prior)
 
 #SAVE#####
 
