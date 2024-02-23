@@ -24,6 +24,7 @@ spbcr <- data.frame(file = list.files("output/simplifying"),
 
 #7. Set up loop----
 droplist <- data.frame()
+r.i <- data.frame()
 for(i in 1:nrow(spbcr)){
   
   #8. Get visits to include----
@@ -48,7 +49,8 @@ for(i in 1:nrow(spbcr)){
   vif.i <- vifstep(cov.i, vifmax)
   
   #11. Get pairwise r and summarize total r per var----
-  r.i <- vif.i@corMatrix %>% 
+  r.i <- cor(cov.i, use="pairwise.complete.obs") %>% 
+  # r.i <- vif.i@corMatrix %>% 
     data.frame() %>% 
     mutate(var1 = row.names(.)) %>% 
     pivot_longer(colnames(.)[1]:colnames(.)[nrow(.)], names_to="var2", values_to="r") %>% 
@@ -56,8 +58,11 @@ for(i in 1:nrow(spbcr)){
     dplyr::filter(var1!=var2) %>% 
     arrange(-rabs) %>% 
     group_by(var1) %>% 
-    mutate(totalr1 = sum(rabs)) %>% 
-    ungroup()
+    mutate(totalr1 = sum(rabs, na.rm = TRUE)) %>% 
+    ungroup() %>% 
+    mutate(spp = spbcr$spp[i],
+           bcr = spbcr$bcr[i]) %>% 
+    rbind(r.i)
   
   #12. Take out by r----
   r.out <- r.i %>% 
@@ -80,7 +85,17 @@ for(i in 1:nrow(spbcr)){
            spp = spbcr$spp[i]) %>% 
     rbind(droplist)
     
-  print(past0("Finished loop ", i))
+  print(paste0("Finished loop ", i))
   
 }
 
+#15. Interrogate the ones that gbm.simplify kept that vif dropped----
+hmm <- droplist %>% 
+  dplyr::filter(vif==0 & gbm==1) %>% 
+  left_join(r.i %>% 
+              rename(cov = var1, 
+                     rval = r),
+            multiple = "all") %>% 
+  group_by(cov) %>% 
+  dplyr::filter(rabs==max(rabs)) %>% 
+  ungroup() 
