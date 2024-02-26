@@ -284,35 +284,45 @@ files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.nam
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Read in performance of those models----
-#Take out the mutate after running next time
-perf <- map_dfr(read.csv, .x=files$path) %>% 
-  dplyr::select(-lr, -lr.1) %>% 
-  cbind(data.frame(lr = files$lr))
 
-#5. Determine which ones are done----
-done <- perf %>% 
-  dplyr::filter(trees >= 1000,
-                trees < 10000)
+if(nrow(files) > 0){
+  
+  #Take out the mutate after running next time
+  perf <- map_dfr(read.csv, .x=files$path) %>% 
+    dplyr::select(-lr, -lr.1) %>% 
+    cbind(data.frame(lr = files$lr))
+  
+  #5. Determine which ones are done----
+  done <- perf %>% 
+    dplyr::filter(trees >= 1000,
+                  trees < 10000)
+  
+  #6. Determine learning rate for those that need rerunning----
+  redo <- perf %>% 
+    anti_join(done %>% dplyr::select(spp, bcr)) %>% 
+    group_by(spp, bcr) %>% 
+    mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
+    dplyr::filter(lr == last) %>% 
+    mutate(lr.next = case_when(trees == 10000 ~ lr*10,
+                               trees < 1000 ~ lr/10)) %>% 
+    ungroup()
+  
+  #7. Make dataframe of models to run----
+  #Full combinations, take out done models and redo models, then add redo models back in
+  loop <- bcr.spp %>% 
+    anti_join(done) % >% 
+    anti_join(redo) %>% 
+    mutate(lr = 0.001) %>% 
+    rbind(redo %>% 
+            dplyr::select(spp, bcr, lr.next) %>% 
+            rename(lr = lr.next)) %>% 
+    arrange(spp, bcr)
+  
+}
 
-#6. Determine learning rate for those that need rerunning----
-redo <- perf %>% 
-  anti_join(done %>% dplyr::select(spp, bcr)) %>% 
-  group_by(spp, bcr) %>% 
-  mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
-  dplyr::filter(lr == last) %>% 
-  mutate(lr.next = case_when(trees == 10000 ~ lr*10,
-                             trees < 1000 ~ lr/10)) %>% 
-  ungroup()
-
-#7. Make dataframe of models to run----
-#Full combinations, take out done models and redo models, then add redo models back in
+#8. Make dataframe of models to run if there are no files yet----
 loop <- bcr.spp %>% 
-  anti_join(done) %>% 
-  anti_join(redo) %>% 
   mutate(lr = 0.001) %>% 
-  rbind(redo %>% 
-          dplyr::select(spp, bcr, lr.next) %>% 
-          rename(lr = lr.next)) %>% 
   arrange(spp, bcr)
 
 #For testing
@@ -321,7 +331,7 @@ if(test) {loop <- loop[1:nodes,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#8. Run BRT function in parallel----
+#9. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   1:nrow(loop),
