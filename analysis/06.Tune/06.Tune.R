@@ -288,9 +288,7 @@ files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.nam
 if(nrow(files) > 0){
   
   #Take out the mutate after running next time
-  perf <- map_dfr(read.csv, .x=files$path) %>% 
-    dplyr::select(-lr, -lr.1) %>% 
-    cbind(data.frame(lr = files$lr))
+  perf <- map_dfr(read.csv, .x=files$path)
   
   #5. Determine which ones are done----
   done <- perf %>% 
@@ -310,7 +308,7 @@ if(nrow(files) > 0){
   #7. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
   loop <- bcr.spp %>% 
-    anti_join(done) % >% 
+    anti_join(done) %>% 
     anti_join(redo) %>% 
     mutate(lr = 0.001) %>% 
     rbind(redo %>% 
@@ -321,9 +319,11 @@ if(nrow(files) > 0){
 }
 
 #8. Make dataframe of models to run if there are no files yet----
-loop <- bcr.spp %>% 
-  mutate(lr = 0.001) %>% 
-  arrange(spp, bcr)
+if(nrow(files)==0){
+  loop <- bcr.spp %>% 
+    mutate(lr = 0.001) %>% 
+    arrange(spp, bcr)
+}
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
