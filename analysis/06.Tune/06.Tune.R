@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -160,10 +160,13 @@ brt_tune <- function(i){
                          family="poisson"))
   
   #rerun if lr too high (small sample size e.g., can3)
-  while(class(m.i)=="NULL"){
+  #stop at a certain lr and remove that model from the to-do list
+  lr.stop <- 1e-06
+  while(class(m.i)=="NULL" | lr.i==lr.stop){
     
     lr.i <- lr.i/10
     
+    set.seed(i)
     m.i <- try(dismo::gbm.step(data=dat.i,
                                gbm.x=c(2:ncol(dat.i)),
                                gbm.y=1,
@@ -175,23 +178,45 @@ brt_tune <- function(i){
   }
   
   #9. Get performance metrics----
-  out.i <- loop[i,] %>% 
-    cbind(data.frame(trees = m.i$n.trees,
-                     deviance.mean = m.i$cv.statistics$deviance.mean,
-                     deviance.se = m.i$cv.statistics$deviance.se,
-                     null = m.i$self.statistics$mean.null,
-                     resid = m.i$self.statistics$mean.resid,
-                     correlation = m.i$self.statistics$correlation,
-                     correlation.mean = m.i$cv.statistics$correlation.mean,
-                     correlation.se = m.i$cv.statistics$correlation.se,
-                     n = nrow(dat.i),
-                     ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                     time = (proc.time()-t0)[3])) %>% 
-    mutate(lr = lr.i)
-  
-  #10. Save model----
-  write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-  save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+  if(class(m.i)=="NULL"){
+    
+    out.i <- loop[i,] %>% 
+      cbind(data.frame(trees = NA,
+                       deviance.mean = NA,
+                       deviance.se = NA,
+                       null = NA,
+                       resid = NA,
+                       correlation = NA,
+                       correlation.mean = NA,
+                       correlation.se = NA,
+                       n = nrow(dat.i),
+                       ncount = nrow(dplyr::filter(dat.i, count > 0)),
+                       time = (proc.time()-t0)[3])) %>% 
+      mutate(lr = lr.i)
+    
+    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+    
+  } else {
+    
+    out.i <- loop[i,] %>% 
+      cbind(data.frame(trees = m.i$n.trees,
+                       deviance.mean = m.i$cv.statistics$deviance.mean,
+                       deviance.se = m.i$cv.statistics$deviance.se,
+                       null = m.i$self.statistics$mean.null,
+                       resid = m.i$self.statistics$mean.resid,
+                       correlation = m.i$self.statistics$correlation,
+                       correlation.mean = m.i$cv.statistics$correlation.mean,
+                       correlation.se = m.i$cv.statistics$correlation.se,
+                       n = nrow(dat.i),
+                       ncount = nrow(dplyr::filter(dat.i, count > 0)),
+                       time = (proc.time()-t0)[3])) %>% 
+      mutate(lr = lr.i)
+    
+    #10. Save model----
+    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+    save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+    
+  }
   
   #11. Run again if ntrees is suboptimal----
   while(out.i$trees < 1000 | out.i$trees==10000){
@@ -218,6 +243,7 @@ brt_tune <- function(i){
       
       lr.i <- lr.i/10
       
+      set.seed(i)
       m.i <- try(dismo::gbm.step(data=dat.i,
                                  gbm.x=c(2:ncol(dat.i)),
                                  gbm.y=1,
@@ -290,10 +316,11 @@ if(nrow(files) > 0){
   #Take out the mutate after running next time
   perf <- map_dfr(read.csv, .x=files$path)
   
-  #5. Determine which ones are done----
+  #5. Determine which ones are done or won't run----
   done <- perf %>% 
     dplyr::filter(trees >= 1000,
-                  trees < 10000)
+                  trees < 10000,
+                  is.na(trees))
   
   #6. Determine learning rate for those that need rerunning----
   redo <- perf %>% 
@@ -334,7 +361,7 @@ tmpcl <- clusterExport(cl, c("loop"))
 #9. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
-                  1:nrow(loop),
+                  X=1:nrow(loop),
                   fun=brt_tune)
 
 #CONCLUDE####
