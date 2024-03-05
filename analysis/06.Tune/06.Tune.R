@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -219,7 +219,7 @@ brt_tune <- function(i){
   }
   
   #11. Run again if ntrees is suboptimal----
-  while(out.i$trees < 1000 | out.i$trees==10000){
+  while(out.i$trees < 1000 | out.i$trees==10000 | lr.i==lr.stop){
     
     #12. Change the learning rate----
     if(out.i$trees < 1000){lr.i <- lr.i/10}
@@ -318,13 +318,15 @@ if(nrow(files) > 0){
   
   #5. Determine which ones are done or won't run----
   done <- perf %>% 
-    dplyr::filter(trees >= 1000,
-                  trees < 10000,
-                  is.na(trees))
+    dplyr::filter(trees >= 1000 |
+                  trees < 10000 |
+                  lr<=lr.stop) %>% 
+    dplyr::select(spp, bcr) %>% 
+    unique()
   
   #6. Determine learning rate for those that need rerunning----
   redo <- perf %>% 
-    anti_join(done %>% dplyr::select(spp, bcr)) %>% 
+    anti_join(done) %>% 
     group_by(spp, bcr) %>% 
     mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
     dplyr::filter(lr == last) %>% 
