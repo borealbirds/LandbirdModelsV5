@@ -6,6 +6,17 @@
 
 #NOTES################################
 
+#This script uses the model output from 06.Tune.R to determine the best learning rate and number of trees for the gbm function. It reads in the summary output from those models and selects the best parameters for each bcr*spp model. It also eliminates bcr*spp models that did not have enough data to achieve at least 1000 trees with a sufficiently high learning rate (lr.stop >= 1e-6 from the previous script).
+
+#This script also uses the model output from 06.Tune.R to remove covariates that explained < 0.1% of the deviation in the model as part of the effort to continue to simplify the models to improve efficiency of the prediction step.
+
+# The script then builds a to-do list for all the combinations of bcr and spp and the requested number of bootstraps and runs the simpler gbm::gbm() function using the selected learning rate and number of trees.
+
+#The script checks the combinations of bcr, spp, and bootstrap that have already been run prior to building the to-do list so that it can be run multiple times.
+
+#The output is an R object with the raw model, a record of the bcr, spp, bootstrap, parameters, and runtime, and a list of the visits that were included for that bootstrap.
+
+#The list of visits in the output is crucial for determining the training and testing data when we do model evaluation.
 
 #PREAMBLE############################
 
