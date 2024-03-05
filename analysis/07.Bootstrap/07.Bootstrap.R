@@ -18,7 +18,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -88,8 +88,9 @@ brt_boot <- function(i){
   #2. Load full model from tuning----
   load(file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
   
-  #3. Identify covariates that explain < 0.1% of variance----
-  nonsig.i <- oiwefo
+  #3. Identify covariates that explain > 0.1% of variance----
+  covlist.i <- m.i[["contributions"]] %>% 
+    dplyr::filter(rel.inf >= 0.1)
   
   #4. Get visits to include----
   set.seed(i)
@@ -104,12 +105,7 @@ brt_boot <- function(i){
   bird.i <- bird[as.character(visit.i$id), spp.i]
   
   #6. Get covariates and remove the nonsignificant ones----
-  covlist.i <- covlist %>% 
-    dplyr::filter(bcr==bcr.i) %>% 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
-    dplyr::filter(use==TRUE)
-  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$cov] %>% 
-    dplyr::select(!nonsig.i$SJIWEF)
+  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$var]
   
   #7. Get PC vs SPT vs SPM----
   meth.i <- cov[cov$id %in% visit.i$id, "tagMethod"]
@@ -149,7 +145,7 @@ brt_boot <- function(i){
 #9. Export to clusters----
 print("* Loading function on workers *")
 
-tmpcl <- clusterExport(cl, c("brt_tune"))
+tmpcl <- clusterExport(cl, c("brt_boot"))
 
 #RUN MODELS###############
 
@@ -180,14 +176,14 @@ perf <- map_dfr(read.csv, .x=tuned$path) %>%
   dplyr::filter(trees >= 1000 & trees < 10000)
 
 #5. Set number of bootstraps----
-boots <- 1
+boots <- 25
 
 #6. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf %>% 
   dplyr::select(bcr, spp, lr, trees, time) %>% 
   expand_grid(boot=c(1:boots)) %>% 
-  arrange(time)
+  arrange(-time)
 
 #7. Determine which are already done----
 done <- data.frame(path = list.files("output/bootstraps", pattern="*.csv", full.names=TRUE),
@@ -203,17 +199,11 @@ if(nrow(done) > 0){
   
 } else { loop <- todo }
 
-#For testing
-if(test) {loop <- loop[1:nodes,]}
+#For testing - take the shortest duration models
+if(test) {loop <- loop[nrow(loop)-2:nrow(loop),]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
-
-#9. Run BRT function in parallel----
-print("* Fitting models *")
-mods <- parLapply(cl,
-                  X=1:nrow(loop),
-                  fun=brt_tune)tmpcl <- clusterExport(cl, c("loop"))
 
 #10. Run BRT function in parallel----
 print("* Fitting models *")
