@@ -8,7 +8,7 @@
 
 #This script finds the best learning rate for each combination of model subunt (BCR*country) and bird species.
 
-#It starts with a learning rate of 0.001 and then drops up or down one order of magnitude if the model has less than 1000 or 10000 trees (the max). Interaction depth is held constant at 3 (i.e., 3-way interactions are biologicaly plausible).
+#It starts with a learning rate of 0.001 and then drops up or down one order of magnitude if the model has less than 1000 or 10000 trees (the max). Interaction depth is held constant at 3 (i.e., 3-way interactions are biologicaly plausible). Models that cannot achieve 1000-10000 trees with a learning rate of at least 1e-06 are dropped.
 
 #The other approach to tuning boosted regression trees is using a grid search of interaction depth & learning rate and picking the best parameters as the highest deviation explained. This approach was not used for the national models in the interest of efficiency.
 
@@ -161,7 +161,6 @@ brt_tune <- function(i){
   
   #rerun if lr too high (small sample size e.g., can3)
   #stop at a certain lr and remove that model from the to-do list
-  lr.stop <- 1e-06
   while(class(m.i)=="NULL" | lr.i==lr.stop){
     
     lr.i <- lr.i/10
@@ -309,22 +308,22 @@ files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.nam
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
-#4. Read in performance of those models----
+#4. Set learning rate threshold for dropping a spp*bcr combo----
+lr.stop <- 1e-06
+
+#5. Read in performance of those models----
 
 if(nrow(files) > 0){
   
-  #Take out the mutate after running next time
   perf <- map_dfr(read.csv, .x=files$path)
   
-  #5. Determine which ones are done or won't run----
+  #6. Determine which ones are done or won't run----
   done <- perf %>% 
-    dplyr::filter(trees >= 1000 |
-                  trees < 10000 |
-                  lr<=lr.stop) %>% 
+    dplyr::filter((trees >= 1000 & trees < 10000) | lr<=lr.stop) %>% 
     dplyr::select(spp, bcr) %>% 
     unique()
   
-  #6. Determine learning rate for those that need rerunning----
+  #7. Determine learning rate for those that need rerunning----
   redo <- perf %>% 
     anti_join(done) %>% 
     group_by(spp, bcr) %>% 
@@ -334,7 +333,7 @@ if(nrow(files) > 0){
                                trees < 1000 ~ lr/10)) %>% 
     ungroup()
   
-  #7. Make dataframe of models to run----
+  #8. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
   loop <- bcr.spp %>% 
     anti_join(done) %>% 
@@ -347,7 +346,7 @@ if(nrow(files) > 0){
   
 }
 
-#8. Make dataframe of models to run if there are no files yet----
+#9. Make dataframe of models to run if there are no files yet----
 if(nrow(files)==0){
   loop <- bcr.spp %>% 
     mutate(lr = 0.001) %>% 
@@ -360,7 +359,7 @@ if(test) {loop <- loop[1:nodes,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#9. Run BRT function in parallel----
+#10. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
