@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -159,11 +159,15 @@ brt_tune <- function(i){
                          learning.rate = lr.i,
                          family="poisson"))
   
+  trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
+  
   #rerun if lr too high (small sample size e.g., can3)
   #stop at a certain lr and remove that model from the to-do list
-  while(class(m.i)=="NULL" | lr.i==lr.stop){
+  while((trees.i < 1000 & lr.i >= lr.stop) |
+        (trees.i==10000 & lr.i >= lr.stop)){
     
-    lr.i <- lr.i/10
+    if(trees.i < 1000){ lr.i <- lr.i/10}
+    if(trees.i==10000){ lr.i <- lr.i*10}
     
     set.seed(i)
     m.i <- try(dismo::gbm.step(data=dat.i,
@@ -217,63 +221,6 @@ brt_tune <- function(i){
     
   }
   
-  #11. Run again if ntrees is suboptimal----
-  while(out.i$trees < 1000 | out.i$trees==10000 | lr.i==lr.stop){
-    
-    #12. Change the learning rate----
-    if(out.i$trees < 1000){lr.i <- lr.i/10}
-    if(out.i$trees==10000){lr.i <- lr.i*10}
-    
-    #Remove the previous model
-    rm(m.i)
-    
-    #13. Fit the model----
-    set.seed(i)
-    m.i <- try(dismo::gbm.step(data=dat.i,
-                           gbm.x=c(2:ncol(dat.i)),
-                           gbm.y=1,
-                           offset=off.i,
-                           tree.complexity = id.i,
-                           learning.rate = lr.i,
-                           family="poisson"))
-    
-    #rerun if lr too high (small sample size e.g., can3)
-    while(class(m.i)=="NULL"){
-      
-      lr.i <- lr.i/10
-      
-      set.seed(i)
-      m.i <- try(dismo::gbm.step(data=dat.i,
-                                 gbm.x=c(2:ncol(dat.i)),
-                                 gbm.y=1,
-                                 offset=off.i,
-                                 tree.complexity = id.i,
-                                 learning.rate = lr.i,
-                                 family="poisson"))
-      
-    }
-    
-    #14. Get performance metrics----
-    out.i <- loop[i,] %>% 
-      cbind(data.frame(trees = m.i$n.trees,
-                       deviance.mean = m.i$cv.statistics$deviance.mean,
-                       deviance.se = m.i$cv.statistics$deviance.se,
-                       null = m.i$self.statistics$mean.null,
-                       resid = m.i$self.statistics$mean.resid,
-                       correlation = m.i$self.statistics$correlation,
-                       correlation.mean = m.i$cv.statistics$correlation.mean,
-                       correlation.se = m.i$cv.statistics$correlation.se,
-                       n = nrow(dat.i),
-                       ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3])) %>% 
-      mutate(lr = lr.i)
-    
-    #15. Save again----
-    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-    save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
-    
-  }
-  
   #16. Tidy up----
   rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
   
@@ -310,6 +257,9 @@ files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.nam
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.stop <- 1e-06
+
+print("* Loading stop threshold on workers *")
+tmpcl <- clusterExport(cl, c("lr.stop"))
 
 #5. Read in performance of those models----
 
