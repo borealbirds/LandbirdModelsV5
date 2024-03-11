@@ -111,9 +111,6 @@ brt_boot <- function(i){
     ungroup() %>% 
     dplyr::filter(rowid==use)
   
-  check1 <- data.frame(check=1)
-  write.csv(check1, "checks/check1.csv", row.names=FALSE)
-  
   #3. Get response data (bird data)----
   bird.i <- bird[as.character(visit.i$id), spp.i]
   
@@ -130,9 +127,6 @@ brt_boot <- function(i){
   #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  check2 <- data.frame(check=2)
-  write.csv(check1, "checks/check2.csv", row.names=FALSE)
-  
   #8. Run model----
   set.seed(i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
@@ -144,17 +138,11 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
-  check3 <- data.frame(check=3)
-  write.csv(check1, "checks/check3.csv", row.names=FALSE)
-  
   #9. Get performance metrics----
   out.i <- loop[i,] %>% 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
-  
-  check4 <- data.frame(check=4)
-  write.csv(check1, "checks/check4.csv", row.names=FALSE)
   
   #10. Save----
   save(b.i, out.i, visit.i, file=file.path("output/bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
