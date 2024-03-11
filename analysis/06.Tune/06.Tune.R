@@ -37,7 +37,7 @@
 
 #see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
 
-#Things to change for next version: move eBird tagmethod wrangling to script 1.
+#Things to change for next version: move eBird tagmethod wrangling to script 1. Move remove offset NA visits to stratification script.
 
 #PREAMBLE############################
 
@@ -97,6 +97,11 @@ meth <- cbind(cov %>% dplyr::select(id, tagMethod),
               visit %>% dplyr::select(source)) %>% 
   mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
          method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT")))
+
+#10. Take the NA offsets out----
+offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
+meth <- dplyr::filter(meth, id %in% offsets$id)
+visit <- dplyr::filter(visit, id %in% offsets$id)
 
 #10. Load data objects----
 print("* Loading data on workers *")
