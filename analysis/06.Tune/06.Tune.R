@@ -103,7 +103,7 @@ offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
 meth <- dplyr::filter(meth, id %in% offsets$id)
 visit <- dplyr::filter(visit, id %in% offsets$id)
 
-#10. Load data objects----
+#11. Load data objects----
 print("* Loading data on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
