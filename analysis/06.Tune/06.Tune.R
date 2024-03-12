@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -102,6 +102,9 @@ meth <- cbind(cov %>% dplyr::select(id, tagMethod),
 offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
 meth <- dplyr::filter(meth, id %in% offsets$id)
 visit <- dplyr::filter(visit, id %in% offsets$id)
+bird <- bird[as.character(visit$id),]
+bcrlist <- dplyr::filter(bcrlist, id %in% offsets$id)
+gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
 
 #11. Load data objects----
 print("* Loading data on workers *")
