@@ -52,4 +52,101 @@ tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
 
-#8. 
+#8. Load the stacks----
+
+
+#tpmcl <- clusterEvalQ()
+
+
+
+#WRITE FUNCTION##########
+
+brt_predict <- function(i){
+  
+  t0 <- proc.time()
+  
+  #1. Get model settings---
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  boot.i <- loop$boot[i]
+  
+  #2. Load model----
+  
+  #3. Load raster stack----
+  
+  #4. Predict----
+  
+  #5. Save----
+  
+  
+  
+  
+  
+  
+}
+
+#RUN MODELS#########
+
+#1. Set desired years----
+#years <- seq(1985, 2020, 5)
+years <- 2020
+
+#2. Get list of models that are tuned----
+tuned <- data.frame(path = list.files("output/bootstraps", pattern="*.csv", full.names=TRUE),
+                    file = list.files("output/bootstraps", pattern="*.csv")) %>% 
+  separate(file, into=c("step", "spp", "bcr", "lr", "boot"), sep="_", remove=FALSE)
+
+#5. Create to do list----
+#Sort longest to shortest duration to get the big models going first
+todo <- perf %>% 
+  dplyr::select(bcr, spp, lr, trees, time) %>% 
+  expand_grid(boot=c(1:boots)) %>% 
+  arrange(-time)
+
+#6. Determine which are already done----
+done <- data.frame(path = list.files("output/bootstraps", pattern="*.csv", full.names=TRUE),
+                   file = list.files("output/bootstraps", pattern="*.csv")) %>% 
+  separate(file, into=c("step", "spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
+  mutate(boot = as.numeric(str_sub(boot, -100, -5)))
+
+#7. Create final to do list----
+if(nrow(done) > 0){
+  
+  loop <- todo %>% 
+    anti_join(done)
+  
+} else { loop <- todo }
+
+#For testing - take the shortest duration models
+if(test) {loop <- arrange(loop, time)[1:2,]}
+
+print("* Loading model loop on workers *")
+tmpcl <- clusterExport(cl, c("loop"))
+
+#8. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
+covsnew <- list()
+for(i in 1:nrow(loop)){
+  
+  load(file=file.path("output/fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
+  
+  covsnew[[i]] <- m.i[["contributions"]] %>% 
+    dplyr::filter(rel.inf >= 0.1)
+  
+}
+
+print("* Loading new covariate lists *")
+tmpcl <- clusterExport(cl, c("covsnew"))
+
+#9. Run BRT function in parallel----
+print("* Fitting models *")
+mods <- parLapply(cl,
+                  X=1:nrow(loop),
+                  fun=brt_boot)
+
+#CONCLUDE####
+
+#1. Close clusters----
+print("* Shutting down clusters *")
+stopCluster(cl)
+
+if(cc){ q() }
