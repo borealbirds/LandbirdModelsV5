@@ -35,6 +35,7 @@ library(fasterize) #fast rasterization of shapefiles
 library(exactextractr) #fast & efficient raster extraction
 library(dggridR) #grid for spatial thinning
 library(Matrix) #for sparse matrix conversion
+library(usdm) #VIF
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -236,7 +237,7 @@ meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"
 
 #2. Set up dataframe for variables that are global---
 meth.global <- meth %>% 
-  dplyr::filter(Extent=="global")
+  dplyr::filter(Global==1)
 
 cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) %>% 
   mutate(val = TRUE) %>% 
@@ -245,7 +246,7 @@ cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) %>%
 #3. Set up dataframe for variables that need prioritization----
 #collapse AK & CONUS priority fields - only needed for extraction
 meth.prior <- meth %>% 
-  dplyr::filter(Extent!="global") %>% 
+  dplyr::filter(Global==0) %>% 
   mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) %>% 
   dplyr::select(Category, Name, Label, Priority) %>% 
   unique() %>% 
@@ -279,18 +280,19 @@ for(i in 1:length(bcrs)){
       dplyr::select(all_of(meth.j$Label))
     
     #8. Determine which cov to use----
-    #Count non-na and non-zero values per cov, round to nearest 100 to avoid slight differences, and choose highest priority to use for that Name
+    #Count non-na and non-zero values per cov, calculate as a percent of total surveys, remove those with < 50% and then pick highest priority
     na.j <- cov.j %>% 
       mutate(id = row_number()) %>% 
       pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") %>% 
       dplyr::filter(!is.na(Value) & as.numeric(Value) > 0) %>% 
       group_by(Label) %>% 
-      summarize(n = round(n(), -2)) %>% 
+      summarize(n = round(n(), -2),
+                percent = n()/nrow(cov.j)) %>% 
       ungroup() %>% 
       left_join(meth.prior, by="Label")
     
     use.j <- na.j %>% 
-      dplyr::filter(n==max(n, na.rm=TRUE)) %>% 
+      dplyr::filter(percent > 0.5) %>% 
       dplyr::filter(Priority==min(Priority, na.rm=TRUE)) %>% 
       mutate(use = 1) %>% 
       right_join(meth.j, by = join_by(Label, Category, Name, Priority)) %>% 
