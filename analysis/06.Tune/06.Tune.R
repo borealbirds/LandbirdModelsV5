@@ -49,15 +49,15 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
 if(!cc){ nodes <- 2}
 
 #3. Set species subset if desired----
-sppuse <- c("OVEN", "OSFL", "CONW", "PAWA")
+sppuse <- c("OVEN", "OSFL")
 
 #4. Set root path for data on google drive (for local testing)----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
