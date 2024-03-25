@@ -8,9 +8,11 @@
 
 #This script creates separate raster stacks for each of the modelling subunits for prediction.
 
-#First we create use the bcr shapefile and canada/USA shapefiles to make a polygon for each subunit with a 100 km buffer. We also do this for regions that we have mreged.
+#First we create use the bcr shapefile and canada/USA shapefiles to make a polygon for each subunit with a 100 km buffer. We also do this for regions that we have merged.
 
 #Next, we identify the covariates that we use for that region, stack them, and then crop them by the polygon for that region. We save out each stack separately.
+
+#Finally, we add the layers to each stack for the nonspatially explicit variables in the model (year, method)
 
 #The stacks can then be moved over to compute canada for model prediction.
 
@@ -21,6 +23,7 @@ library(tidyverse) #basic data wrangling
 library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(nngeo) #fill holes in polygons
+library(tidyterra) #raster plotting
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
@@ -65,12 +68,12 @@ bcr.can4142 <- bcr.ca %>%
   mutate(country="can",
          subUnit = 4142)
 
-bcr.can41423 <- bcr.ca %>% 
+bcr.usa41423 <- bcr.ca %>% 
   dplyr::filter(subUnit %in% c(41, 42, 3)) %>% 
   st_union() %>% 
   nngeo::st_remove_holes() %>% 
   st_sf() %>% 
-  mutate(country="can",
+  mutate(country="usa",
          subUnit = 41423)
 
 bcr.usa414232 <- bcr.usa %>% 
@@ -94,32 +97,33 @@ bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
                          subUnit=c(41, 42, 3, 42, 41))
 
 #5. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.can41423, bcr.usa414232, bcr.can8182) %>% 
+bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) %>% 
   anti_join(bcr.remove)
 
 #6. Set up loop for BCR buffering----
 bcr.out <- data.frame()
 for(i in 1:nrow(bcr.country)){
-  
+
   #7. Filter & buffer shapefile----
-  bcr.buff <- bcr.country %>% 
-    dplyr::filter(row_number()==i) %>% 
+  bcr.buff <- bcr.country %>%
+    dplyr::filter(row_number()==i) %>%
     st_buffer(100000)
-  
+
   #8. Crop to international boundary----
   if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
-  
+
   #9. Put together----
-  bcr.out <- rbind(bcr.out, bcr.i %>% 
+  bcr.out <- rbind(bcr.out, bcr.i %>%
                      dplyr::select(country, subUnit))
-  
+
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
-  
+
 }
 
 #10. Save----
 write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #GET PREDICTION RASTER LOCATIONS######
 
@@ -161,43 +165,44 @@ lag <- meth %>%
 #5. Match to each desired year of prediction----
 
 #Get the covariate list
-cov <- unique(files.use$cov)
+covs <- unique(files.use$cov)
 
 #Set the years for prediction
 years <- seq(1985, 2020, 5)
 
 year.out <- data.frame()
-for(i in 1:length(cov)){
+for(i in 1:length(covs)){
   
   #Get the available years for that covariate
   cov.i <- files.use %>% 
-    dplyr::filter(cov==cov[[i]])
+    dplyr::filter(cov==covs[i])
   
   #Identify if is a cov that doesn't have annual layers---
   if(is.na(cov.i$year)[1]){
     
     year.out <- rbind(year.out,
-                      data.frame(cov = cov[i],
+                      data.frame(cov = covs[i],
                                  year = NA,
                                  predyear = years))
-  } else {
-    
-    #Adjust the time lag as needed
-    if(cov[i] %in% lag$Label){ cov.i$year <- cov.i$year + 1}
-    
-    #Match to nearest year of available data
-    dt = data.table::data.table(year=unique(cov.i$year), val = unique(cov.i$year))
-    data.table::setattr(dt, "sorted", "year")
-    data.table::setkey(dt, year)
-    year.i <- dt[J(years), roll = "nearest"]$val
-    
-    #Put it together----
-    year.out <- rbind(year.out,
-                      data.frame(cov = cov[i],
-                                 year = year.i,
-                                 predyear = years))
-    
   }
+  
+  #Adjust the time lag as needed
+  if(covs[i] %in% lag$Label){ cov.i$year <- cov.i$year + 1}
+  
+  #Match to nearest year of available data
+  dt = data.table::data.table(year=unique(cov.i$year), val = unique(cov.i$year))
+  data.table::setattr(dt, "sorted", "year")
+  data.table::setkey(dt, year)
+  year.i <- dt[J(years), roll = "nearest"]$val
+  
+  #Readjust the time lag as need
+  if(covs[i] %in% lag$Label){year.i <- year.i-1}
+  
+  #Put it together----
+  year.out <- rbind(year.out,
+                    data.frame(cov = covs[i],
+                               year = year.i,
+                               predyear = years))
   
 }
 
@@ -205,7 +210,10 @@ for(i in 1:length(cov)){
 files.year <- year.out %>% 
   left_join(files.use,
             multiple="all") %>% 
-  unique()
+  unique() %>% 
+  dplyr::select(cov, predyear, year, path)
+
+summary(files.year)
   
 #MAKE STACKS####
 
@@ -216,7 +224,7 @@ units <- bcr.out %>%
   unique() %>% 
   expand_grid(year = seq(1985, 2020, 5))
 
-for(i in 1:nrow(units)){
+for(i in 260:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
@@ -229,23 +237,72 @@ for(i in 1:nrow(units)){
     dplyr::filter(use==TRUE)
   
   #4. Get file paths----
-  files.i <- files %>% 
+  files.i <- files.year %>% 
     dplyr::filter(cov %in% covlist.i$cov,
-                  year.rd == year.i)
+                  predyear == year.i)
   
-  #5. Read them in----
-  rast(files.i$path)
-  
-  #6. Get the bcr shp----
+  #5. Get the bcr shp----
   shp.i <- bcr.out %>% 
     dplyr::filter(country==units$country[i],
-                  subUnit==units$subUnit[i])
+                  subUnit==units$subUnit[i]) %>% 
+    vect()
   
-  #7. Crop----
+  #6. Set up loop for the rasters----
+  for(j in 1:nrow(files.i)){
+    
+    #7. Read it in----
+    rast.i <- rast(files.i$path[j])
+    
+    #8. Reproject as needed----
+    if(crs(rast.i)!=crs(shp.i)){rast.i <- project(rast.i, crs(shp.i))}
+    
+    #9. Crop----
+    crop.i <- crop(rast.i, shp.i) %>% 
+      mask(shp.i)
+    names(crop.i) <- files.i$cov[j]
+    
+    #10. Resample for extent as needed----
+    if(j > 1){
+      if(ext(crop.i)!=ext(stack.i)){crop.i <- resample(crop.i, stack.i)}
+    } 
+    
+    #11. Stack----
+    if(j==1){stack.i <- crop.i} else {stack.i <- c(stack.i, crop.i)}
+    
+    #12. Sanity check plot the first one----
+    if(j==1) {
+      
+      plot.i <- ggplot() +
+        geom_spatraster(data=crop.i) +
+        geom_sf(data=shp.i, fill=NA, colour="black", linewidth = 2)
+      
+      ggsave(plot.i, filename=file.path(root, "PredictionRasters", "SubunitStacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
+      
+    }
+    
+    #13. Report----
+    print(paste0("Finished raster ", j, " of ", nrow(files.i), " for bcr*year ", i, " of ", nrow(units)))
+    
+  }
+
+  #14. Save----
+  terra::writeRaster(stack.i, file.path(root, "PredictionRasters", "SubunitStacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
-  #8. Sanity check plot----
+  rm(rast.i, stack.i, crop.i, shp.i)
   
-  #9. Save----
+  #14. Remove temp files to save RAM----
+  tmp.dir <- tempdir()
+  tmp.files <- list.files(tmp.dir, pattern="*.tif", full.names = TRUE)
+  file.remove(tmp.files)
   
   
 }
+
+#15. Check they're all there----
+
+
+#ADD STATIC LAYERS####
+
+#Add method and year
+
+#MASK OUT WATER####
