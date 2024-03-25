@@ -28,8 +28,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -191,10 +191,10 @@ todo <- perf %>%
   arrange(-time)
 
 #6. Determine which are already done----
-done <- data.frame(path = list.files("output/bootstraps", pattern="*.csv", full.names=TRUE),
-                   file = list.files("output/bootstraps", pattern="*.csv")) %>% 
-  separate(file, into=c("step", "spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
-  mutate(boot = as.numeric(str_sub(boot, -100, -5)))
+done <- data.frame(path = list.files("output/bootstraps", pattern="*.R", full.names=TRUE),
+                   file = list.files("output/bootstraps", pattern="*.R")) %>% 
+  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
+  mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #7. Create final to do list----
 if(nrow(done) > 0){
