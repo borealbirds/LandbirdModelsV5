@@ -123,14 +123,19 @@ brt_boot <- function(i){
   #5. Get PC vs SPT vs SPM vs eBird----
   meth.i <- meth[meth$id %in% visit.i$id, "method"]
   
-  #6. Put together data object----
-  dat.i <- cbind(bird.i, meth.i, cov.i) %>% 
-    rename(count = bird.i)
+  #6. Get year----
+  year.i <- visit[visit$id %in% visit.i$id, "year"]
   
-  #7. Get offsets----
+  #7. Put together data object----
+  dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
+    rename(count = bird.i,
+           year = year.i,
+           method = meth.i)
+  
+  #8. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #8. Run model----
+  #9. Run model----
   set.seed(i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
                   data = dat.i[, -1],
@@ -141,16 +146,16 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
-  #9. Get performance metrics----
+  #10. Get performance metrics----
   out.i <- loop[i,] %>% 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
-  #10. Save----
+  #11. Save----
   save(b.i, out.i, visit.i, file=file.path("output/bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
-  #11. Tidy up----
+  #12. Tidy up----
   rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, b.i)
   
 }
