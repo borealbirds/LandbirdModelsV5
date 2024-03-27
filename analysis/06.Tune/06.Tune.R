@@ -49,8 +49,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -152,7 +152,9 @@ brt_tune <- function(i){
   
   #6. Put together data object----
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
-    rename(count = bird.i)
+    rename(count = bird.i,
+           year = year.i,
+           method = meth.i)
   
   #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
