@@ -101,28 +101,28 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
   anti_join(bcr.remove)
 
 #6. Set up loop for BCR buffering----
-bcr.out <- data.frame()
-for(i in 1:nrow(bcr.country)){
-
-  #7. Filter & buffer shapefile----
-  bcr.buff <- bcr.country %>%
-    dplyr::filter(row_number()==i) %>%
-    st_buffer(100000)
-
-  #8. Crop to international boundary----
-  if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
-  if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
-
-  #9. Put together----
-  bcr.out <- rbind(bcr.out, bcr.i %>%
-                     dplyr::select(country, subUnit))
-
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
-
-}
-
-#10. Save----
-write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+# bcr.out <- data.frame()
+# for(i in 1:nrow(bcr.country)){
+# 
+#   #7. Filter & buffer shapefile----
+#   bcr.buff <- bcr.country %>%
+#     dplyr::filter(row_number()==i) %>%
+#     st_buffer(100000)
+# 
+#   #8. Crop to international boundary----
+#   if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
+#   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
+# 
+#   #9. Put together----
+#   bcr.out <- rbind(bcr.out, bcr.i %>%
+#                      dplyr::select(country, subUnit))
+# 
+#   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+# 
+# }
+# 
+# #10. Save----
+# write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #GET PREDICTION RASTER LOCATIONS######
@@ -224,7 +224,7 @@ units <- bcr.out %>%
   unique() %>% 
   expand_grid(year = seq(1985, 2020, 5))
 
-for(i in 260:nrow(units)){
+for(i in 1:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
@@ -284,25 +284,68 @@ for(i in 260:nrow(units)){
     print(paste0("Finished raster ", j, " of ", nrow(files.i), " for bcr*year ", i, " of ", nrow(units)))
     
   }
+  
+  #14. Make a new method raster----
+  meth.i <- rast(ext(stack.i), resolution=res(stack.i), crs=crs(stack.i))
+  values(meth.i) <- "PC"
+  
+  #15. Make a new year raster----
+  year.i <- rast(ext(stack.i), resolution=res(stack.i), crs=crs(stack.i))
+  values(year.i) <- files.stack$year[i]
+  
+  #16. Put together and mask----
+  meth.year.i <- c(meth.i, year.i) %>% 
+    mask(shp.i)
+  
+  #17. Rename----
+  names(meth.year.i) <- c("method", "year")
+  
+  #18. Restack----
+  stack.out <- c(meth.year.i, stack.i)
 
   #14. Save----
-  terra::writeRaster(stack.i, file.path(root, "PredictionRasters", "SubunitStacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  terra::writeRaster(stack.out, file.path(root, "PredictionRasters", "SubunitStacks", "Unmasked", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
-  rm(rast.i, stack.i, crop.i, shp.i)
+  rm(rast.i, stack.i, stack.out, crop.i, shp.i)
   
   #14. Remove temp files to save RAM----
   tmp.dir <- tempdir()
   tmp.files <- list.files(tmp.dir, pattern="*.tif", full.names = TRUE)
   file.remove(tmp.files)
   
-  
 }
 
 #15. Check they're all there----
+files.stack <- data.frame(file=list.files(file.path(root, "PredictionRasters", "SubunitStacks", "Unmasked"), pattern="*.tif")) %>% 
+  separate(file, into=c("bcr", "year", "tif"), remove=FALSE) %>%
+  mutate(year = as.numeric(year)) %>% 
+  dplyr::filter(str_sub(file, -3, -1)!="xml")
 
+todo.stack <- anti_join(units, files.stack)
+nrow(todo.stack)
 
-#ADD STATIC LAYERS####
+#MASKING####
 
-#Add method and year
+#1. Get the water layer----
+water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) %>% 
+  dplyr::filter(TYPE %in% c(16, 18)) %>% 
+  st_transform(crs=crs(bcr.out)) %>% 
+  vect()
 
-#MASK OUT WATER####
+#2. Set up loop----
+for(i in 61:nrow(files.stack)){
+  
+  #3. Get the stack----
+  stack.i <- rast(file.path(root, "PredictionRasters", "SubunitStacks", "Unmasked", files.stack$file[i]))
+  
+  #4. Mask it----
+  mask.i <- mask(stack.i, water, inverse=TRUE)
+  
+  #5. Save it----
+  terra::writeRaster(mask.i, file.path(root, "PredictionRasters", "SubunitStacks", "Masked", paste0(files.stack$bcr[i], "_", files.stack$year[i], ".tif")), overwrite=TRUE)
+  
+  #6. Report----
+  print(paste0("Finished raster ", i, " of ", nrow(files.stack)))
+  
+  
+}
