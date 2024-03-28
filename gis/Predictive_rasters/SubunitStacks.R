@@ -333,7 +333,7 @@ water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_l
   vect()
 
 #2. Set up loop----
-for(i in 61:nrow(files.stack)){
+for(i in 1:nrow(files.stack)){
   
   #3. Get the stack----
   stack.i <- rast(file.path(root, "PredictionRasters", "SubunitStacks", "Unmasked", files.stack$file[i]))
