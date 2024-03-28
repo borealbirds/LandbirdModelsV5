@@ -47,6 +47,7 @@ vignettes/*.pdf
 
 # Local data folder for uploading to compute canada
 *data/
+*stacks/
 
 # Local output folder for download from compute canada
 *output/
