@@ -153,7 +153,6 @@ brt_tune <- function(i){
   #6. Put together data object----
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
     rename(count = bird.i,
-           year = year.i,
            method = meth.i)
   
   #7. Get offsets----
@@ -187,6 +186,8 @@ brt_tune <- function(i){
                                tree.complexity = id.i,
                                learning.rate = lr.i,
                                family="poisson"))
+    
+    trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
     
   }
   
