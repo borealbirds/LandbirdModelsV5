@@ -1,7 +1,7 @@
-################################
-### Feathering BCR Rasters  ####
-### Anna Drake, March 2024  ####
-################################
+#-----------------------------
+# Feathering BCR Rasters 
+# Anna Drake, March 2024 
+#-------------------------------
 # Uses approach by Dominic Roye for distance calculation (dominicroye.github.io)
 
 # Process calculates the distance of each grid to the edge of the prediction area - divides by max to standardize
