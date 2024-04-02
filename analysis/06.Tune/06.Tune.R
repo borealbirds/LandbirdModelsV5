@@ -158,6 +158,9 @@ brt_tune <- function(i){
   #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
+  #8. Clean up to save space----
+  rm(visit.i, bird.i, year.i, meth.i, cov.i)
+  
   #8. Run model----
   set.seed(i)
   m.i <- try(dismo::gbm.step(data=dat.i,
@@ -233,7 +236,7 @@ brt_tune <- function(i){
   }
   
   #16. Tidy up----
-  rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, m.i)
+  rm(bcr.i, spp.i, boot.i, lr.i, id.i, dat.i, off.i, m.i)
   
 }
 
