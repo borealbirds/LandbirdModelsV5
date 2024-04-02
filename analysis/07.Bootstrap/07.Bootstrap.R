@@ -129,7 +129,6 @@ brt_boot <- function(i){
   #7. Put together data object----
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
     rename(count = bird.i,
-           year = year.i,
            method = meth.i)
   
   #8. Get offsets----
