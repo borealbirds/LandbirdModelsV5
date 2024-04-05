@@ -18,7 +18,7 @@ BAM's landbird models bridge the gap between local studies and large-scale manag
 
 ## Version 4
 
-Version 4 of BAM's landbird models can be reproduced using the data object stored in the data repository and the generalized model script available in the 'V4' folder of this repository. 
+Version 4 of BAM's landbird models (Stralberg et al. *In Review*) can be reproduced using the data object stored in the data repository and the generalized model script available in the 'V4' folder of this repository. 
 
 ## Version 5
 
@@ -31,3 +31,6 @@ New developments to BAM's Landbird Models for Version 5 include:
 * Acquisition and inclusion of new datsets for data-sparse regions, including appropriate eBird data
 * Predictions for five year intervals from 1985 to 2020
 * More rigorous model tuning and covariate thinning
+
+## Cite
+Stralberg, D., P. Solymos, T.D.S Docherty, A.D. Crosby, S.L. Van Wilgenburg, S. Hache, E.C. Knight, L. Leston, J.D. Toms, J. Ball, S. Song, F. Schmiegelow, S.G. Cumming, and E.M. Bayne. *In Review*. A generalized modeling framework for spatially extensive species abundance prediction and population estimation: an example for landbirds in subarctic Canada. Submitted to Ecosphere.
