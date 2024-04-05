@@ -34,61 +34,61 @@ load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
 #SUBUNIT POLYGONS#####################
 
 #1. Read in country shapefiles----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
   st_transform(crs=5072) 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
+usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) |> 
   st_transform(crs=5072) 
 
 #2. Read in BCR shapefile----
 #Remove subunit 1
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% 
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
+  dplyr::filter(subUnit!=1) |> 
   st_transform(crs=5072)
 
 ggplot(bcr) +
   geom_sf(aes(fill=factor(subUnit)))
 
 #3. Identify BCRs for each country----
-bcr.ca <- bcr %>% 
-  st_intersection(can) %>% 
-  mutate(country="can") %>% 
+bcr.ca <- bcr |> 
+  st_intersection(can) |> 
+  mutate(country="can") |> 
   dplyr::select(subUnit, country)
 
-bcr.usa <- bcr %>% 
-  st_intersection(usa) %>% 
-  mutate(country="usa") %>% 
+bcr.usa <- bcr |> 
+  st_intersection(usa) |> 
+  mutate(country="usa") |> 
   dplyr::select(subUnit, country)
 
 #4. Make merged subunits----
-bcr.can4142 <- bcr.ca %>% 
-  dplyr::filter(subUnit %in% c(41, 42)) %>% 
-  st_union() %>% 
-  nngeo::st_remove_holes() %>% 
-  st_sf() %>% 
+bcr.can4142 <- bcr.ca |> 
+  dplyr::filter(subUnit %in% c(41, 42)) |> 
+  st_union() |> 
+  nngeo::st_remove_holes() |> 
+  st_sf() |> 
   mutate(country="can",
          subUnit = 4142)
 
-bcr.usa41423 <- bcr.ca %>% 
-  dplyr::filter(subUnit %in% c(41, 42, 3)) %>% 
-  st_union() %>% 
-  nngeo::st_remove_holes() %>% 
-  st_sf() %>% 
+bcr.usa41423 <- bcr.ca |> 
+  dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
+  st_union() |> 
+  nngeo::st_remove_holes() |> 
+  st_sf() |> 
   mutate(country="usa",
          subUnit = 41423)
 
-bcr.usa414232 <- bcr.usa %>% 
-  dplyr::filter(subUnit %in% c(41, 42, 3, 2)) %>% 
-  st_union() %>% 
-  nngeo::st_remove_holes() %>% 
-  st_sf() %>% 
+bcr.usa414232 <- bcr.usa |> 
+  dplyr::filter(subUnit %in% c(41, 42, 3, 2)) |> 
+  st_union() |> 
+  nngeo::st_remove_holes() |> 
+  st_sf() |> 
   mutate(country="usa",
          subUnit = 414232)
 
-bcr.can8182 <- bcr.ca %>% 
-  dplyr::filter(subUnit %in% c(81, 82)) %>% 
-  st_union() %>% 
-  nngeo::st_remove_holes() %>% 
-  st_sf() %>% 
+bcr.can8182 <- bcr.ca |> 
+  dplyr::filter(subUnit %in% c(81, 82)) |> 
+  st_union() |> 
+  nngeo::st_remove_holes() |> 
+  st_sf() |> 
   mutate(country="can",
          subUnit = 8182)
 
@@ -97,7 +97,7 @@ bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
                          subUnit=c(41, 42, 3, 42, 41))
 
 #5. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) %>% 
+bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) |> 
   anti_join(bcr.remove)
 
 #6. Set up loop for BCR buffering----
@@ -105,8 +105,8 @@ bcr.out <- data.frame()
 for(i in 1:nrow(bcr.country)){
 
   #7. Filter & buffer shapefile----
-  bcr.buff <- bcr.country %>%
-    dplyr::filter(row_number()==i) %>%
+  bcr.buff <- bcr.country |>
+    dplyr::filter(row_number()==i) |>
     st_buffer(100000)
 
   #8. Crop to international boundary----
@@ -114,7 +114,7 @@ for(i in 1:nrow(bcr.country)){
   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
 
   #9. Put together----
-  bcr.out <- rbind(bcr.out, bcr.i %>%
+  bcr.out <- rbind(bcr.out, bcr.i |>
                      dplyr::select(country, subUnit))
 
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
@@ -130,36 +130,36 @@ bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.sh
 #1. Get list of files in the folder----
 #Remove Archived files and a couple weirdos, 100m ones
 files <- data.frame(path = list.files(file.path(root, "PredictionRasters"), full.names = TRUE, recursive = TRUE, pattern="*.tif"),
-                    file = list.files(file.path(root, "PredictionRasters"), full.names = FALSE, recursive = TRUE, pattern="*.tif")) %>% 
-  dplyr::filter(!str_sub(file, 1, 7)=="Archive") %>% 
-  rowwise() %>% 
+                    file = list.files(file.path(root, "PredictionRasters"), full.names = FALSE, recursive = TRUE, pattern="*.tif")) |> 
+  dplyr::filter(!str_sub(file, 1, 7)=="Archive") |> 
+  rowwise() |> 
   mutate(int = str_locate_all(file, "/"),
-         int = max(int)) %>% 
-  ungroup() %>% 
-  mutate(file = str_sub(file, int+1, 100)) %>% 
-  separate(file, into=c("var", "scale", "year", "filetype"), remove=FALSE) %>% 
-  mutate(year = as.numeric(ifelse(is.na(filetype), NA, year))) %>% 
+         int = max(int)) |> 
+  ungroup() |> 
+  mutate(file = str_sub(file, int+1, 100)) |> 
+  separate(file, into=c("var", "scale", "year", "filetype"), remove=FALSE) |> 
+  mutate(year = as.numeric(ifelse(is.na(filetype), NA, year))) |> 
   dplyr::filter(!var %in% c("Standardized", "VLCE100"),
-                scale!="100m") %>% 
+                scale!="100m") |> 
   mutate(cov = paste0(var, "_", scale))
 
 #2. Add the two that are duplicates with temporal mistmatch---
-add <- files %>% 
-  dplyr::filter(cov %in% c("ERAPPTsm_1km", "ERATavesm_1km")) %>% 
+add <- files |> 
+  dplyr::filter(cov %in% c("ERAPPTsm_1km", "ERATavesm_1km")) |> 
   mutate(cov = gsub(pattern="sm", replacement="smt", x=cov))
 
-files.use <- rbind(files, add) %>% 
-  arrange(cov, year)
+files.use <- rbind(files, add) |> 
+  arrange(cov, year) 
 
 #3. Check against the covariate list----
-missing <- data.frame(list = names(covlist)) %>% 
+missing <- data.frame(list = names(covlist))  |>  
   dplyr::filter(!list %in% c(files.use$cov, "bcr"))
 nrow(missing)
 
 #4. Get the t-1 ones----
 meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
 
-lag <- meth %>% 
+lag <- meth |> 
   dplyr::filter(YearMatch==-1)
 
 #5. Match to each desired year of prediction----
@@ -174,7 +174,7 @@ year.out <- data.frame()
 for(i in 1:length(covs)){
   
   #Get the available years for that covariate
-  cov.i <- files.use %>% 
+  cov.i <- files.use |> 
     dplyr::filter(cov==covs[i])
   
   #Identify if is a cov that doesn't have annual layers---
@@ -207,10 +207,10 @@ for(i in 1:length(covs)){
 }
 
 #6. Put together with file paths----
-files.year <- year.out %>% 
+files.year <- year.out |> 
   left_join(files.use,
-            multiple="all") %>% 
-  unique() %>% 
+            multiple="all") |> 
+  unique() |> 
   dplyr::select(cov, predyear, year, path)
 
 summary(files.year)
@@ -218,33 +218,33 @@ summary(files.year)
 #MAKE STACKS####
 
 #1. Set up loop for subunits * year----
-units <- bcr.out %>% 
-  st_drop_geometry() %>% 
-  mutate(bcr = paste0(country, subUnit)) %>% 
-  unique() %>% 
+units <- bcr.out |> 
+  st_drop_geometry() |> 
+  mutate(bcr = paste0(country, subUnit)) |> 
+  unique() |> 
   expand_grid(year = seq(1985, 2020, 5))
 
-for(i in 1:nrow(units)){
+for(i in 16:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
   year.i <- paste0(units$year[i])
   
   #3. Get covariate list----
-  covlist.i <- covlist %>% 
-    dplyr::filter(bcr==bcr.i) %>% 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+  covlist.i <- covlist |> 
+    dplyr::filter(bcr==bcr.i) |> 
+    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   
   #4. Get file paths----
-  files.i <- files.year %>% 
+  files.i <- files.year |> 
     dplyr::filter(cov %in% covlist.i$cov,
                   predyear == year.i)
   
   #5. Get the bcr shp----
-  shp.i <- bcr.out %>% 
+  shp.i <- bcr.out |> 
     dplyr::filter(country==units$country[i],
-                  subUnit==units$subUnit[i]) %>% 
+                  subUnit==units$subUnit[i]) |> 
     vect()
   
   #6. Set up loop for the rasters----
@@ -257,7 +257,7 @@ for(i in 1:nrow(units)){
     if(crs(rast.i)!=crs(shp.i)){rast.i <- project(rast.i, crs(shp.i))}
     
     #9. Crop----
-    crop.i <- crop(rast.i, shp.i) %>% 
+    crop.i <- crop(rast.i, shp.i) |> 
       mask(shp.i)
     names(crop.i) <- files.i$cov[j]
     
@@ -276,7 +276,7 @@ for(i in 1:nrow(units)){
         geom_spatraster(data=crop.i) +
         geom_sf(data=shp.i, fill=NA, colour="black", linewidth = 2)
       
-      ggsave(plot.i, filename=file.path(root, "PredictionRasters", "SubunitStacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
+      ggsave(plot.i, filename=file.path(root, "SubunitStacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
       
     }
     
@@ -294,7 +294,7 @@ for(i in 1:nrow(units)){
   values(year.r) <- units$year[i]
   
   #16. Put together and mask----
-  meth.year.i <- c(meth.i, year.r) %>% 
+  meth.year.i <- c(meth.i, year.r) |> 
     mask(shp.i)
   
   #17. Rename----
@@ -304,7 +304,7 @@ for(i in 1:nrow(units)){
   stack.out <- c(meth.year.i, stack.i)
 
   #14. Save----
-  terra::writeRaster(stack.out, file.path(root, "PredictionRasters", "SubunitStacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  terra::writeRaster(stack.out, file.path(root, "SubunitStacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
   rm(rast.i, stack.i, stack.out, crop.i, shp.i)
   
@@ -316,9 +316,9 @@ for(i in 1:nrow(units)){
 }
 
 #15. Check they're all there----
-files.stack <- data.frame(file=list.files(file.path(root, "PredictionRasters", "SubunitStacks"), pattern="*.tif")) %>% 
-  separate(file, into=c("bcr", "year", "tif"), remove=FALSE) %>%
-  mutate(year = as.numeric(year)) %>% 
+files.stack <- data.frame(file=list.files(file.path(root, "SubunitStacks"), pattern="*.tif")) |> 
+  separate(file, into=c("bcr", "year", "tif"), remove=FALSE) |>
+  mutate(year = as.numeric(year)) |> 
   dplyr::filter(str_sub(file, -3, -1)!="xml")
 
 todo.stack <- anti_join(units, files.stack)
@@ -333,9 +333,9 @@ nrow(todo.stack)
 #MASKING####
 
 #1. Get the water layer----
-water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) %>% 
-  dplyr::filter(TYPE %in% c(16, 18)) %>% 
-  st_transform(crs=crs(bcr.out)) %>% 
+water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
+  dplyr::filter(TYPE %in% c(16, 18)) |> 
+  st_transform(crs=crs(bcr.out)) |> 
   vect()
 
 #2. Set up loop----
