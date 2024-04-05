@@ -85,6 +85,7 @@ visit <- dplyr::filter(visit, id %in% offsets$id)
 bird <- bird[as.character(visit$id),]
 bcrlist <- dplyr::filter(bcrlist, id %in% offsets$id)
 gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
+cov <- dplyr::filter(cov, id %in% offsets$id)
 
 #11. Load data objects----
 print("* Loading data on workers *")
