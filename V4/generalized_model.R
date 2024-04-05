@@ -13,7 +13,7 @@ library(mefa4)
 library(gbm)
 
 #2. Load data----
-load("data/NatMod4-2024-04-05.Rdata")
+load("data/NatModV4-2024-04-05.Rdata")
 
 # Data object contains:
 # dd: visit x covariate dataframe
