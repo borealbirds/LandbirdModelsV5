@@ -10,7 +10,7 @@
 
 #The "projectInstructions.csv" file is a list of all projects currently in WildTrax should not be used in national (instructions=="DO NOT USE"). This file should be updated for each iteration of in collaboration with Erin Bayne. Future versions of this spreadsheet can hopefully be derived by a combination of organization and a google form poll for consent from other organizations. Note this category also includes all ABMI projects with inaccurate (i.e., buffered) coordinates.
 
-#The "projectInstructions.csv" file also contains information on which ARU projects are processed for a single species or taxa (instructions=="DO NOT USE") and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models in collaboration with Erin Bayne. These projects are currently not included in the models.
+#The "projectInstructions.csv" file also contains information on which ARU projects are processed for a single species or taxa (instructions=="DO NOT USE") and therefore those visits should only be used for models for the appropriate taxa. This file should be updated for each iteration of the national models. These projects are currently not included in the models.
 
 #There are a handful of projects that are not downloading properly via wildRtrax. An issue is open on this. These projects are listed in the error.log object. These files should be downloaded manually.
 
@@ -29,9 +29,6 @@
 #The filter by temporal covariates and study area components of the code should be moved from script 4 to this script for the next iteration for efficiency's sake.
 
 #This script has a section to add a dataset for Alaska after the initial dataset was compiled. It is included here for reproducibility purposes but should be removed for the next iteration of models.
-
-#TODO: UPDATE WRANGLING TO WILDRTRAX FUNCTIONS
-#TODO: THINK ABOUT MAKING MODULAR BY BCR FROM ONSET
 
 #PREAMBLE############################
 

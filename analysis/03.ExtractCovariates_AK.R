@@ -8,6 +8,8 @@
 
 #This script is a replicate of the "03.ExtractCovariates.R" script, but was added after that script was run to add an additional set of data for Alaska to the national models v5.
 
+#Future versions of the National Models should consider more modularity from the initial data acquisition step to make it easier to add covariates part way through the process.
+
 #PREAMBLE############################
 
 #1. Load packages----
