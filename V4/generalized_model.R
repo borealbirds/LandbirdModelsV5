@@ -1,37 +1,38 @@
+# ---
+# title: National Models 4.0 - generalized modelling process
+# author: Peter Solymos, Elly Knight
+# updated: April 5, 2024
+# ---
+
+#NOTES#####
+
+# This script contains the function used for running the boosted regression models used in Version 4 of BAM's national bird species abundance models. The script is generalized to demonstrate the process and can be rerun using the data 
+
+#1. Load libraries----
 library(mefa4)
 library(gbm)
 
-## RData file to load
-fn <- "E:/MelinaStuff/BAM/NationalModelv4.1/runNationalModel/data/NatMod41-2021-12-10.RData"
-load(fn)
+#2. Load data----
+load("data/NatMod4-2024-04-05.Rdata")
 
-## some checks
-ls()
-dim(dd)
-dim(yy)
-dim(off)
-keep <- intersect(dd$PKEY, rownames(yy))
-dd <- dd[dd$PKEY %in% keep,]
-dd <- nonDuplicated(dd, PKEY, TRUE)
-yy <- yy[keep,]
-off <- off[keep,]
-stopifnot(all(colnames(off) == colnames(yy)))
-stopifnot(all(rownames(off) == rownames(yy)))
-stopifnot(all(rownames(dd) == rownames(yy)))
+# Data object contains:
+# dd: visit x covariate dataframe
+# yy: sparse matrix of visit x species abundances
+# off: visit x species matrix of statistical offsets
 
-## variables to be used as predictors (you can vary this by region)
-## Note: you have to include ARU, YEAR, ROAD etc
-## I only take care of spp count and offset (plus the cyid)
+#3. List variables to be used as predictors----
+# you can vary this by region
 cn <- c("TPI", "TRI", "slope", "roughness",
   "RoadDist", "lf", "AHM", "bFFP", "CMD", "DD_0", "DD_18", "DD18",
   "DD5", "eFFP", "EMT", "Eref", "EXT", "FFP", "MAP", "MAT", "MCMT",
-  "MSP", "MWMT", "NFFD", "PAS", "PPT_sm", "PPT_wt", "RH", "SHM")
+  "MSP", "MWMT", "NFFD", "PAS", "PPT_sm", "PPT_wt", "RH", "SHM", "YEAR")
 
-## subset to define region (logical or numeric)
+#4. Select visits for the region of interest----
 ss <-  dd$bcr4 > 0
-#ss <- which(ss)[1:1000]
 
-#' Function to run 1 iteration for a species
+#5. Write function to run bootstrapped models----
+
+#' Run 1 iteration for a species
 #'
 #' @param b bootstrap id (positive integer)
 #' @param spp Species code
@@ -39,22 +40,26 @@ ss <-  dd$bcr4 > 0
 #' @param ss subset of rows to use (region, BCR etc.)
 #' @param nt number of trees
 #' @param verbose print stuff (silent when running with Rscript)
+
 run_brt_boot1 <- function(b, spp, cn, ss, nt=10^4, verbose=interactive()) {
+  
     t0 <- proc.time()["elapsed"]
     
-    ## create data subset for BCR unit
+    #create data subset for BCR unit
     DAT <- data.frame(
         count=as.numeric(yy[ss, spp]),
         offset=off[ss, spp],
         cyid=dd$cyid[ss],
         dd[ss, cn])
-    ## subsample based on 2.5x2.5km^2 cell x year units
+    
+    # subsample based on 2.5x2.5km^2 cell x year units
     if (b > 1)
         DAT <- DAT[sample.int(nrow(DAT)),]
     DAT <- DAT[!duplicated(DAT$cyid),]
     if (b > 1)
         DAT <- DAT[sample.int(nrow(DAT), replace=TRUE),]
-    ## 0 detection output
+    
+    # 0 detection output
     if (sum(DAT$count) < 1) {
         out <- structure(
             sprintf("0 detections for %s", spp),
@@ -74,28 +79,19 @@ run_brt_boot1 <- function(b, spp, cn, ss, nt=10^4, verbose=interactive()) {
                             verbose = verbose,
                             n.cores = 1))
     }
+    # package output
     attr(out, "__settings__") <- list(
         b=b, spp=spp, cn=cn, ss=ss, elapsed=proc.time()["elapsed"]-t0)
     out
 }
 
+#6. Run model for selected species and bootstrap number----
+
+# Run this function using lapply to run across multiple bootstraps/regions/species
+# You can set verbose=FALSE to hide the output during model fitting
 
 o <- run_brt_boot1(b=1, spp="AMRO", cn=cn, ss=ss)
-o <- run_brt_boot1(b=2, spp="AMRO", cn=cn, ss=ss, verbose=FALSE)
 
+#7. Save output----
 
-# You can decide how to loop over regions/species/iterations
-# but save often (every b/spp/region combination)
-
-fo <- file.path("E:/MelinaStuff/BAM/NationalModelv4.1/runNationalModel/outBRT", paste0("brt-", spp, "-", bcr, "-", b, ".RData"))
-save(o, file=fo)
-
-#Explore
-load("E:/MelinaStuff/BAM/NationalModelv4.1/runNationalModel/outBRT/brt-AMRO-bcr4-10.RData", AMRObcr4 <- new.env())
-ls(AMRObcr4)
-AMRObcr4$o
-summary(AMRObcr4$o)
-
-library(gbm)
-plot.gbm(AMRObcr4$o)
-
+save(o, file="output/ModelRun.Rdata")
