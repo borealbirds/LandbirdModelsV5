@@ -15,6 +15,7 @@ library(gbm)
 library(parallel)
 library(Matrix)
 library(terra)
+library(sf)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
@@ -48,12 +49,13 @@ tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
+tmpcl <- clusterEvalQ(cl, library(sf))
 
 #8. Load the region file----
 bcr <- read_sf(file.path("data", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #11. Load data objects----
-print("* Loading data on workers *")
+print("* Loading regions on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
 tmpcl <- clusterExport(cl, c("bcr"))
@@ -131,26 +133,12 @@ if(nrow(done) > 0){
 } else { loop <- todo }
 
 #For testing - take the shortest duration models
-if(test) {loop <- arrange(loop, time)[1:2,]}
+if(test) {loop <- loop[1:2,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#8. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
-covsnew <- list()
-for(i in 1:nrow(loop)){
-  
-  load(file=file.path("output/fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
-  
-  covsnew[[i]] <- m.i[["contributions"]] %>% 
-    dplyr::filter(rel.inf >= 0.1)
-  
-}
-
-print("* Loading new covariate lists *")
-tmpcl <- clusterExport(cl, c("covsnew"))
-
-#9. Run BRT function in parallel----
+#8. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
