@@ -15,10 +15,12 @@ library(gbm)
 #2. Load data----
 load("data/NatModV4-2024-04-05.Rdata")
 
-# Data object contains:
+# Data contains:
 # dd: visit x covariate dataframe
 # yy: sparse matrix of visit x species abundances
 # off: visit x species matrix of statistical offsets
+
+# Row numbers of each object are unique primary keys that are matched across objects 
 
 #3. List variables to be used as predictors----
 # you can vary this by region
