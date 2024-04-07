@@ -17,9 +17,12 @@ library(Matrix)
 library(terra)
 library(sf)
 
+#set options to not write the .aux.xml file
+rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
+
 #2. Determine if testing and on local or cluster----
 test <- TRUE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -51,21 +54,6 @@ tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
 tmpcl <- clusterEvalQ(cl, library(sf))
 
-#8. Load the region layer----
-bcr <- read_sf(file.path("data", "BAM_BCR_NationalModel_Buffered.shp"))
-
-#9. Load the water layer----
-water <- read_sf(file.path("data", "hydrography_p_lakes_v2.shp")) |> 
-  dplyr::filter(TYPE %in% c(16, 18)) |> 
-  st_transform(crs=crs(bcr)) |> 
-  vect()
-
-#10. Load shapefiles on clusters----
-print("* Loading regions on workers *")
-
-if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bcr", "water"))
-
 #WRITE FUNCTION##########
 
 brt_predict <- function(i){
@@ -89,19 +77,10 @@ brt_predict <- function(i){
   pred.i <- terra::predict(model=b.i, object=stack.i)
   rm(stack.i)
 
-  #5. Get the region polygon----
-  shp.i <- dplyr::filter(bcr, country==str_sub(bcr.i, 1, 3), subUnit==as.numeric(str_sub(bcr.i, 4, 10))) |>
-    vect()
-
-  #6. Mask----
-  mask.i <- mask(pred.i, shp.i) |>
-    mask(water, inverse=TRUE)
-  
-  # #7. Clear for RAM----
-  # rm(stack.i, shp.i)
-  # 
-  # #7. Save----
-  # writeRaster(mask.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")))
+  #7. Save----
+  #set options to not write the .aux.xml file
+  rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
+  writeRaster(pred.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   
 }
 
@@ -113,8 +92,7 @@ tmpcl <- clusterExport(cl, c("brt_predict"))
 #RUN MODELS#########
 
 #1. Set desired years----
-#years <- seq(1985, 2020, 5)
-years <- 2020
+years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are tuned----
 booted <- data.frame(path = list.files("output/bootstraps", pattern="*.R", full.names=TRUE),
