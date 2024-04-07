@@ -31,6 +31,9 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 #3. Load data packages with covariate lookup table----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
 
+#4. Set options to not write the .aux.xml file----
+rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
+
 #SUBUNIT POLYGONS#####################
 
 #1. Read in country shapefiles----
@@ -224,7 +227,7 @@ units <- bcr.out |>
   unique() |> 
   expand_grid(year = seq(1985, 2020, 5))
 
-for(i in 16:nrow(units)){
+for(i in 1:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
