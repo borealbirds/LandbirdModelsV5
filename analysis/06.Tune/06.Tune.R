@@ -86,11 +86,7 @@ tmpcl <- clusterEvalQ(cl, library(Matrix))
 #8. Load data package----
 print("* Loading data on master *")
 
-#For running on cluster
-if(cc){ load(file.path("04_NM5.0_data_stratify.R")) }
-
-#For testing on local
-if(!cc){ load(file.path(root, "Data", "04_NM5.0_data_stratify.R")) }
+load(file.path("data", "04_NM5.0_data_stratify.R"))
 
 #9. Wrangle method----
 meth <- cbind(cov %>% dplyr::select(id, tagMethod),
