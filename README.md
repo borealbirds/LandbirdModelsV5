@@ -2,16 +2,16 @@
 
 ## A generalized modeling framework for spatially extensive species abundance prediction and population estimation
 
-BAM's landbird models bridge the gap between local studies and large-scale management needs by compiling and harmonizing data from many soruces to predict avian abundance at a fine resolution and broad extent. The modelling workflow is broken up into eleven steps:
+BAM's landbird models bridge the gap between local studies and large-scale management needs by compiling and harmonizing data from many sources to predict avian abundance at a fine resolution and broad extent. The modelling workflow is broken up into eleven steps:
 
-1. Download from [WildTrax](wildtrax.ca) and harmonization
-2. Calculate of statistical offsets with the [`QPAD`](github.com/borealbirds/QPAD) package
+1. Download data from [WildTrax](wildtrax.ca) and harmonize
+2. Calculate statistical offsets with the [`QPAD`](github.com/borealbirds/QPAD) package
 3. Extract covariates
 4. Stratify dataset by region and year
-5. Gap analysis to identify areas of extrapolation
+5. Identify areas of extrapolation
 6. Tune models for learning rate
 7. Bootstrap models
-8. Spatial prediction
+8. Make spatial predictions
 9. Mosaic and average predictions
 10. Validate models
 11. Interpret models and predictions
