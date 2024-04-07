@@ -15,10 +15,6 @@ library(gbm)
 library(parallel)
 library(Matrix)
 library(terra)
-library(sf)
-
-#set options to not write the .aux.xml file
-rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
@@ -52,7 +48,6 @@ tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
-tmpcl <- clusterEvalQ(cl, library(sf))
 
 #WRITE FUNCTION##########
 
