@@ -17,7 +17,7 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -73,8 +73,6 @@ brt_predict <- function(i){
   rm(stack.i)
 
   #7. Save----
-  #set options to not write the .aux.xml file
-  rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
   writeRaster(pred.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   
 }
