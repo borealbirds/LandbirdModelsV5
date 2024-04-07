@@ -45,20 +45,26 @@ cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
 #7. Load packages on clusters----
 print("* Loading packages on workers *")
-tmpcl <- clusterEvalQ(cl, library(dismo))
+tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
 tmpcl <- clusterEvalQ(cl, library(sf))
 
-#8. Load the region file----
+#8. Load the region layer----
 bcr <- read_sf(file.path("data", "BAM_BCR_NationalModel_Buffered.shp"))
 
-#11. Load data objects----
+#9. Load the water layer----
+water <- read_sf(file.path("data", "hydrography_p_lakes_v2.shp")) |> 
+  dplyr::filter(TYPE %in% c(16, 18)) |> 
+  st_transform(crs=crs(bcr)) |> 
+  vect()
+
+#10. Load shapefiles on clusters----
 print("* Loading regions on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bcr"))
+tmpcl <- clusterExport(cl, c("bcr", "water"))
 
 #WRITE FUNCTION##########
 
@@ -78,27 +84,31 @@ brt_predict <- function(i){
   #3. Load raster stack----
   stack.i <- rast(paste0("stacks/", bcr.i, "_", year.i, ".tif"))
   names(stack.i) <- c("meth.i", names(stack.i)[2:dim(stack.i)[3]])
-  
+
   #4. Predict----
   pred.i <- terra::predict(model=b.i, object=stack.i)
-  
-  #5. Get the region polygon----
-  shp.i <- dplyr::filter(bcr, country==str_sub(bcr.i, 1, 3), subUnit==as.numeric(str_sub(bcr.i, 4, 10))) %>% 
-    vect()
-  
-  #6. Mask----
-  mask.i <- mask(pred.i, shp.i)
+  rm(stack.i)
 
-  #5. Save----
+  #5. Get the region polygon----
+  shp.i <- dplyr::filter(bcr, country==str_sub(bcr.i, 1, 3), subUnit==as.numeric(str_sub(bcr.i, 4, 10))) |>
+    vect()
+
+  #6. Mask----
+  mask.i <- mask(pred.i, shp.i) |>
+    mask(water, inverse=TRUE)
   
-  
-  
-  
-  
-  
-  
+  # #7. Clear for RAM----
+  # rm(stack.i, shp.i)
+  # 
+  # #7. Save----
+  # writeRaster(mask.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")))
   
 }
+
+#8. Export to clusters----
+print("* Loading function on workers *")
+
+tmpcl <- clusterExport(cl, c("brt_predict"))
 
 #RUN MODELS#########
 
@@ -108,26 +118,26 @@ years <- 2020
 
 #2. Get list of models that are tuned----
 booted <- data.frame(path = list.files("output/bootstraps", pattern="*.R", full.names=TRUE),
-                    file = list.files("output/bootstraps", pattern="*.R")) %>% 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
+                    file = list.files("output/bootstraps", pattern="*.R")) |> 
+  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#5. Create to do list----
+#3. Create to do list----
 #Sort longest to shortest duration to get the big models going first
-todo <- booted %>% 
-  dplyr::select(bcr, spp, boot) %>% 
+todo <- booted |> 
+  dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years)
 
-#6. Determine which are already done----
+#4. Determine which are already done----
 done <- data.frame(path = list.files("output/predictions", pattern="*.csv", full.names=TRUE),
-                   file = list.files("output/predictions", pattern="*.csv")) %>% 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
+                   file = list.files("output/predictions", pattern="*.csv")) |> 
+  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#7. Create final to do list----
+#5. Create final to do list----
 if(nrow(done) > 0){
   
-  loop <- todo %>% 
+  loop <- todo |> 
     anti_join(done)
   
 } else { loop <- todo }
@@ -138,11 +148,11 @@ if(test) {loop <- loop[1:2,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#8. Run BRT function in parallel----
+#6. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
-                  fun=brt_boot)
+                  fun=brt_predict)
 
 #CONCLUDE####
 
