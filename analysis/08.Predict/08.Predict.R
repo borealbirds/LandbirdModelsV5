@@ -17,7 +17,7 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -35,9 +35,12 @@ if(!cc){ nodeslist <- nodes }
 
 print(nodeslist)
 
-#6. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
+
+#6. Set working directory----
+if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
 
 #7. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -49,8 +52,6 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 #WRITE FUNCTION##########
 
 brt_predict <- function(i){
-  
-  t0 <- proc.time()
   
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
