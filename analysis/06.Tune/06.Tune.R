@@ -54,7 +54,7 @@ cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
-if(!cc){ nodes <- 2}
+if(!cc | test){ nodes <- 2}
 
 #3. Set species subset if desired----
 sppuse <- c("OVEN", "OSFL")
@@ -69,7 +69,7 @@ print("* Creating nodes list *")
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- nodes }
+if(!cc){ nodeslist <- nodes }
 
 print(nodeslist)
 

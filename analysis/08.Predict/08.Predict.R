@@ -17,24 +17,21 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
-if(!cc){ nodes <- 2}
+if(!cc | test){ nodes <- 2}
 
-#4. Set root path for data on google drive (for local testing)----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
-
-#5. Create nodes list----
+#4. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
 nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
 
 #For testing on local
-if(test){ nodeslist <- nodes }
+if(!cc){ nodeslist <- nodes }
 
 print(nodeslist)
 
@@ -70,7 +67,6 @@ brt_predict <- function(i){
 
   #4. Predict----
   pred.i <- terra::predict(model=b.i, object=stack.i)
-  rm(stack.i)
 
   #7. Save----
   writeRaster(pred.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
