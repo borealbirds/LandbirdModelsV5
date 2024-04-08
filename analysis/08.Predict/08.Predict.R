@@ -18,7 +18,7 @@ library(terra)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -97,10 +97,11 @@ todo <- booted |>
   expand_grid(year=years)
 
 #4. Determine which are already done----
-done <- data.frame(path = list.files("output/predictions", pattern="*.csv", full.names=TRUE),
-                   file = list.files("output/predictions", pattern="*.csv")) |> 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
-  mutate(boot = as.numeric(str_sub(boot, -100, -3)))
+done <- data.frame(path = list.files("output/predictions", pattern="*.tiff", full.names=TRUE),
+                   file = list.files("output/predictions", pattern="*.tiff")) |> 
+  separate(file, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>  
+  mutate(year = as.numeric(str_sub(year, -100, -6)),
+         boot = as.numeric(boot))
 
 #5. Create final to do list----
 if(nrow(done) > 0){
