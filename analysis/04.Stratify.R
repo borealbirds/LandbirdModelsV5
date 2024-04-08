@@ -361,8 +361,7 @@ for(i in 1:length(bcrs)){
 #thin out covariate fields for minimizing RAM
 #convert bird object to sparse matrix for minimizing RAM (doesn't save space to do this for other objects because they don't have enough zeros)
 cov <- visit.use %>% 
-  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday) %>% 
-  mutate(tagMethod = as.factor(tagMethod))
+  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
 
 visit <- visit.use %>% 
   dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 

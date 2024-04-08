@@ -829,7 +829,11 @@ visit.covs <- visit %>%
          SCANFI_1km = factor(SCANFI_1km),
          NLCD_1km = factor(NLCD_1km),
          ABoVE_1km = factor(ABoVE_1km),
-         VLCE_1km = factor(VLCE_1km)) %>% 
+         VLCE_1km = factor(VLCE_1km),
+         hli3cl_1km = factor(hli3cl_1km),
+         tagMethod = factor(tagMethod)) %>% 
+  mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
+         method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT"))) |> 
   mutate(LFheigth_1km = ifelse(LFheigth_1km < 0, NA, LFheigth_1km),
          LFheigth_5x5 = ifelse(LFheigth_5x5 < 0, NA, LFheigth_5x5),
          LFheigthcv_1km = ifelse(LFheigthcv_1km < 0, NA, LFheigthcv_1km),
