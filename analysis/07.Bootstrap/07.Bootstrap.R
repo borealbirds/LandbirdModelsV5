@@ -68,22 +68,7 @@ print("* Loading data on master *")
 
 load(file.path("data", "04_NM5.0_data_stratify.R"))
 
-#9. Wrangle method----
-meth <- cbind(cov %>% dplyr::select(id, tagMethod),
-              visit %>% dplyr::select(source)) %>% 
-  mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
-         method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT")))
-
-#10. Take the NA offsets out----
-offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
-meth <- dplyr::filter(meth, id %in% offsets$id)
-visit <- dplyr::filter(visit, id %in% offsets$id)
-bird <- bird[as.character(visit$id),]
-bcrlist <- dplyr::filter(bcrlist, id %in% offsets$id)
-gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
-cov <- dplyr::filter(cov, id %in% offsets$id)
-
-#11. Load data objects----
+#9. Load data objects----
 print("* Loading data on workers *")
 
 if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
@@ -118,7 +103,7 @@ brt_boot <- function(i){
   cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew[[i]]$var]
   
   #5. Get PC vs SPT vs SPM vs eBird----
-  meth.i <- meth[meth$id %in% visit.i$id, "method"]
+  meth.i <- visit[visit$id %in% visit.i$id, "method"]
   
   #6. Get year----
   year.i <- visit[visit$id %in% visit.i$id, "year"]
@@ -131,7 +116,10 @@ brt_boot <- function(i){
   #8. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #9. Run model----
+  #9. Clean up to save space----
+  rm(visit.i, bird.i, year.i, meth.i, cov.i)
+  
+  #10. Run model----
   set.seed(i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
                   data = dat.i[, -1],
@@ -142,21 +130,18 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
-  #10. Get performance metrics----
+  #11. Get performance metrics----
   out.i <- loop[i,] %>% 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
-  #11. Save----
+  #12. Save----
   save(b.i, out.i, visit.i, file=file.path("output/bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
-  
-  #12. Tidy up----
-  rm(bcr.i, spp.i, boot.i, lr.i, id.i, visit.i, bird.i, covlist.i, cov.i, meth.i, dat.i, off.i, b.i)
   
 }
 
-#9. Export to clusters----
+#13. Export to clusters----
 print("* Loading function on workers *")
 
 tmpcl <- clusterExport(cl, c("brt_boot"))
