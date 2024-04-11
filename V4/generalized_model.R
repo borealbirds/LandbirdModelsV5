@@ -13,7 +13,7 @@ library(mefa4)
 library(gbm)
 
 #2. Load data----
-load("data/NatModV4-2024-04-05.Rdata")
+load("NatModV4-2024-04-05.Rdata")
 
 # Data contains:
 # dd: visit x covariate dataframe
@@ -25,9 +25,9 @@ load("data/NatModV4-2024-04-05.Rdata")
 #3. List variables to be used as predictors----
 # you can vary this by region
 cn <- c("TPI", "TRI", "slope", "roughness",
-  "RoadDist", "lf", "AHM", "bFFP", "CMD", "DD_0", "DD_18", "DD18",
-  "DD5", "eFFP", "EMT", "Eref", "EXT", "FFP", "MAP", "MAT", "MCMT",
-  "MSP", "MWMT", "NFFD", "PAS", "PPT_sm", "PPT_wt", "RH", "SHM", "YEAR")
+  "ROAD", "AHM", "bFFP", "CMD", "DD_0", "DD_18", "DD18",
+  "DD5", "eFFP", "EMT", "EXT", "FFP", "MAP", "MAT", "MCMT",
+  "MSP", "MWMT", "NFFD", "PPT_sm", "PPT_wt", "SHM", "YEAR")
 
 #4. Select visits for the region of interest----
 ss <-  dd$bcr4 > 0
@@ -96,4 +96,4 @@ o <- run_brt_boot1(b=1, spp="AMRO", cn=cn, ss=ss)
 
 #7. Save output----
 
-save(o, file="output/ModelRun.Rdata")
+save(o, file="ModelRun.Rdata")
