@@ -70,6 +70,7 @@ bcr.can4142 <- bcr.ca |>
   st_sf() |> 
   mutate(country="can",
          subUnit = 4142)
+st_geometry(bcr.can4142) <- "geometry"
 
 bcr.usa41423 <- bcr.ca |> 
   dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
@@ -78,6 +79,7 @@ bcr.usa41423 <- bcr.ca |>
   st_sf() |> 
   mutate(country="usa",
          subUnit = 41423)
+st_geometry(bcr.usa41423) <- "geometry"
 
 bcr.usa414232 <- bcr.usa |> 
   dplyr::filter(subUnit %in% c(41, 42, 3, 2)) |> 
@@ -86,6 +88,7 @@ bcr.usa414232 <- bcr.usa |>
   st_sf() |> 
   mutate(country="usa",
          subUnit = 414232)
+st_geometry(bcr.usa414232) <- "geometry"
 
 bcr.can8182 <- bcr.ca |> 
   dplyr::filter(subUnit %in% c(81, 82)) |> 
@@ -94,6 +97,7 @@ bcr.can8182 <- bcr.ca |>
   st_sf() |> 
   mutate(country="can",
          subUnit = 8182)
+st_geometry(bcr.can8182) <- "geometry"
 
 #polygons to remove
 bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
@@ -104,28 +108,28 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
   anti_join(bcr.remove)
 
 #6. Set up loop for BCR buffering----
-bcr.out <- data.frame()
-for(i in 1:nrow(bcr.country)){
-
-  #7. Filter & buffer shapefile----
-  bcr.buff <- bcr.country |>
-    dplyr::filter(row_number()==i) |>
-    st_buffer(100000)
-
-  #8. Crop to international boundary----
-  if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
-  if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
-
-  #9. Put together----
-  bcr.out <- rbind(bcr.out, bcr.i |>
-                     dplyr::select(country, subUnit))
-
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
-
-}
-
-#10. Save----
-write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+# bcr.out <- data.frame()
+# for(i in 1:nrow(bcr.country)){
+# 
+#   #7. Filter & buffer shapefile----
+#   bcr.buff <- bcr.country |>
+#     dplyr::filter(row_number()==i) |>
+#     st_buffer(100000)
+# 
+#   #8. Crop to international boundary----
+#   if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
+#   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
+# 
+#   #9. Put together----
+#   bcr.out <- rbind(bcr.out, bcr.i |>
+#                      dplyr::select(country, subUnit))
+# 
+#   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+# 
+# }
+# 
+# #10. Save----
+# write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #GET PREDICTION RASTER LOCATIONS######
@@ -144,9 +148,10 @@ files <- data.frame(path = list.files(file.path(root, "PredictionRasters"), full
   mutate(year = as.numeric(ifelse(is.na(filetype), NA, year))) |> 
   dplyr::filter(!var %in% c("Standardized", "VLCE100"),
                 scale!="100m") |> 
-  mutate(cov = paste0(var, "_", scale))
+  mutate(cov = paste0(var, "_", scale)) |> 
+  unique()
 
-#2. Add the two that are duplicates with temporal mistmatch---
+#2. Add the two that are duplicates with temporal mismatch---
 add <- files |> 
   dplyr::filter(cov %in% c("ERAPPTsm_1km", "ERATavesm_1km")) |> 
   mutate(cov = gsub(pattern="sm", replacement="smt", x=cov))
@@ -225,7 +230,7 @@ units <- bcr.out |>
   st_drop_geometry() |> 
   mutate(bcr = paste0(country, subUnit)) |> 
   unique() |> 
-  expand_grid(year = seq(1985, 2020, 5))
+  expand_grid(year = seq(1985, 2020, 5)) 
 
 for(i in 1:nrow(units)){
   
