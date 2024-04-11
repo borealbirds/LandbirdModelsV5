@@ -49,34 +49,34 @@ options(scipen=99999)
 #BCR ATTRIBUTION#####################
 
 #1. Make visit a vector object----
-visit.v <- visit %>% 
-  dplyr::select(id, lat, lon) %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=4326) %>% 
-  st_transform(5072) %>% 
+visit.v <- visit |> 
+  dplyr::select(id, lat, lon) |> 
+  st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
+  st_transform(5072) |> 
   vect()
 
 #2. Read in country shapefiles----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
   st_transform(crs=5072) 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
+usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) |> 
   st_transform(crs=5072) 
 
 #3. Read in BCR shapefile----
 #Remove subunit 1
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% 
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
+  dplyr::filter(subUnit!=1) |> 
   st_transform(crs=5072)
 
 ggplot(bcr) +
   geom_sf(aes(fill=factor(subUnit)))
 
 #4. Identify BCRs for each country----
-bcr.ca <- bcr %>% 
-  st_intersection(can) %>% 
+bcr.ca <- bcr |> 
+  st_intersection(can) |> 
   mutate(country="can")
 
-bcr.usa <- bcr %>% 
-  st_intersection(usa) %>% 
+bcr.usa <- bcr |> 
+  st_intersection(usa) |> 
   mutate(country="usa")
 
 bcr.country <- rbind(bcr.ca, bcr.usa)
@@ -86,8 +86,8 @@ bcr.df <- data.frame(id=visit$id)
 for(i in 1:nrow(bcr.country)){
   
   #6. Filter & buffer shapefile----
-  bcr.buff <- bcr.country %>% 
-    dplyr::filter(row_number()==i) %>% 
+  bcr.buff <- bcr.country |> 
+    dplyr::filter(row_number()==i) |> 
     st_buffer(100000)
   
   #7. Crop to international boundary----
@@ -99,7 +99,7 @@ for(i in 1:nrow(bcr.country)){
   bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
   
   #9. Extract raster value----
-  bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) %>% 
+  bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) |> 
     mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
   bcr.df[,(i+1)] <- bcr.out$use
   
@@ -128,7 +128,7 @@ maxday <- 196 #July 15
 bcr.in <- bcr.df[rowSums(ifelse(bcr.df[,2:length(bcr.df)]==TRUE, 1, 0)) > 0,]
 
 #3. Filter visits----
-visit.use <- visit %>% 
+visit.use <- visit |> 
   dplyr::filter(id %in% bcr.in$id,
                 year >= minyear,
                 tssr >= mintssr,
@@ -137,27 +137,27 @@ visit.use <- visit %>%
                 jday <= maxday)
 
 #4. Filter offset, bird, and bcr objects by remaining visits----
-offsets.use <- offsets %>% 
+offsets.use <- offsets |> 
   dplyr::filter(id %in% visit.use$id)
 
-bird.use <- bird %>% 
+bird.use <- bird |> 
   dplyr::filter(id %in% visit.use$id)
 
-bcr.use <- bcr.in %>% 
+bcr.use <- bcr.in |> 
   dplyr::filter(id %in% visit.use$id)
 
 #SAMPLE SIZE AGGREGATION##############
 
 #1. Summarize subunit sample sizes----
 bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
-                    n = colSums(bcr.use[-1]==TRUE)) %>% 
+                    n = colSums(bcr.use[-1]==TRUE)) |> 
   arrange(n)
 
 write.csv(bcr.n, file.path(root, "Regions", "SubUnitSampleSizes.csv"), row.names=FALSE)
 
 #2. Plot sample sizes----
-bcr.sf <- bcr.country %>% 
-  mutate(bcr = paste0(country, "_", subUnit)) %>% 
+bcr.sf <- bcr.country |> 
+  mutate(bcr = paste0(country, "_", subUnit)) |> 
   left_join(bcr.n)
 
 ggplot(bcr.sf) +
@@ -176,16 +176,16 @@ ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8
 #merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
 #merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
 
-bcr.agr <- bcr.use %>% 
+bcr.agr <- bcr.use |> 
   mutate(can4142 = ifelse(can41==TRUE | can42==TRUE, TRUE, FALSE),
          usa41423 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE, TRUE, FALSE),
          usa414232 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE | usa2==TRUE, TRUE, FALSE),
-         can8182 = ifelse(can82==TRUE | can81==TRUE, TRUE, FALSE)) %>% 
+         can8182 = ifelse(can82==TRUE | can81==TRUE, TRUE, FALSE)) |> 
   dplyr::select(-can41, -usa42, -usa3, -can42, -usa41)
 
 #4. Check sample sizes again
 bcr.n2 <- data.frame(bcr = unique(colnames(bcr.agr)[-1]),
-                    n = colSums(bcr.agr[-1]==TRUE)) %>% 
+                    n = colSums(bcr.agr[-1]==TRUE)) |> 
   arrange(n)
 
 write.csv(bcr.n2, file.path(root, "Regions", "SubUnitSampleSizes_AfterAggregation.csv"), row.names=FALSE)
@@ -198,7 +198,7 @@ bcrs <- sort(unique(colnames(bcr.agr)[-1]))
 #2. Create grid for thinning----
 grid <- dgconstruct(spacing = 2.5, metric=TRUE)
 
-visit.grid <- visit.use %>% 
+visit.grid <- visit.use |> 
   mutate(cell = dgGEO_to_SEQNUM(grid, lon, lat)$seqnum)
 
 length(unique(visit.grid$cell))
@@ -214,12 +214,12 @@ birdlist <- data.frame(bcr=bcrs)
 for(i in 1:length(bcrs)){
   
   #3. Select visits within BCR----
-  bcr.i <- bcr.agr[,c("id", bcrs[i])] %>%
-    data.table::setnames(c("id", "use")) %>%
+  bcr.i <- bcr.agr[,c("id", bcrs[i])] |>
+    data.table::setnames(c("id", "use")) |>
     dplyr::filter(use==TRUE)
   
   #4. Filter bird data----
-  bird.i <- bird.use %>% 
+  bird.i <- bird.use |> 
     dplyr::filter(id %in% bcr.i$id)
   
   #5. Determine whether exceeds threshold----
@@ -233,27 +233,28 @@ colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
 #F. COVARIATE LOOKUP TABLE###############
 
 #1. Get extraction methods lookup table----
-meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")
+meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup") |> 
+  dplyr::filter(Use==1)
 
 #2. Set up dataframe for variables that are global---
-meth.global <- meth %>% 
+meth.global <- meth |> 
   dplyr::filter(Global==1)
 
-cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) %>% 
-  mutate(val = TRUE) %>% 
+cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) |> 
+  mutate(val = TRUE) |> 
   pivot_wider(names_from=cov, values_from=val)
 
 #3. Set up dataframe for variables that need prioritization----
 #collapse AK & CONUS priority fields - only needed for extraction
-meth.prior <- meth %>% 
-  dplyr::filter(Global==0) %>% 
-  mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) %>% 
-  dplyr::select(Category, Name, Label, Priority) %>% 
-  unique() %>% 
+meth.prior <- meth |> 
+  dplyr::filter(Global==0) |> 
+  mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) |> 
+  dplyr::select(Category, Name, Label, Priority) |> 
+  unique() |> 
   arrange(Category, Name, Priority)
 
 cov.prior <- matrix(ncol=nrow(meth.prior), nrow=length(bcrs),
-                    dimnames=list(bcrs, meth.prior$Label)) %>% 
+                    dimnames=list(bcrs, meth.prior$Label)) |> 
   data.frame()
 
 #4. Loop for subcateogries of variables that need prioritization----
@@ -264,10 +265,10 @@ covlist <- data.frame()
 for(i in 1:length(bcrs)){
   
   #5. Filter data to BCR----
-  visit.i <- bcr.agr[,c("id", bcrs[i])] %>%
-    data.table::setnames(c("id", "use")) %>%
-    dplyr::filter(use==TRUE) %>% 
-    dplyr::select(-use) %>% 
+  visit.i <- bcr.agr[,c("id", bcrs[i])] |>
+    data.table::setnames(c("id", "use")) |>
+    dplyr::filter(use==TRUE) |> 
+    dplyr::select(-use) |> 
     left_join(visit.use, by="id")
   
   #6. Set up Name loop----
@@ -276,26 +277,26 @@ for(i in 1:length(bcrs)){
     #7. Select covs to compare----
     meth.j <- dplyr::filter(meth.prior, Name %in% subcat[j])
     
-    cov.j <- visit.i %>% 
+    cov.j <- visit.i |> 
       dplyr::select(all_of(meth.j$Label))
     
     #8. Determine which cov to use----
     #Count non-na and non-zero values per cov, calculate as a percent of total surveys, remove those with < 50% and then pick highest priority
-    na.j <- cov.j %>% 
-      mutate(id = row_number()) %>% 
-      pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") %>% 
-      dplyr::filter(!is.na(Value) & as.numeric(Value) > 0) %>% 
-      group_by(Label) %>% 
+    na.j <- cov.j |> 
+      mutate(id = row_number()) |> 
+      pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") |> 
+      dplyr::filter(!is.na(Value) & as.numeric(Value) > 0) |> 
+      group_by(Label) |> 
       summarize(n = round(n(), -2),
-                percent = n()/nrow(cov.j)) %>% 
-      ungroup() %>% 
+                percent = n()/nrow(cov.j)) |> 
+      ungroup() |> 
       left_join(meth.prior, by="Label")
     
-    use.j <- na.j %>% 
-      dplyr::filter(percent > 0.5) %>% 
-      dplyr::filter(Priority==min(Priority, na.rm=TRUE)) %>% 
-      mutate(use = 1) %>% 
-      right_join(meth.j, by = join_by(Label, Category, Name, Priority)) %>% 
+    use.j <- na.j |> 
+      dplyr::filter(percent > 0.5) |> 
+      dplyr::filter(Priority==min(Priority, na.rm=TRUE)) |> 
+      mutate(use = 1) |> 
+      right_join(meth.j, by = join_by(Label, Category, Name, Priority)) |> 
       mutate(use = ifelse(is.na(use), 0, use))
     
     #9. Update lookup dataframe----
@@ -316,28 +317,28 @@ for(i in 1:length(bcrs)){
   }
   
   #11. Get covariate list for this BCR-----
-  covlist.i <- cbind(cov.global, cov.prior) %>% 
-    dplyr::filter(bcr==bcrs[i]) %>% 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+  covlist.i <- cbind(cov.global, cov.prior) |> 
+    dplyr::filter(bcr==bcrs[i]) |> 
+    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   
   #12. Thin visits to be realistic of a model run----
   set.seed(i)
-  visit.i.sub <- visit.grid %>% 
-    dplyr::select(id, year, cell) %>% 
-    group_by(year, cell) %>% 
+  visit.i.sub <- visit.grid |> 
+    dplyr::select(id, year, cell) |> 
+    group_by(year, cell) |> 
     mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) %>% 
-    ungroup() %>% 
-    dplyr::filter(rowid==use) %>% 
+           use = sample(1:max(rowid), 1)) |> 
+    ungroup() |> 
+    dplyr::filter(rowid==use) |> 
     inner_join(visit.i)
   
   #13. Get the covariates----
   #Drop factors, use them always
-  cov.i <- visit %>% 
-    dplyr::filter(id %in% visit.i.sub$id) %>% 
-    dplyr::select(all_of(covlist.i$cov)) %>% 
-    select_if(is.numeric) %>% 
+  cov.i <- visit |> 
+    dplyr::filter(id %in% visit.i.sub$id) |> 
+    dplyr::select(all_of(covlist.i$cov)) |> 
+    select_if(is.numeric) |> 
     data.frame()
   
   #14. Run VIF----
@@ -360,21 +361,29 @@ for(i in 1:length(bcrs)){
 #rename objects
 #thin out covariate fields for minimizing RAM
 #convert bird object to sparse matrix for minimizing RAM (doesn't save space to do this for other objects because they don't have enough zeros)
-cov <- visit.use %>% 
+cov <- visit.use |> 
   dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
 
-visit <- visit.use %>% 
-  dplyr::select(id, source, organization, project, sensor, tagMethod, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
+visit <- visit.use |> 
+  dplyr::select(id, source, organization, project, sensor, tagMethod, method, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
 
-gridlist <- visit.grid %>% 
+gridlist <- visit.grid |> 
   dplyr::select(id, year, cell)
 
-bird <- bird.use %>% 
-  column_to_rownames("id") %>% 
-  as.matrix() %>% 
+bird <- bird.use |> 
+  column_to_rownames("id") |> 
+  as.matrix() |> 
   as("dgCMatrix")
 offsets <- offsets.use
 bcrlist <- bcr.agr
 
-#2. Save----
+#2. Take the NA offsets out----
+offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
+cov <- dplyr::filter(cov, id %in% offsets$id)
+visit <- dplyr::filter(visit, id %in% offsets$id)
+bcrlist <- dplyr::filter(bcrlist, id %in% offsets$id)
+gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
+bird <- bird[as.character(visit$id),]
+
+#3. Save----
 save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
