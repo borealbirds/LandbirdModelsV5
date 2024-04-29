@@ -29,19 +29,13 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 2}
 
-#3. Set species subset if desired----
-sppuse <- c("OVEN", "OSFL", "CONW", "PAWA")
-
-#4. Set root path for data on google drive (for local testing)----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
-
-#5. Create nodes list----
+#4. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
@@ -52,9 +46,16 @@ if(!cc){ nodeslist <- nodes }
 
 print(nodeslist)
 
-#6. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
+
+#6. Set root path----
+print("* Setting root file path *")
+if(cc){root <- ""}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"}
+
+tmpcl <- clusterExport(cl, c("root"))
 
 #7. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -66,13 +67,12 @@ tmpcl <- clusterEvalQ(cl, library(stats))
 #8. Load data package----
 print("* Loading data on master *")
 
-load(file.path("data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 
 #9. Load data objects----
 print("* Loading data on workers *")
 
-if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "meth", "visit"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "visit"))
 
 #WRITE FUNCTION##########
 
@@ -80,7 +80,7 @@ brt_boot <- function(i){
   
   t0 <- proc.time()
   
-  #1. Get model settings---
+  #1. Get model settings----
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- loop$boot[i]
@@ -110,8 +110,7 @@ brt_boot <- function(i){
   
   #7. Put together data object----
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
-    rename(count = bird.i,
-           method = meth.i)
+    rename(count = bird.i)
   
   #8. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
@@ -137,7 +136,7 @@ brt_boot <- function(i){
                      time = (proc.time()-t0)[3]))
   
   #12. Save----
-  save(b.i, out.i, visit.i, file=file.path("output/bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
 }
 
@@ -148,41 +147,33 @@ tmpcl <- clusterExport(cl, c("brt_boot"))
 
 #RUN MODELS###############
 
-#1. Get BCR & bird combo list----
-#filter by list of desired species
-bcr.spp <- birdlist %>% 
-  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
-  dplyr::filter(use==TRUE) %>% 
-  dplyr::filter(spp %in% sppuse) %>% 
-  dplyr::select(-use)
-
-#2. Get list of models that are tuned----
-tuned <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
-                    file = list.files("output/tuning", pattern="*.csv")) %>% 
+#1. Get list of models that are tuned----
+tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
-#3. Get learning rates----
+#2. Get learning rates----
 perf <- map_dfr(read.csv, .x=tuned$path) %>% 
   dplyr::filter(trees >= 1000 & trees < 10000)
 
-#4. Set number of bootstraps----
+#3. Set number of bootstraps----
 boots <- 10
 
-#5. Create to do list----
+#4. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf %>% 
   dplyr::select(bcr, spp, lr, trees, time) %>% 
   expand_grid(boot=c(1:boots)) %>% 
   arrange(-time)
 
-#6. Determine which are already done----
-done <- data.frame(path = list.files("output/bootstraps", pattern="*.R", full.names=TRUE),
-                   file = list.files("output/bootstraps", pattern="*.R")) %>% 
+#5. Determine which are already done----
+done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
+                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) %>% 
   separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#7. Create final to do list----
+#6. Create final to do list----
 if(nrow(done) > 0){
   
   loop <- todo %>% 
@@ -196,11 +187,11 @@ if(test) {loop <- arrange(loop, time)[1:2,]}
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#8. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
+#7. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
 covsnew <- list()
 for(i in 1:nrow(loop)){
   
-  load(file=file.path("output/fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
+  load(file=file.path(root, "output", "fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
   
   covsnew[[i]] <- m.i[["contributions"]] %>% 
     dplyr::filter(rel.inf >= 0.1)
@@ -210,7 +201,7 @@ for(i in 1:nrow(loop)){
 print("* Loading new covariate lists *")
 tmpcl <- clusterExport(cl, c("covsnew"))
 
-#9. Run BRT function in parallel----
+#8. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),

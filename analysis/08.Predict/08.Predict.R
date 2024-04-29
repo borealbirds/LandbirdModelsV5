@@ -17,8 +17,8 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -39,8 +39,12 @@ print(nodeslist)
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#6. Set working directory----
-if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
+#6. Set root path----
+print("* Setting root file path *")
+if(cc){root <- ""}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"}
+
+tmpcl <- clusterExport(cl, c("root"))
 
 #7. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -60,17 +64,17 @@ brt_predict <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load(paste0("output/bootstraps/", spp.i, "_", bcr.i, "_", boot.i, ".R"))
+  load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
   #3. Load raster stack----
-  stack.i <- rast(paste0("stacks/", bcr.i, "_", year.i, ".tif"))
-  names(stack.i) <- c("meth.i", names(stack.i)[2:dim(stack.i)[3]])
+  stack.i <- rast(file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")))
+  names(stack.i) <- c("method", names(stack.i)[2:dim(stack.i)[3]])
 
   #4. Predict----
-  pred.i <- terra::predict(model=b.i, object=stack.i)
+  pred.i <- terra::predict(model=b.i, object=stack.i, type="response")
 
   #7. Save----
-  writeRaster(pred.i, file=file.path("output/predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
+  writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   
 }
 
@@ -85,8 +89,8 @@ tmpcl <- clusterExport(cl, c("brt_predict"))
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are tuned----
-booted <- data.frame(path = list.files("output/bootstraps", pattern="*.R", full.names=TRUE),
-                    file = list.files("output/bootstraps", pattern="*.R")) |> 
+booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
+                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
   separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
@@ -97,8 +101,8 @@ todo <- booted |>
   expand_grid(year=years)
 
 #4. Determine which are already done----
-done <- data.frame(path = list.files("output/predictions", pattern="*.tiff", full.names=TRUE),
-                   file = list.files("output/predictions", pattern="*.tiff")) |> 
+done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
+                   file = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
   separate(file, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>  
   mutate(year = as.numeric(str_sub(year, -100, -6)),
          boot = as.numeric(boot))

@@ -47,18 +47,15 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 2}
 
-#3. Set species subset if desired----
-sppuse <- c("OVEN", "OSFL")
-
-#4. Set root path for data on google drive (for local testing)----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+#4. Set species subset if desired----
+sppuse <- c("WTSP")
 
 #5. Create nodes list----
 print("* Creating nodes list *")
@@ -75,21 +72,27 @@ print(nodeslist)
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#7. Load packages on clusters----
+#7. Set root path----
+print("* Setting root file path *")
+if(cc){root <- ""}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"}
+
+tmpcl <- clusterExport(cl, c("root"))
+
+#8. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#8. Load data package----
+#9. Load data package----
 print("* Loading data on master *")
 
-load(file.path("data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 
-#9. Load data objects----
+#10. Load data objects----
 print("* Loading data on workers *")
 
-if(cc){ tmpcl <- clusterEvalQ(cl, setwd("/home/ecknight/NationalModels")) }
 tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "visit"))
 
 #WRITE FUNCTION##########
@@ -98,7 +101,7 @@ brt_tune <- function(i){
   
   t0 <- proc.time()
   
-  #1. Get model settings---
+  #1. Get model settings----
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- 1
@@ -130,18 +133,17 @@ brt_tune <- function(i){
   #6. Get year----
   year.i <- visit[visit$id %in% visit.i$id, "year"]
   
-  #6. Put together data object----
+  #7. Put together data object----
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
-    rename(count = bird.i,
-           method = meth.i)
+    rename(count = bird.i)
   
-  #7. Get offsets----
+  #8. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #8. Clean up to save space----
+  #9. Clean up to save space----
   rm(visit.i, bird.i, year.i, meth.i, cov.i)
   
-  #9. Run model----
+  #10. Run model----
   set.seed(i)
   m.i <- try(dismo::gbm.step(data=dat.i,
                          gbm.x=c(2:ncol(dat.i)),
@@ -174,7 +176,7 @@ brt_tune <- function(i){
     
   }
   
-  #10. Get performance metrics----
+  #11. Get performance metrics----
   if(class(m.i)=="NULL"){
     
     out.i <- loop[i,] %>% 
@@ -191,7 +193,7 @@ brt_tune <- function(i){
                        time = (proc.time()-t0)[3])) %>% 
       mutate(lr = lr.i)
     
-    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
+    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
     
   } else {
     
@@ -209,15 +211,15 @@ brt_tune <- function(i){
                        time = (proc.time()-t0)[3])) %>% 
       mutate(lr = lr.i)
     
-    #11. Save model----
-    write.csv(out.i, file=file.path("output/tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv")), row.names = FALSE)
-    save(m.i, file=file.path("output/fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+    #12. Save model----
+    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    save(m.i, file=file.path(root, "output", "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
     
   }
   
 }
 
-#12. Export to clusters----
+#13. Export to clusters----
 print("* Loading function on workers *")
 
 tmpcl <- clusterExport(cl, c("brt_tune"))
@@ -241,8 +243,8 @@ print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-files <- data.frame(path = list.files("output/tuning", pattern="*.csv", full.names=TRUE),
-                    file = list.files("output/tuning", pattern="*.csv")) %>% 
+files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
