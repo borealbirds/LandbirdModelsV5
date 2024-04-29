@@ -68,7 +68,7 @@ brt_predict <- function(i){
   
   #3. Load raster stack----
   stack.i <- rast(file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")))
-  names(stack.i) <- c("method", names(stack.i)[2:dim(stack.i)[3]])
+  names(stack.i) <- c("meth.i", names(stack.i)[2:dim(stack.i)[3]])
 
   #4. Predict----
   pred.i <- terra::predict(model=b.i, object=stack.i, type="response")
