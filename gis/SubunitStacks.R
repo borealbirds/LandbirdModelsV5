@@ -284,7 +284,7 @@ for(i in 1:nrow(units)){
         geom_spatraster(data=crop.i) +
         geom_sf(data=shp.i, fill=NA, colour="black", linewidth = 2)
       
-      ggsave(plot.i, filename=file.path(root, "SubunitStacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
+      ggsave(plot.i, filename=file.path(root, "stacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
       
     }
     
@@ -312,7 +312,7 @@ for(i in 1:nrow(units)){
   stack.out <- c(meth.year.i, stack.i)
 
   #14. Save----
-  terra::writeRaster(stack.out, file.path(root, "SubunitStacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  terra::writeRaster(stack.out, file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
   rm(rast.i, stack.i, stack.out, crop.i, shp.i)
   
