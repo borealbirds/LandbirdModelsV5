@@ -18,7 +18,7 @@ BAM's landbird models bridge the gap between local studies and large-scale manag
 
 ## Version 4
 
-Version 4 of BAM's landbird models (Stralberg et al. *In Review*) can be reproduced using the data object stored in the data repository and the generalized model script available in the 'V4' folder of this repository. 
+Version 4 of BAM's landbird models (Stralberg et al. *In Review*) can be reproduced using the data object stored on [Zenodo](https://zenodo.org/records/4042821) and the generalized model script available in the 'V4' folder of this repository. 
 
 ## Version 5
 
