@@ -6,6 +6,16 @@
 
 #NOTES################################
 
+# This script uses the model output from 07.Bootstrap.R to make spatial predictions for each bootstrap of each species by BCR combination.
+
+# The script requires that the "gis/SubunitStacks.R" script is run prior to build stacks of rasters for each combination of BCR and year of prediction (currently any 5-year period between 1985 and 2020).
+
+# The years for prediction can be set within this script.
+
+# The script then builds a to-do list for the bootstrapped models and desired years of prediction and checks against the predictions that have already been run prior to building the to-do list so that it can be run multiple times.
+
+# The output is a tif for each bootstrap of each species by BCR combination on the response scale (i.e., # of male birds per ha).
+
 #PREAMBLE############################
 
 #1. Load packages----
