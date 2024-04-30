@@ -232,7 +232,7 @@ units <- bcr.out |>
   unique() |> 
   expand_grid(year = seq(1985, 2020, 5)) 
 
-for(i in 1:nrow(units)){
+for(i in 267:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
@@ -324,7 +324,7 @@ for(i in 1:nrow(units)){
 }
 
 #15. Check they're all there----
-files.stack <- data.frame(file=list.files(file.path(root, "SubunitStacks"), pattern="*.tif")) |> 
+files.stack <- data.frame(file=list.files(file.path(root, "stacks"), pattern="*.tif")) |> 
   separate(file, into=c("bcr", "year", "tif"), remove=FALSE) |>
   mutate(year = as.numeric(year)) |> 
   dplyr::filter(str_sub(file, -3, -1)!="xml")
