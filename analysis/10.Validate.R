@@ -17,6 +17,7 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(dismo)
+library(gbm)
 library(DescTools)
 library(carat)
 
@@ -29,6 +30,23 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 #4. Convert bird data to dataframe----
 bird.df <- as.data.frame(as.matrix(bird))
 bird.df$id <- as.numeric(row.names(bird.df))
+
+#5. Function for pseudoR2----
+#As per NMV4
+pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
+  if (is.null(null))
+    null <- mean(observed)
+  ll0 <- sum(dpois(observed, null, log=TRUE))
+  lls <- sum(dpois(observed, observed, log=TRUE))
+  llf <- sum(dpois(observed, fitted, log=TRUE))
+  n <- length(observed)
+  R2 <- 1 - (lls - llf) / (lls - ll0)
+  R2adj <- 1 - (1 - R2) * ((n-1) / (n-(p+1)))
+  D0 <- -2 * (ll0 - lls)
+  DR <- -2 * (llf - lls)
+  p_value <- 1 - pchisq(DR, length(observed)-(p+1))
+  c(R2=R2, R2adj=R2adj, Deviance=D0 - DR, Dev0=D0, DevR=DR, p_value=p_value)
+}
 
 #SUBUNIT POLYGONS#####################
 
@@ -104,67 +122,27 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
   anti_join(bcr.remove) |> 
   mutate(bcr = paste0(country, subUnit))
 
-#BCR###############
+#BCR MODELS###############
 
-#1. Get list of predictions----
-preds <- data.frame(predpath = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
-                    predfile = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
-  separate(predfile, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>  
-  mutate(year = as.numeric(str_sub(year, -100, -6)),
-         boot = as.numeric(boot))
-
-#2. Get list of models----
-mods <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
+#1. Get list of models----
+todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
                    modfile = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
   separate(modfile, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#3. Put together----
-todo <- inner_join(preds, mods)
-
-#Check
-nrow(preds)==nrow(todo)
-
-#4. Set up loop----
+#2. Set up loop----
+out.list <- list()
 for(i in 1:nrow(todo)){
   
-  #1. Get loop settings----
+  #3. Get loop settings----
   bcr.i <- todo$bcr[i]
   spp.i <- todo$spp[i]
   boot.i <- todo$boot[i]
-  year.i <- todo$year[i]
   
-  #5. Read in files----
-  pred.i <- rast(preds$predpath[i])
-  load(mods$modpath[i])
+  #4. Read in files----
+  load(todo$modpath[i])
   
-  #6. Clip prediction by BCR boundary----
-  clip.i <- bcr.country |> 
-    dplyr::filter(bcr==bcr.i) |> 
-    vect() |> 
-    terra::crop(x=pred.i, mask=TRUE)
-  
-  #7. Get withheld data----
-  #filter to 5 year interval of prediction
-  #add species presence/absence
-  #add predictions
-  test.i <- gridlist[bcrlist[,bcr.i],] |> 
-    anti_join(visit.i) |> 
-    mutate(yearpred = round(year/5)*5) |>
-    dplyr::filter(yearpred==year.i) |> 
-    left_join(visit) |>
-    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
-    st_transform(crs=5072) |> 
-    st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
-    terra::extract(x=clip.i, bind=TRUE) |> 
-    data.frame() |> 
-    rename(prediction = lyr1) |> 
-    left_join(bird.df |> 
-                dplyr::select(id, todo$spp[i]) |> 
-                rename(count = spp.i)) |> 
-    mutate(p = ifelse(count > 0, 1, 0)) 
-  
-  #8. Get training data----
+  #5. Get training data----
   train.i <- visit.i |> 
     left_join(visit) |> 
     inner_join(bcrlist |> 
@@ -175,12 +153,37 @@ for(i in 1:nrow(todo)){
                  dplyr::select(id, todo$spp[i]) |> 
                  rename(count = todo$spp[i]))
   
-  #9. Calculate total and training residual deviance----
+  #6. Get withheld test data----
+  #clip to actual BCR boundary
+  #add species presence/absence
+  #add offset
+  test.i <- gridlist[bcrlist[,bcr.i],] |> 
+    anti_join(visit.i) |> 
+    left_join(visit) |>
+    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
+    st_transform(crs=5072) |> 
+    st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
+    terra::extract(x=clip.i, bind=TRUE) |> 
+    left_join(bird.df |> 
+                dplyr::select(id, todo$spp[i]) |> 
+                rename(count = todo$spp[i])) |> 
+    mutate(p = ifelse(count > 0, 1, 0)) |> 
+    left_join(offsets |> 
+                dplyr::select(id, todo$spp[i]) |> 
+                rename(offset = todo$spp[i])) |> 
+    left_join(cov) |> 
+    rename(meth.i = method)
+  
+  #7. Make predictions----
+  test.i$fitted <- predict(b.i, test.i)
+  test.i$prediction <- exp(test.i$fitted + test.i$offset)
+  
+  #8. Calculate total and training residual deviance----
   total.dev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
   
   train.resid.i <- mean(b.i$train.error^2)
   
-  #10. Determine whether can evaluate fully ----  
+  #9. Determine whether can evaluate----  
   #Skip to next loop if there's no withheld data or positive detections for that time period
   if(nrow(test.i)==0 | sum(test.i$p) == 0){
     
@@ -201,7 +204,7 @@ for(i in 1:nrow(todo)){
     next
   }
   
-  #11. Estimate SSB (spatial sorting bias; Hijmans 2012 Ecology)----
+  #10. Estimate SSB (spatial sorting bias; Hijmans 2012 Ecology)----
   p.i <- test.i |> 
     dplyr::filter(p==1) |> 
     dplyr::select(lon, lat) |> 
@@ -222,7 +225,7 @@ for(i in 1:nrow(todo)){
   
   ssb.i <- ssb(p=p.i, a=a.i, reference=train.p.i, lonlat=TRUE)
   
-  #12. Dismo evaluate presence & absence----
+  #11. Dismo evaluate presence & absence----
   p.i <- test.i |> 
     dplyr::filter(p==1)
 
@@ -231,19 +234,33 @@ for(i in 1:nrow(todo)){
   
   eval.i <- dismo::evaluate(p.i$prediction, a.i$prediction)
   
-  #13. Brier score----
+  #12. Brier score----
   brier.i <- BrierScore(resp = test.i$count, pred = test.i$prediction)
   
-  #14. Calculate other count metrics----
+  #13. Calculate other count metrics----
   #Accuracy, discrimination (spearman, pearson, intercept, slope), precision (Norberg et al. 2019 Ecol Mongr, Waldock et al. 2022 Ecography)
   
-  #15. Calculate test deviance & residuals----
+  accuracy.i <- test.i |> 
+    mutate(diff = abs(count - prediction)) |> 
+    summarize(accuracy = mean(diff)/mean(count))
+  
+  precision.i <- sd(test.i$count)/sd(test.i$prediction)
+  
+  lm.i <- lm(prediction ~ count, data=test.i)
+  
+  cor.spearman.i = cor(test.i$prediction, test.i$count, method="spearman")
+  cor.pearson.i = cor(test.i$prediction, test.i$count, method="pearson")
+           
+  #14. Calculate test deviance & residuals----
   test.dev.i <- calc.deviance(test.i$count, test.i$prediction, family="poisson")
   
   test.resid.i <- mean(abs(test.i$count - test.i$prediction))
   
+  #15. Calculate pseudo-R2----
+  r2.i <- pseudo_r2(test.i$count, test.i$prediction)
+  
   #16. Put together----
-  out.i <- data.frame(spp=spp.i,
+  out.list[[i]] <- data.frame(spp=spp.i,
                       bcr=bcr.i,
                       boot=boot.i,
                       year=year.i,
@@ -264,10 +281,20 @@ for(i in 1:nrow(todo)){
                       ssb = ssb.i[1]/ssb.i[2],
                       auc = eval.i@auc,
                       cor = eval.i@cor,
-                      brier = brier.i)
+                      cor.spearman = cor.spearman.i,
+                      cor.pearson = cor.pearson.i,
+                      brier = brier.i,
+                      accuracy = accuracy.i$accuracy,
+                      precision = precision.i,
+                      discrim.intercept = lm.i$coefficients[1],
+                      discrim.slope = lm.i$coefficients[2],
+                      pseudor2 <-r2.i$R2)
   
-  
-  
-  
+  print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
   
 }
+
+#17. Package and save----
+out <- data.table::rbindlist(out.list, fill=TRUE)
+
+write.csv(out, file.path(root, "output", "ModelEvaluation_BCR.csv"), row.names = FALSE)
