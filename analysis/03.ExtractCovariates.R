@@ -82,7 +82,7 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 
 #3. Set up loop----
 loop <- sort(unique(meth.gd$StackCategory))
-for(i in 4:length(loop)){
+for(i in 1:length(loop)){
   
   #4. Filter to stack category----
   meth.gd.i <- dplyr::filter(meth.gd, StackCategory==loop[i])
@@ -267,9 +267,9 @@ for(i in 4:length(loop)){
 
 #19. Merge AK & CONUS columns for landfire----
 
-if("LFheigthcv_1km _conus" %in% colnames(loc.gd)){
+if("LFheigthcv_1k._conus" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd  |>
-    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1km_conus),
+    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1k,_conus),
            LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km_conus),
            LFheigth_1km = ifelse(!is.na(LFheigth_1km), LFheigth_1km, LFheigth_1km_conus),
            LFheigthcv_1km = ifelse(!is.na(LFheigthcv_1km), LFheigthcv_1km, LFheigthcv_1km_conus),
@@ -808,7 +808,7 @@ loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_cova
 
 #3. Add id to visit and join together and wrangle----
 meth.use <- meth |> 
-  dplyr::filter(Complete==1)
+  dplyr::filter(Use==1)
 
 #Remove lat lon fields due to rounding errors that cause mismatches
 #format landcover classes as factors
@@ -833,7 +833,6 @@ visit.covs <- visit |>
          NLCD_1km = factor(NLCD_1km),
          ABoVE_1km = factor(ABoVE_1km),
          VLCE_1km = factor(VLCE_1km),
-         hli3cl_1km = factor(hli3cl_1km),
          tagMethod = factor(tagMethod)) |> 
   mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
          method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT"))) |> 
