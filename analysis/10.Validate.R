@@ -132,7 +132,7 @@ todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"),
 
 #2. Set up loop----
 out.list <- list()
-for(i in 1:nrow(todo)){
+for(i in 41:nrow(todo)){
   
   #3. Get loop settings----
   bcr.i <- todo$bcr[i]
@@ -154,7 +154,7 @@ for(i in 1:nrow(todo)){
                  rename(count = todo$spp[i]))
   
   #6. Get withheld test data----
-  #clip to actual BCR boundary
+  #clip to actual BCR boundary - THINK ABOUT THIS####
   #add species presence/absence
   #add offset
   test.i <- gridlist[bcrlist[,bcr.i],] |> 
@@ -163,7 +163,7 @@ for(i in 1:nrow(todo)){
     st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
     st_transform(crs=5072) |> 
     st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
-    terra::extract(x=clip.i, bind=TRUE) |> 
+    st_drop_geometry() |> 
     left_join(bird.df |> 
                 dplyr::select(id, todo$spp[i]) |> 
                 rename(count = todo$spp[i])) |> 
@@ -172,7 +172,7 @@ for(i in 1:nrow(todo)){
                 dplyr::select(id, todo$spp[i]) |> 
                 rename(offset = todo$spp[i])) |> 
     left_join(cov) |> 
-    rename(meth.i = method)
+    mutate(meth.i = method)
   
   #7. Make predictions----
   test.i$fitted <- predict(b.i, test.i)
@@ -263,7 +263,6 @@ for(i in 1:nrow(todo)){
   out.list[[i]] <- data.frame(spp=spp.i,
                       bcr=bcr.i,
                       boot=boot.i,
-                      year=year.i,
                       trees = b.i$n.trees,
                       n.train = b.i$nTrain,
                       n.train.p = nrow(train.p.i),
@@ -272,8 +271,8 @@ for(i in 1:nrow(todo)){
                       test.dev = test.dev.i,
                       train.resid = train.resid.i,
                       test.resid = test.resid.i,
-                      train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                      test.d2 = (totaldev.i - test.resid.i)/totaldev.i, 
+                      train.d2 = (total.dev.i - train.resid.i)/total.dev.i,
+                      test.d2 = (total.dev.i - test.resid.i)/total.dev.i, 
                       n.test.p = sum(test.i$p),
                       n.test.a = nrow(test.i) - sum(test.i$p),
                       ssb.p = ssb.i[1],
@@ -288,7 +287,7 @@ for(i in 1:nrow(todo)){
                       precision = precision.i,
                       discrim.intercept = lm.i$coefficients[1],
                       discrim.slope = lm.i$coefficients[2],
-                      pseudor2 <-r2.i$R2)
+                      pseudor2 <-r2.i[1])
   
   print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
   
