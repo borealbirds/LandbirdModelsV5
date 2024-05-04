@@ -55,7 +55,7 @@ if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 2}
 
 #4. Set species subset if desired----
-sppuse <- c("WTSP")
+sppuse <- c("OVEN", "OSFL")
 
 #5. Create nodes list----
 print("* Creating nodes list *")
