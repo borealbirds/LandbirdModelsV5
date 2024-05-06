@@ -48,6 +48,18 @@ bcr.usa <- bcr |>
   dplyr::select(subUnit, country)
 
 #4. Make merged subunits----
+
+#For subunits that have < 1000 observations
+
+#CA: merge 42 with 41
+#USA: merge 42 and 3 with 41
+
+#Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
+
+#Also try:
+#merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
+#merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
+
 bcr.can4142 <- bcr.ca |> 
   dplyr::filter(subUnit %in% c(41, 42)) |> 
   st_union() |> 
