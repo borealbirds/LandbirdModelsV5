@@ -55,50 +55,22 @@ visit.v <- visit |>
   st_transform(5072) |> 
   vect()
 
-#2. Read in country shapefiles----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
-  st_transform(crs=5072) 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) |> 
-  st_transform(crs=5072) 
-
-#3. Read in BCR shapefile----
-#Remove subunit 1
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
-  dplyr::filter(subUnit!=1) |> 
-  st_transform(crs=5072)
-
-ggplot(bcr) +
-  geom_sf(aes(fill=factor(subUnit)))
-
-#4. Identify BCRs for each country----
-bcr.ca <- bcr |> 
-  st_intersection(can) |> 
-  mutate(country="can")
-
-bcr.usa <- bcr |> 
-  st_intersection(usa) |> 
-  mutate(country="usa")
-
-bcr.country <- rbind(bcr.ca, bcr.usa)
+#2. Read in buffered shapefile----
+bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
   
-#5. Set up loop for BCR attribution----
+#3. Set up loop for BCR attribution----
 bcr.df <- data.frame(id=visit$id)
 for(i in 1:nrow(bcr.country)){
   
-  #6. Filter & buffer shapefile----
-  bcr.buff <- bcr.country |> 
-    dplyr::filter(row_number()==i) |> 
-    st_buffer(100000)
+  #4. Filter bcr shapefile----
+  bcr.i <- bcr.country |> 
+    dplyr::filter(row_number()==i)
   
-  #7. Crop to international boundary----
-  if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
-  if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
-  
-  #8. Convert to raster for fast extraction----
+  #5. Convert to raster for fast extraction----
   r <- rast(ext(bcr.i), resolution=1000, crs=crs(bcr.i))
   bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
   
-  #9. Extract raster value----
+  #6. Extract raster value----
   bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) |> 
     mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
   bcr.df[,(i+1)] <- bcr.out$use
@@ -146,7 +118,7 @@ bird.use <- bird |>
 bcr.use <- bcr.in |> 
   dplyr::filter(id %in% visit.use$id)
 
-#SAMPLE SIZE AGGREGATION##############
+#SAMPLE SIZE CHECK##############
 
 #1. Summarize subunit sample sizes----
 bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
@@ -166,34 +138,10 @@ ggplot(bcr.sf) +
 
 ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8, height = 4)
 
-#3. Aggregate subunits----
-#CA: merge 42 with 41
-#USA: merge 42 and 3 with 41
-
-#Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
-
-#Also try:
-#merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
-#merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
-
-bcr.agr <- bcr.use |> 
-  mutate(can4142 = ifelse(can41==TRUE | can42==TRUE, TRUE, FALSE),
-         usa41423 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE, TRUE, FALSE),
-         usa414232 = ifelse(usa42==TRUE | usa41==TRUE | usa3==TRUE | usa2==TRUE, TRUE, FALSE),
-         can8182 = ifelse(can82==TRUE | can81==TRUE, TRUE, FALSE)) |> 
-  dplyr::select(-can41, -usa42, -usa3, -can42, -usa41)
-
-#4. Check sample sizes again
-bcr.n2 <- data.frame(bcr = unique(colnames(bcr.agr)[-1]),
-                    n = colSums(bcr.agr[-1]==TRUE)) |> 
-  arrange(n)
-
-write.csv(bcr.n2, file.path(root, "Regions", "SubUnitSampleSizes_AfterAggregation.csv"), row.names=FALSE)
-
 #SPATIAL GRID FOR BOOTSTRAP THINNING##############
 
 #1. Get list of BCRs----
-bcrs <- sort(unique(colnames(bcr.agr)[-1]))
+bcrs <- sort(unique(colnames(bcr.use)[-1]))
 
 #2. Create grid for thinning----
 grid <- dgconstruct(spacing = 2.5, metric=TRUE)
@@ -214,7 +162,7 @@ birdlist <- data.frame(bcr=bcrs)
 for(i in 1:length(bcrs)){
   
   #3. Select visits within BCR----
-  bcr.i <- bcr.agr[,c("id", bcrs[i])] |>
+  bcr.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
     dplyr::filter(use==TRUE)
   
@@ -265,7 +213,7 @@ covlist <- data.frame()
 for(i in 1:length(bcrs)){
   
   #5. Filter data to BCR----
-  visit.i <- bcr.agr[,c("id", bcrs[i])] |>
+  visit.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
     dplyr::filter(use==TRUE) |> 
     dplyr::select(-use) |> 
@@ -375,7 +323,7 @@ bird <- bird.use |>
   as.matrix() |> 
   as("dgCMatrix")
 offsets <- offsets.use
-bcrlist <- bcr.agr
+bcrlist <- bcr.use
 
 #2. Take the NA offsets out----
 offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
