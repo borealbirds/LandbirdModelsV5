@@ -93,25 +93,25 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
   anti_join(bcr.remove)
 
 #6. Set up loop for BCR buffering----
-# bcr.out <- data.frame()
-# for(i in 1:nrow(bcr.country)){
-# 
-#   #7. Filter & buffer shapefile----
-#   bcr.buff <- bcr.country |>
-#     dplyr::filter(row_number()==i) |>
-#     st_buffer(100000)
-# 
-#   #8. Crop to international boundary----
-#   if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
-#   if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
-# 
-#   #9. Put together----
-#   bcr.out <- rbind(bcr.out, bcr.i |>
-#                      dplyr::select(country, subUnit))
-# 
-#   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
-# 
-# }
-# 
-# #10. Save----
-# write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+bcr.out <- data.frame()
+for(i in 1:nrow(bcr.country)){
+
+  #7. Filter & buffer shapefile----
+  bcr.buff <- bcr.country |>
+    dplyr::filter(row_number()==i) |>
+    st_buffer(100000)
+
+  #8. Crop to international boundary----
+  if(bcr.buff$country=="can"){ bcr.i <- st_intersection(bcr.buff, can)}
+  if(bcr.buff$country=="usa"){ bcr.i <- st_intersection(bcr.buff, usa)}
+
+  #9. Put together----
+  bcr.out <- rbind(bcr.out, bcr.i |>
+                     dplyr::select(country, subUnit))
+
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+
+}
+
+#10. Save----
+write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
