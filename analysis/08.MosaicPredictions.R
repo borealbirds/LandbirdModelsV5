@@ -25,16 +25,21 @@
 
 # --------------------
 # This code requires:
-# 1) All functions in dsmextra_fn.R (or downloading the "dsmextra" package)
+# 1) Downloading the "dsmextra" package from https://github.com/densitymodelling/dsmextra
 # 2) USA/CAN BCR overlap rasters and individual BCR weighting rasters produced 
-# in "09.WeightingRasters.R"
+# in "gis/WeightingRasters.R"
 # -------------------
+
+#TO DO: ORGANIZE INTO HIGHER LEVEL SECTIONS#####
+#TO DO: FIGURE OUT WHY CANADA AND US ARE BEING DONE SEPARATELY####
+#TO DO: FIGURE OUT IF THERE ARE ACTUALLY GAPS OR NOT#######
 
 # Load packages -------- 
 library(sf)
 library(tidyverse)
 library(terra)
 library(leaflet)
+library(dsmextra)
 `%notin%` <- Negate(`%in%`)
 
 #1. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
@@ -42,7 +47,6 @@ crs<-"+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellp
 
 #2. Set file paths ----
 root<-"G:/Shared drives/BAM_NationalModels/NationalModels5.0" #PC link
-setwd(file.path(root,"MosaicWeighting"))
 
 #3. Canada and USA BCR boundaries ----
 
@@ -115,6 +119,8 @@ Get_paths<- function(Variables, YR){
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
 # Uses "Get_paths" function to extract rasters for stacking
 
+#TO DO: MAKE THIS MORE EFFICIENT. DOESN"T NEED TO LOOP THROUGH RASTERS########
+
 create_df <- function(Variables,YR,bcr.i){
   
   Stack<-list()  
@@ -158,12 +164,14 @@ Lookup$Raster[Lookup$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t"
 
 #Load data package with covariates and BCR lists
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
-rm(bird,birdlist,gridlist,offsets)
+#rm(bird,gridlist,offsets)
 gc()
 
 #Limit covariates to those with continuous values
 cov_clean<-cov%>%dplyr::select(where(is.numeric))
 cov_clean<-cov_clean[names(cov_clean)!="hli3cl_1km"] #remove hli - it is categorical
+
+#TO DO: REPLACE THIS WITH THE BIRDLIST AND LOOP AROUND SPECIES#######
 
 #Produce look-up table: "BCR label"->"spatial sf subunit": **Probably want to just make this an object in stratify
 BCR_Names <- colnames(bcrlist[-1])
@@ -184,7 +192,7 @@ rm(First,Second,Third,BCR_Names) #cleanup
 #6. Extrapolation Analysis ----
 
 ### OK select species and year and Region ("can" vs "usa")
-SPP<-"OSFL"
+SPP<-"OVEN"
 YR <-1985
 Region<-"can"
 
@@ -237,6 +245,8 @@ for(j in c(1:nrow(BCR_lookup))){  # select BCR
   Variables<-subset(Variables,Variables %notin% "TRI_1km") #temporary fix for TRI
   
   rm(boots,gbm, out.i) # clean up
+  
+  #TO DO: MOVE BCR BUFFERING TO OUTSIDE LOOP#########
 
 #Buffer BCR  -----------------------
   bcr.i <-  BCR %>% 
@@ -252,6 +262,9 @@ for(j in c(1:nrow(BCR_lookup))){  # select BCR
   
   Raster<-list()
   cat("Running bootstraps \n")
+  
+  #TO DO: CHANGE TO ACCOMODATE VARIABLE BOOTSTRAP #S################
+  #TO DO: WHY IS IT A LIST OF RASTERS?####
   
   for (k in c(1:10)){  #run through each bootstrap
     
@@ -319,6 +332,8 @@ cat("Mosaicking", Region, YR, "predictions for", SPP,"\n")
 
 # Import BCR extrapolation rasters by bootstrap -------
 
+#TO DO: FIX THE SPACING FOR THE LOOP HERE######
+
 for (k in c(1:10)){ # open bootstraps
   
 f <- lapply(list.files(path=file.path(root,"MosaicWeighting","MaskingRasters"), 
@@ -337,7 +352,7 @@ plot(Overlay)
 
 Extrapolation<-Correction<-Overlay
 Extrapolation[Extrapolation<1]<-0  #Areas we retain extrapolation because we have no alternative == 1
-writeRaster(Extrapolation,paste("ExtrapolatedArea_","boot",k,"_",Region,"_",SPP,"_",YR,".tif",sep=""), overwrite=T) #Save 
+writeRaster(Extrapolation,file.path(root, "MosiacWeighting", paste("ExtrapolatedArea_","boot",k,"_",Region,"_",SPP,"_",YR,".tif",sep="")), overwrite=T) #Save 
 
 Correction[Correction==1]<-0 #ignore areas where nothing *or* everything is missing 
 Correction[Correction>0]<- 1 #flag areas where non-extrapolated predictions exist in any layer
@@ -396,8 +411,11 @@ CANwideW<-crop(CANwideW,CANwideSp)
 # correct the weighting -------------
 FinalOut<-CANwideSp/CANwideW #== weighted average
 FinalOut<-mask(FinalOut,bcr.ca)
-writeRaster(FinalOut,paste("PredictionMosaic_boot",k,"_",Region,"_",SPP,"_",YR,".tif",sep=""), overwrite=T)
+writeRaster(FinalOut,file.path(root, "MosaicWeighting", paste("PredictionMosaic_boot",k,"_",Region,"_",SPP,"_",YR,".tif",sep="")), overwrite=T)
 plot(FinalOut)
 } # end of bootstraps
+
+#TO DO: ADD MEAN AND SD ACROSS BOOTSTRAPS#####
+#TO DO: ADD EXTRAPOLATION STUDY AREA RASTERS#########
 
 ########## END OF CODE ########################
