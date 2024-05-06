@@ -71,7 +71,7 @@ loc.buff2 <- st_buffer(loc.n, 2000)
 #B. EXTRACT COVARIATES FROM GOOGLE DRIVE####
 
 #1. Get list of layers to run----
-meth.gd <- dplyr::filter(meth, Source=="Google Drive", Complete==0)
+meth.gd <- dplyr::filter(meth, Source=="Google Drive")
 
 #2. Plain dataframe for joining to output----
  # loc.gd <- data.frame(loc.n) |>
@@ -806,16 +806,28 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
+#3. Attribute to country----
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp"))
+
+visit.country <- visit |> 
+  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
+  st_intersection(can) |> 
+  mutate(country = "can") |> 
+  full_join(visit) |> 
+  mutate(country = ifelse(is.na(country), "usa", country)) |> 
+  st_drop_geometry()
+
 #3. Add id to visit and join together and wrangle----
 meth.use <- meth |> 
   dplyr::filter(Use==1)
 
 #Remove lat lon fields due to rounding errors that cause mismatches
+#Remove 0 values for some layers that should be NAs
 #format landcover classes as factors
+#create eBird method and make method a factor
 #zero out heights < 0.1 and NA the height cv values for those
-#remove landfire values < 0, not sure what's going on there
 
-visit.covs <- visit |> 
+visit.covs <- visit.country |> 
   rename(row = id) |> 
   mutate(id=paste(project, location, lat, lon, year, sep="_")) |> 
   left_join(loc.gd |> 
@@ -826,7 +838,13 @@ visit.covs <- visit |>
   left_join(loc.gee.match) |> 
   dplyr::select(-id) |> 
   rename(id = row) |> 
-  dplyr::select(all_of(colnames(visit)), all_of(meth.use$Label)) |> 
+  dplyr::select(all_of(colnames(visit.country)), all_of(meth.use$Label)) |> 
+  mutate(NLCD_1km = ifelse(NLCD_1km==0, NA, NLCD_1km),
+         VLCE_1km = ifelse(VLCE_1km==0, NA, VLCE_1km),
+         usroad_1km = ifelse(country=="usa", usroad_1km, NA),
+         usroad_5x5 = ifelse(country=="usa", usroad_5x5, NA),
+         canroad_1km = ifelse(country=="can", canroad_1km, NA),
+         canroad_5x5 = ifelse(country=="can", canroad_5x5, NA),) |> 
   mutate(MODISLCC_1km = factor(MODISLCC_1km),
          MODISLCC_5x5 = factor(MODISLCC_5x5),
          SCANFI_1km = factor(SCANFI_1km),
@@ -836,14 +854,6 @@ visit.covs <- visit |>
          tagMethod = factor(tagMethod)) |> 
   mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
          method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT"))) |> 
-  mutate(LFheigth_1km = ifelse(LFheigth_1km < 0, NA, LFheigth_1km),
-         LFheigth_5x5 = ifelse(LFheigth_5x5 < 0, NA, LFheigth_5x5),
-         LFheigthcv_1km = ifelse(LFheigthcv_1km < 0, NA, LFheigthcv_1km),
-         LFheigthcv_5x5 = ifelse(LFheigthcv_5x5 < 0, NA, LFheigthcv_5x5),
-         LFbiomass_1km = ifelse(LFbiomass_1km < 0, NA, LFbiomass_1km),
-         LFbiomass_5x5 = ifelse(LFbiomass_5x5 < 0, NA, LFbiomass_5x5),
-         LFcrownclosure_1km = ifelse(LFcrownclosure_1km < 0, NA, LFcrownclosure_1km),
-         LFcrownclosure_5x5 = ifelse(LFcrownclosure_5x5 < 0, NA, LFcrownclosure_5x5)) |> 
   mutate(SCANFIheight_1km = ifelse(SCANFIheight_1km < 0.1, 0, SCANFIheight_1km),
          SCANFIheight_5x5 = ifelse(SCANFIheight_5x5 < 0.1, 0, SCANFIheight_5x5),
          SCANFIheightcv_1km = ifelse(SCANFIheight_1km < 0.1, NA, SCANFIheightcv_1km),
