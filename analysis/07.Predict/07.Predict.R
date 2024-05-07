@@ -27,7 +27,7 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -78,13 +78,16 @@ brt_predict <- function(i){
   
   #3. Load raster stack----
   stack.i <- rast(file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")))
-  names(stack.i) <- c("meth.i", names(stack.i)[2:dim(stack.i)[3]])
+  stack.i$meth.i <- stack.i$method
 
   #4. Predict----
-  pred.i <- terra::predict(model=b.i, object=stack.i, type="response")
+  pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
 
   #7. Save----
-  writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
+  if(class(pred.i)[1]=="SpatRaster"){
+    writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
+  }
+
   
 }
 
