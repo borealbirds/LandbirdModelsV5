@@ -116,7 +116,7 @@ brt_boot <- function(i){
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
   #9. Clean up to save space----
-  rm(visit.i, bird.i, year.i, meth.i, cov.i)
+  rm(bird.i, year.i, meth.i, cov.i)
   
   #10. Run model----
   set.seed(i)
