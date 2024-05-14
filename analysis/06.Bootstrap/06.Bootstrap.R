@@ -28,7 +28,7 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -72,7 +72,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 #9. Load data objects----
 print("* Loading data on workers *")
 
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "birdlist", "covlist", "bcrlist", "gridlist", "visit"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "gridlist", "visit"))
 
 #WRITE FUNCTION##########
 
@@ -151,7 +151,10 @@ tmpcl <- clusterExport(cl, c("brt_boot"))
 tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
                     file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)))  |> 
+  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
+               separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=TRUE) |> 
+               mutate(lr = as.numeric(str_sub(lr, -100, -3))))
 
 #2. Get learning rates----
 perf <- map_dfr(read.csv, .x=tuned$path) %>% 
