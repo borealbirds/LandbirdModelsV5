@@ -102,23 +102,20 @@ brt_boot <- function(i){
   #4. Get covariates and remove the nonsignificant ones----
   cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew[[i]]$var]
   
-  #5. Get PC vs SPT vs SPM vs eBird----
-  meth.i <- visit[visit$id %in% visit.i$id, "method"]
-  
-  #6. Get year----
+  #5. Add year----
   year.i <- visit[visit$id %in% visit.i$id, "year"]
   
-  #7. Put together data object----
-  dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
+  #6. Put together data object----
+  dat.i <- cbind(bird.i, year.i, cov.i) %>% 
     rename(count = bird.i)
   
-  #8. Get offsets----
+  #7. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #9. Clean up to save space----
-  rm(bird.i, year.i, meth.i, cov.i)
+  #8. Clean up to save space----
+  rm(bird.i, year.i, cov.i)
   
-  #10. Run model----
+  #9. Run model----
   set.seed(i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
                   data = dat.i[, -1],
@@ -129,13 +126,13 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
-  #11. Get performance metrics----
+  #10. Get performance metrics----
   out.i <- loop[i,] %>% 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
-  #12. Save----
+  #11. Save----
   save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
 }
@@ -196,8 +193,10 @@ for(i in 1:nrow(loop)){
   
   load(file=file.path(root, "output", "fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
   
+  #make sure to retain method and year
   covsnew[[i]] <- m.i[["contributions"]] %>% 
-    dplyr::filter(rel.inf >= 0.1)
+    dplyr::filter(rel.inf >= 0.1 |
+                    var %in% c("year", "method"))
   
 }
 
