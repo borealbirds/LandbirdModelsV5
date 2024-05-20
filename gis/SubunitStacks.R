@@ -135,7 +135,7 @@ units <- bcr.out |>
   unique() |> 
   expand_grid(year = seq(1985, 2020, 5)) 
 
-for(i in 267:nrow(units)){
+for(i in 1:nrow(units)){
   
   #2. Get subunit----
   bcr.i <- paste0(units$bcr[i])
@@ -164,21 +164,31 @@ for(i in 267:nrow(units)){
     #7. Read it in----
     rast.i <- rast(files.i$path[j])
     
+    print("read")
+    
     #8. Reproject as needed----
     if(crs(rast.i)!=crs(shp.i)){rast.i <- project(rast.i, crs(shp.i))}
+    
+    print("reproject")
     
     #9. Crop----
     crop.i <- crop(rast.i, shp.i) |> 
       mask(shp.i)
     names(crop.i) <- files.i$cov[j]
     
+    print("crop")
+    
     #10. Resample for extent as needed----
     if(j > 1){
       if(ext(crop.i)!=ext(stack.i)){crop.i <- resample(crop.i, stack.i)}
     } 
     
+    print("resample")
+    
     #11. Stack----
     if(j==1){stack.i <- crop.i} else {stack.i <- c(stack.i, crop.i)}
+    
+    print("stack")
     
     #12. Sanity check plot the first one----
     if(j==1) {
