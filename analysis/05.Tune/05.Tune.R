@@ -54,10 +54,7 @@ cc <- TRUE
 if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 2}
 
-#4. Set species subset if desired----
-sppuse <- c("OVEN")
-
-#5. Create nodes list----
+#4. Create nodes list----
 print("* Creating nodes list *")
 
 #For running on cluster
@@ -68,27 +65,30 @@ if(!cc){ nodeslist <- nodes }
 
 print(nodeslist)
 
-#6. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 
-#7. Set root path----
+#6. Set root path----
 print("* Setting root file path *")
-if(cc){root <- "/home/ecknight/NationalModels"}
+if(cc){root <- "/scratch/ecknight"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
-#8. Load packages on clusters----
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#9. Load data package----
+#8. Load data package----
 print("* Loading data on master *")
 
 load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+
+#9. Set species subset----
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 #10. Load data objects----
 print("* Loading data on workers *")

@@ -87,7 +87,6 @@ brt_predict <- function(i){
   if(class(pred.i)[1]=="SpatRaster"){
     writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   }
-
   
 }
 
@@ -135,7 +134,7 @@ print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
 #6. Run BRT function in parallel----
-print("* Fitting models *")
+print("* Making predictions *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
                   fun=brt_predict)
