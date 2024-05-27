@@ -8,6 +8,8 @@
 
 #This script finds the best learning rate for each combination of model subunt (BCR*country) and bird species.
 
+#The species list can be all the species available in the dataset or can be determined with a custom list.
+
 #It starts with a learning rate of 0.001 and then drops up or down one order of magnitude if the model has less than 1000 or 10000 trees (the max). Interaction depth is held constant at 3 (i.e., 3-way interactions are biologicaly plausible). Models that cannot achieve 1000-10000 trees with a learning rate of at least 1e-06 are dropped.
 
 #The other approach to tuning boosted regression trees is using a grid search of interaction depth & learning rate and picking the best parameters as the highest deviation explained. This approach was not used for the national models in the interest of efficiency.
