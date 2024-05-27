@@ -24,6 +24,8 @@
 
 #Oh right, and should probably parallelize it all.
 
+#Should swap out reduceregions rgee code for ee_extract in next version for faster implementation
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -269,7 +271,7 @@ for(i in 1:length(loop)){
 
 if("LFheigthcv_1k._conus" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd  |>
-    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1k,_conus),
+    mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1k_conus),
            LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km_conus),
            LFheigth_1km = ifelse(!is.na(LFheigth_1km), LFheigth_1km, LFheigth_1km_conus),
            LFheigthcv_1km = ifelse(!is.na(LFheigthcv_1km), LFheigthcv_1km, LFheigthcv_1km_conus),
