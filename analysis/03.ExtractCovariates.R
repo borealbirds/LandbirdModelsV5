@@ -809,7 +809,8 @@ loc.gd <- read.csv(file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 #3. Attribute to country----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp"))
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
+  dplyr::select(geometry)
 
 visit.country <- visit |> 
   st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
