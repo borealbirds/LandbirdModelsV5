@@ -28,307 +28,132 @@
 # 1) Downloading the "dsmextra" package from https://github.com/densitymodelling/dsmextra
 # 2) USA/CAN BCR overlap rasters and individual BCR weighting rasters produced 
 # in "gis/WeightingRasters.R"
+# 3) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
 
-#TO DO: ORGANIZE INTO HIGHER LEVEL SECTIONS#####
-#TO DO: FIGURE OUT WHY CANADA AND US ARE BEING DONE SEPARATELY####
-#TO DO: FIGURE OUT IF THERE ARE ACTUALLY GAPS OR NOT#######
+#PREAMBLE####
 
-# Load packages -------- 
+#1. Load packages -------- 
 library(sf)
 library(tidyverse)
 library(terra)
 library(leaflet)
 library(dsmextra)
-`%notin%` <- Negate(`%in%`)
 
-#1. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
+#2. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
 crs<-"+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
-#2. Set file paths ----
-root<-"G:/Shared drives/BAM_NationalModels/NationalModels5.0" #PC link
+#3. Set file paths ----
+root<-"G:/Shared drives/BAM_NationalModels/NationalModels5.0"
 
-#3. Canada and USA BCR boundaries ----
+#4. Buffered region shapefile----
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp")) |> 
+  mutate(bcr = paste0(country, subUnit))
 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
-  st_transform(crs=crs) # US boundary
-
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
-  st_transform(crs=crs) # Canadian boundary
-
-bcr.us <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% # remove BCR 1
-  st_transform(crs=crs) %>%
-  st_intersection(usa) %>% 
-  mutate(country="us") # Restrict to USA BCRs
-
-bcr.ca <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% # remove BCR 1
-  st_transform(crs=crs) %>%
-  st_intersection(can) %>% 
-  mutate(country="ca") # Restrict to Canadian BCRs
-
-#4.Functions for extrapolation analysis: pull appropriate rasters ---------------
-
-#(1) Function to extract raster list 
-# Returns matrix of raster pathways [1,] + variable names [2,]
-
-Get_paths<- function(Variables, YR){
-  
-  Path_list<-Name_list<-c()
-  Group.j<-dplyr::filter(Lookup,Lookup$Label %in% Variables)
-  
-  for (k in (1:nrow(Group.j))){ # Get variables within each group
-    
-    Period<-Static<-Name<-NULL
-    
-    # Return the closest year to desired period
-    if(Group.j$TemporalResolution[k]=="match") {
-      
-      years<-dir(file.path(root,Group.j$PredictPath[k]))%>%
-        stringr::str_sub(.,-8,-5)%>%as.numeric(.)%>%suppressWarnings()  #pull all years
-      
-      Match<-which(abs(years - YR) == min(abs(years - YR),na.rm=T))%>%
-        years[.]%>%unique(.)  #ID closest year (minimum value when two options)
-      
-      if(Group.j$YearMatch[k]==0){
-        
-        Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Match,".tif",sep="")
-      }    
-      
-      else if (Group.j$YearMatch[k]==(-1)){
-        
-        Lag<-min(which(abs(years[years!=Match]- (YR-1)) == min(abs(years[years!=Match] - (YR-1)),na.rm=T)))%>%
-          years[.]%>%unique(.)
-        
-        Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Lag,".tif",sep="")
-      }
-      
-    } else {
-      Static<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],".tif",sep="")
-    }
-    
-    Path_list<-c(Path_list,Period,Static) #early and static list
-    Name_list<-c(Name_list,Group.j$Label[k]) 
-    
-  } # close group
-  
-  return(list(Path_list,Name_list))
-}
-
-#(2) Function to stack rasters, crop by BCR, and convert to data frame 
-# Uses "Get_paths" function to extract rasters for stacking
-
-#TO DO: MAKE THIS MORE EFFICIENT. DOESN"T NEED TO LOOP THROUGH RASTERS########
-
-create_df <- function(Variables,YR,bcr.i){
-  
-  Stack<-list()  
-  e<-ext(bcr.i)
-  
-  call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr name
-  covariates<-covlist%>%dplyr::filter(bcr==call[1])%>%.[,.==TRUE]%>% colnames()#get co-variates, assumes that BCR covariates don't differ from pooled BCRs (81,82 and 41,42)
-  
-  Var<-Get_paths(Variables,YR=YR) #get raster paths
-  
-  Names<-Var[2]%>%unlist(.)
-  Retain<-Names %in% covariates  # ID ones we want by names [2,]
-  
-  Path<-data.frame(unlist(Var[1]),Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
-  Label<-data.frame(Names,Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
-  
-  for (k in 1:length(Path)) { #stack rasters
-    Stack[[k]]<-terra::rast(file.path(root, Path[k])) %>% 
-      project(.,crs)  %>%
-      crop(.,e) %>%
-      mask(.,bcr.i) 
-  }
-  
-  DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
-    as.data.frame(., xy=TRUE) 
-  
-  names(DF)<-c("x","y",Label)
-  
-  return(DF)
-}
-
-#5. Load lookup tables ----------
-
-#Variable look-up table:
-Lookup <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), 
-                             sheet = "ExtractionLookup") 
-
-Lookup$Raster<-Lookup$Label
-Lookup$Raster[Lookup$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
-Lookup$Raster[Lookup$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
-
-#Load data package with covariates and BCR lists
+#5. Load data package with covariates and BCR lists----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
-#rm(bird,gridlist,offsets)
-gc()
 
-#Limit covariates to those with continuous values
-cov_clean<-cov%>%dplyr::select(where(is.numeric))
-cov_clean<-cov_clean[names(cov_clean)!="hli3cl_1km"] #remove hli - it is categorical
+#EXTRAPOLATION ANALYSIS####
 
-#TO DO: REPLACE THIS WITH THE BIRDLIST AND LOOP AROUND SPECIES#######
+#1. Get list of covariates to include----
+cov_clean <- cov |> 
+  dplyr::select(where(is.numeric))
+cov_clean <- cov_clean[names(cov_clean)!="hli3cl_1km"] #remove hli - it is categorical
+cov_clean <- cov_clean[names(cov_clean)!="TRI_1km"] #remove tri - not using
 
-#Produce look-up table: "BCR label"->"spatial sf subunit": **Probably want to just make this an object in stratify
-BCR_Names <- colnames(bcrlist[-1])
-BCR_lookup <- data.frame(matrix(nrow=length(BCR_Names),ncol=0))
-BCR_lookup$Names<-BCR_Names
+#2. Get list of species and years to process----
 
-BCR_lookup$subUnit<-as.numeric(gsub("\\D", "", BCR_Names))
-BCR_lookup$Region<-gsub("[^a-zA-Z]", "", BCR_Names) # can vs. usa
-
-First<-Second<-Third<-subset(BCR_lookup,BCR_lookup$subUnit>100) #set multi. component BCRs to link to merged BCRs
-First$subUnit<-as.numeric(substr(First$subUnit,1,2))
-Second$subUnit<-as.numeric(substr(Second$subUnit,3,4))
-Third$subUnit<-as.numeric(substr(Second$subUnit,5,6))
-BCR_lookup<-rbind(subset(BCR_lookup,BCR_lookup$subUnit<100),
-                  First,Second,subset(Third,!is.na(Third$subUnit))) 
-rm(First,Second,Third,BCR_Names) #cleanup
-
-#6. Extrapolation Analysis ----
-
-### OK select species and year and Region ("can" vs "usa")
 SPP<-"OVEN"
 YR <-1985
-Region<-"can"
 
-if (Region=="can"){
-  BCRsource="bcr.ca"
-  BCR=bcr.ca 
-  BORDER=can
-}
+#3. Select regions that were modelled----
+BCR_lookup <- birdlist[,colnames(birdlist) %in% c("bcr", SPP)]
+BCR_lookup <- BCR_lookup[BCR_lookup[,2]==TRUE,]
 
-if (Region=="usa"){
-  BCRsource="bcr.us"
-  BCR=bcr.us
-  BORDER=usa
-}
+#TO DO: MOVE STEP 5 & 6 OUTSIDE J LOOP#########
 
-# Run through each BCR...---------------------------------------------
-
-for(j in c(1:nrow(BCR_lookup))){  # select BCR  
+#4. Set up BCR loop----
+for(j in 2:nrow(BCR_lookup)){  # select BCR  
   
-  # Get files for region
-  if(BCR_lookup$Region[j]!=Region){ 
-    cat("Skipping", BCR_lookup$Region[j], "BCRs...")
-    next
-  }
+  #5. Get list of bootstraps and check for completion----
+  file <- list.files(file.path(root, "Output","bootstraps"),pattern=paste(SPP,"_",BCR_lookup$bcr[j],".+",sep=""))
   
-  file<-list.files(file.path(root, "Output","bootstraps"),pattern=paste(SPP,"_",BCR_lookup$Names[j],".+",sep=""))
+  ck <- list.files(file.path(root,"MosaicWeighting","MaskingRasters"),
+                pattern=paste("ExtrapolatedArea_",BCR_lookup$bcr[j],".*",SPP,"_",YR,".tif", sep=""))
   
-  # Confirm all bootstraps available
-  if(length(file)!=10){ 
-    cat("missing bootstraps for",BCR_lookup$Names[j], ":skipping...\n")
-    next
-  }
-  
-  # Check if species-BCR-year has already run in totality
-  ck<-list.files(file.path(root,"MosaicWeighting","MaskingRasters"),
-                pattern=paste("ExtrapolatedArea_",BCR_lookup$Names[j],".*",SPP,"_",YR,".tif", sep=""))
-  if(length(ck)==10){
+  if(length(ck)==length(file)){
     cat("extrapolation complete, skipping...\n")
     next
   }
   
+  #6. Retrieve list of continuous covariates for that species---
   #Note: covariates are the same across boots, retrieve from one...
+  load(file.path(root, "Output","bootstraps",file[1]))
   
-  boots=load(file.path(root, "Output","bootstraps",file[1]))
-  gbm = get(boots[1])
+  Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
   
-  Variables<-gbm$var.names %>% 
-    subset(.,. %in% names(cov_clean)) # get continuous covariates
-  
-  Variables<-subset(Variables,Variables %notin% "TRI_1km") #temporary fix for TRI
-  
-  rm(boots,gbm, out.i) # clean up
-  
-  #TO DO: MOVE BCR BUFFERING TO OUTSIDE LOOP#########
+  #clean up
+  rm(visit.i, out.i, b.i)
 
-#Buffer BCR  -----------------------
-  bcr.i <-  BCR %>% 
-    dplyr::filter(subUnit==BCR_lookup$subUnit[j]) %>% 
-    st_buffer(100000)%>%  # Filter & buffer shapefile
-    st_intersection(., BORDER) #crop at border
+  #7. Load buffered BCR----
+  bcr.i <- bcr |> 
+    dplyr::filter(bcr==BCR_lookup$bcr[j])
   
-# Extract BCR specific data frames for each group. Year=2020  ---
-  cat("Retrieving",SPP,BCR_lookup$Names[j], "prediction values for", YR, "...")  
-  Dataframes<-create_df(Variables, YR=YR, bcr.i=bcr.i)
+  #8. Get the dataframe of raster values for that BCR*YR combination----
+  Dataframes <- as.data.frame(rast(file.path(root, "stacks", paste0(BCR_lookup$bcr[j], "_", YR, ".tif"))), xy=TRUE) 
   
-# Run through the bootstraps -------------------------
-  
-  Raster<-list()
+  #9. Set up bootstrap loop----
   cat("Running bootstraps \n")
   
-  #TO DO: CHANGE TO ACCOMODATE VARIABLE BOOTSTRAP #S################
-  #TO DO: WHY IS IT A LIST OF RASTERS?####
-  
-  for (k in c(1:10)){  #run through each bootstrap
+  for (k in 1:length(file)){  #run through each bootstrap
     
-    boots=load(file.path(root, "Output","bootstraps",file[k]))
-    ids=visit.i$id
+    load(file.path(root, "Output","bootstraps",file[k]))
+
+    #10. Get training data for that bootstrap----
+    sample <- cov_clean |> 
+      dplyr::filter(id %in% visit.i$id) |> 
+      dplyr::select(all_of(Variables))
+
+    #11. Create target dataframes----
+    target <- Dataframes |> 
+      dplyr::select(c("x","y",all_of(Variables))) 
     
-    # Get sample data for BCR -------------------------
-    sample.i<-cov_clean%>%subset(.,.$id %in% ids) 
-    
-    # Calculate extrapolation --
-    target=Dataframes
-    
-    # Ensure match training-predictor variables ------------------------
-    sample<-sample.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target - will get an xy warning
-    target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
-    
-    xp = names(sample)
-    
+    #12. Compute extrapolation----
     Extrapol <- compute_extrapolation(samples = sample,
-                                      covariate.names = xp,
+                                      covariate.names = names(sample),
                                       prediction.grid = target,
                                       coordinate.system = crs,
                                       verbose=F)
-
-#7.Output #######
     
-    #Produce binary raster of extrapolation area
+    #13. Produce binary raster of extrapolation area----
+    raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
+    raster[raster>0] <- 1  # extrapolated locations in each boot
+    raster[raster!=1|is.na(raster)]<-0 #eliminate NA areas
+    raster<-mask(raster,bcr.i) # crop to BCR + buffer
     
-    Raster[[k]]<-as(Extrapol$rasters$mic$all, "SpatRaster")
-    Raster[[k]][Raster[[k]]>0] <- 1  # extrapolated locations in each boot
-    Raster[[k]][Raster[[k]]!=1|is.na(Raster[[k]])]<-0 #eliminate NA areas
-    Raster[[k]]<-mask(Raster[[k]],bcr.i) # crop to BCR + buffer
-    
-    writeRaster(Raster[[k]],file.path(root,
+    #14. Write raster----
+    writeRaster(raster,file.path(root,
                 "MosaicWeighting","MaskingRasters",
-                paste("ExtrapolatedArea_",BCR_lookup$Names[j],"_boot",k,"_",SPP,"_",YR,".tif", sep="")), 
+                paste("ExtrapolatedArea_",BCR_lookup$bcr[j],"_boot",k,"_",SPP,"_",YR,".tif", sep="")), 
                 overwrite=T)
     
     # Print progress
-    cat("Finished", k, "of", 10, "bootstraps \n")
+    cat("Finished", k, "of", length(file), "bootstraps \n")
     
-  } #end of bootstraps - all extrapolated areas
+  }
   
-  #if (verbose) {
-  cat("Processed", j, "of",nrow(BCR_lookup), "BCRs \n")
-  #}
-} # end of BCRs
+  cat("Processed", j, "of", nrow(BCR_lookup), "BCRs \n")
 
-
-#8. Mosaic together predictions using edge weighting & removing extrapolation areas where alternate predictions exist
-
-#Determine region
-
-if(Region=="can") {
-  MosaicOverlap<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_Can.tif"))
 }
 
-if(Region=="usa") {
-  MosaicOverlap<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_US.tif"))
-}
+#MOSAIC##########
 
-#if (verbose) {
+#using edge weighting & removing extrapolation areas where alternate predictions exist
+
+#1. Get overlap raster----
+MosaicOverlap <- rast(file.path(root,"MosaicWeighting","ModelOverlap.tif"))
+
 cat("Mosaicking", Region, YR, "predictions for", SPP,"\n")
-# }
 
 # Import BCR extrapolation rasters by bootstrap -------
 
@@ -373,9 +198,9 @@ for(j in c(1:nrow(BCR_lookup))){  # select BCR
     cat("Missing",BCR_lookup$Names[j], "extrapolation output for", YR, SPP, "boot",k,"\n")
     next}
   
-  c<-terra::rast(file.path(root, "MosaicWeighting","MaskingRasters",c)) %>%crop(.,Correction) #correct edges (Newfoundland is off)
+  c<-terra::rast(file.path(root, "MosaicWeighting","MaskingRasters",c)) |>crop(.,Correction) #correct edges (Newfoundland is off)
   
-  cor<-Correction%>%crop(.,c)%>%mask(.,c)
+  cor<-Correction|>crop(.,c)|>mask(.,c)
   cor<-cor*c #if missing and substitute exists (1*1=1), if not missing or no substitute (0*1/1*0=0)
   cori<-classify(cor,cbind(1,0), others=1) #invert values to give regions with substitute values no weight
   
@@ -401,8 +226,8 @@ for(j in c(1:nrow(BCR_lookup))){  # select BCR
 } # end of BCRs
 
 # !sapply... deals with missing layers, can remove ultimately
-CANwideW<-MosaicStack[!sapply(MosaicStack,is.null)]%>%sprc(.)%>%mosaic(., fun="sum") #sum weighting (divisor)
-CANwideSp<-SppStack[!sapply(SppStack,is.null)]%>%sprc(.)%>%mosaic(., fun="sum") # sum weighted predictions
+CANwideW<-MosaicStack[!sapply(MosaicStack,is.null)]|>sprc(.)|>mosaic(., fun="sum") #sum weighting (divisor)
+CANwideSp<-SppStack[!sapply(SppStack,is.null)]|>sprc(.)|>mosaic(., fun="sum") # sum weighted predictions
 
 #the following is just to deal with missing layers, once run is complete it shouldn't need
 CANwideSp<-crop(CANwideSp,CANwideW)
@@ -417,5 +242,3 @@ plot(FinalOut)
 
 #TO DO: ADD MEAN AND SD ACROSS BOOTSTRAPS#####
 #TO DO: ADD EXTRAPOLATION STUDY AREA RASTERS#########
-
-########## END OF CODE ########################
