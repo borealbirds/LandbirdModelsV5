@@ -99,6 +99,12 @@ u.mosaic[u.mosaic>1]<-1
 OverlapUS <- as.polygons(u.mosaic) %>% .[2]
 writeVector(OverlapUS,paste(root,"MosaicWeighting/","BCR_Overlap_US", sep=""))
 
+#Combine the two
+MosaicOverlap1<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_Can.tif"))
+MosaicOverlap2<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_US.tif"))
+MosaicOverlap <- mosaic(MosaicOverlap1, MosaicOverlap2)
+writeRaster(MosaicOverlap, file.path(root, "MosaicWeighting","ModelOverlap.tif", sep=""), overwrite=TRUE)
+
 #5.Produce distance-to-the-edge raster for every BCR (for model weighting) ---------------
 # ***Note*** this extracts Canada, change selection where noted to produce US BCR outputs
 
