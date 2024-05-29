@@ -28,7 +28,7 @@ library(dsmextra)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -127,9 +127,7 @@ calc_extrapolation <- function(i){
   raster <- mask(raster, stack.i) # crop to BCR + buffer
   
   #14. Write raster----
-  writeRaster(raster, file.path(root, "MosaicWeighting", "MaskingRasters",
-                                paste0("ExtrapolatedArea_", BCR_lookup$bcr[i], "_boot", k, "_", SPP, "_", YR, ".tif")), 
-              overwrite=T)
+  writeRaster(raster, file.path(root, "output", "extrapolation", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
 }
 
@@ -177,8 +175,6 @@ mods <- parLapply(cl,
                   X=1:nrow(loop),
                   fun=calc_extrapolation)
 
-
-
 #CONCLUDE####
 
 #1. Close clusters----
@@ -186,9 +182,3 @@ print("* Shutting down clusters *")
 stopCluster(cl)
 
 if(cc){ q() }
-
-
-
-#4. Buffered region shapefile----
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp")) |> 
-  mutate(bcr = paste0(country, subUnit))
