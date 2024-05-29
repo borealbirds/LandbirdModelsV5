@@ -77,7 +77,7 @@ brt_predict <- function(i){
   load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
   #3. Load raster stack----
-  stack.i <- rast(file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")))
+  stack.i <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif")))
   stack.i$meth.i <- stack.i$method
 
   #4. Predict----
@@ -100,7 +100,7 @@ tmpcl <- clusterExport(cl, c("brt_predict"))
 #1. Set desired years----
 years <- seq(1985, 2020, 5)
 
-#2. Get list of models that are tuned----
+#2. Get list of models that are bootstrapped----
 booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
   separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
