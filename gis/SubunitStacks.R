@@ -197,7 +197,7 @@ for(i in 1:nrow(units)){
         geom_spatraster(data=crop.i) +
         geom_sf(data=shp.i, fill=NA, colour="black", linewidth = 2)
       
-      ggsave(plot.i, filename=file.path(root, "stacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
+      ggsave(plot.i, filename=file.path(root, "gis", "stacks", "CheckPlots", paste0(bcr.i, "_", year.i, ".jpeg")), width=6, height=4)
       
     }
     
@@ -225,7 +225,7 @@ for(i in 1:nrow(units)){
   stack.out <- c(meth.year.i, stack.i)
 
   #14. Save----
-  terra::writeRaster(stack.out, file.path(root, "stacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  terra::writeRaster(stack.out, file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
   rm(rast.i, stack.i, stack.out, crop.i, shp.i)
   
@@ -244,35 +244,3 @@ files.stack <- data.frame(file=list.files(file.path(root, "stacks"), pattern="*.
 
 todo.stack <- anti_join(units, files.stack)
 nrow(todo.stack)
-
-
-
-
-
-
-#MOVE THIS TO LATER#######
-#MASKING####
-
-#1. Get the water layer----
-water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
-  dplyr::filter(TYPE %in% c(16, 18)) |> 
-  st_transform(crs=crs(bcr.out)) |> 
-  vect()
-
-#2. Set up loop----
-for(i in 1:nrow(files.stack)){
-  
-  #3. Get the stack----
-  stack.i <- rast(file.path(root, "PredictionRasters", "SubunitStacks", "Unmasked", files.stack$file[i]))
-  
-  #4. Mask it----
-  mask.i <- mask(stack.i, water, inverse=TRUE)
-  
-  #5. Save it----
-  terra::writeRaster(mask.i, file.path(root, "PredictionRasters", "SubunitStacks", "Masked", paste0(files.stack$bcr[i], "_", files.stack$year[i], ".tif")), overwrite=TRUE)
-  
-  #6. Report----
-  print(paste0("Finished raster ", i, " of ", nrow(files.stack)))
-  
-  
-}
