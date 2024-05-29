@@ -111,7 +111,7 @@ writeRaster(MosaicOverlap, file.path(root, "MosaicWeighting","ModelOverlap.tif",
 
 #5. Produce distance-to-the-edge raster for every BCR (for model weighting)---------------
 
-for (i in 32:nrow(bcr)){
+for (i in 1:nrow(bcr)){
   
   bcr.i <-  bcr[i,]
   
