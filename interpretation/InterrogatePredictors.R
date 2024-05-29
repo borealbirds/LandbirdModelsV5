@@ -16,7 +16,18 @@
 #PREAMBLE############################
 
 #1. Attach packages----
+library(gbm)
 library(tidyverse)
+
+#2. Determine if testing and on local or cluster----
+test <- FALSE
+cc <- TRUE
+
+#3. Set nodes for local vs cluster----
+if(cc){ nodes <- 32}
+if(!cc | test){ nodes <- 4}
+
+makePSOCKcluster
 
 
 
@@ -26,44 +37,43 @@ library(tidyverse)
 
 
 #1. Connect to BAM Drive and create an index of output attributes----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/output/bootstraps"
+root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/"
 
 prediction_files <- list.files(root)
 
 loop <- 
   prediction_files %>% 
   stringr::str_split_fixed(pattern="_", n=3) %>% 
-  dplyr::as_tibble() %>% 
+  dplyr::as_tibble(.name_repair = "universal") %>% 
   magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
   dplyr::arrange(spp, bcr)
 
 
 
-#2. Generate covariate lists (remove covs that explain < 0.01 % of deviance)----
-# Based on code from "06.Bootstrap.R")
+#2. Generate covariate lists----
 
 covs <- list()
 for(i in 1:nrow(loop)){
   
   # define spp x bcr x bootstrap permutation
-  bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
+  bcr.i <- loop$bcr[i]
   boot.i <- loop$boot[i]
   # lr.i <- loop$lr[i]
   # id.i <- 3
   
-  # loads a `gbm` object named `m.i`. 
-  # `m.i$contributions` is a `data.frame` with columns `var` and `rel.inf`
-  load(file=file.path(root, "output", "bootstraps", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
+  # loads a `gbm` object named `b.i`
+  load(file=file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i)))
   
-  #make sure to retain method and year
-  covs[[i]] <- m.i[["contributions"]] %>% 
-    dplyr::filter(rel.inf >= 0.1 |
-                    var %in% c("year", "method"))
+  # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
+  covs[[i]] <- summary(b.i)
   
+  # print progress
+  cat(paste("\riteration", i))
+    Sys.sleep(0.5)
 }
 
-print("* Loading new covariate lists *")
+
 tmpcl <- clusterExport(cl, c("covs"))
 
 
