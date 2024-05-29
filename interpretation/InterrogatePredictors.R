@@ -19,51 +19,24 @@
 library(gbm)
 library(tidyverse)
 
-#2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
 
-#3. Set nodes for local vs cluster----
-if(cc){ nodes <- 32}
-if(!cc | test){ nodes <- 4}
+#2. Create a list of dataframes containing relative influence per covariate----
+#   Every list element represents a bootstrap sample 
 
-makePSOCKcluster
-
-
-
-#WRITE FUNCTION#######################
-# (this will eventually be a function for use in a package/shinyapp)
-
-
-
-#1. Connect to BAM Drive and create an index of output attributes----
+# Connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/"
 
-prediction_files <- list.files(root)
+# gbm_objs <- list.files(file.path(root, "output", "bootstraps"))
 
-loop <- 
-  prediction_files %>% 
-  stringr::str_split_fixed(pattern="_", n=3) %>% 
-  dplyr::as_tibble(.name_repair = "universal") %>% 
-  magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
-  dplyr::arrange(spp, bcr)
+gbm_objs_test <- gbm_objs[1:3] # for testing
 
 
-
-#2. Generate covariate lists----
-
+# Create a list of dataframes containing relative influence per covariate
 covs <- list()
-for(i in 1:nrow(loop)){
+for(i in 1:length(gbm_objs_test)){
   
-  # define spp x bcr x bootstrap permutation
-  spp.i <- loop$spp[i]
-  bcr.i <- loop$bcr[i]
-  boot.i <- loop$boot[i]
-  # lr.i <- loop$lr[i]
-  # id.i <- 3
-  
-  # loads a `gbm` object named `b.i`
-  load(file=file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i)))
+   # loads a `gbm` object named `b.i`
+  load(file=file.path(root, "output", "bootstraps", gbm_objs_test[i]))
   
   # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
   covs[[i]] <- summary(b.i)
@@ -74,27 +47,43 @@ for(i in 1:nrow(loop)){
 }
 
 
-tmpcl <- clusterExport(cl, c("covs"))
+#WRITE FUNCTION(S)#######################
+
+#' for roxygen2:
+
+#' @param species is `"all"` or a `character` with the FLBC indicating the species of interest.
+#'
+#' @param method not sure yet...
+#'
+#' @param type either 'ip' for an interpolating spline or 'smooth' for a
+#' smoothing spline. Uses \code{stats::spline()} or \code{stats::smooth.spline()}, respectively,
+#' for curve fitting and estimating the derivatives. Default is \code{type = 'smooth'}.
+#' See: ?spline and ?smooth.spline for details.
+#'
+#' @return a `data.frame` to be passed to a plotting function...tbd
+#'
+#' @examples ...tbd
+
+# what a user might want:
+# rel.inf by species
+# rel.inf by bcr
 
 
+rel_inf_bcr <- function(species=c("all", ...), method){
+  
+  
+  
+  
+}
+                        
+                        
+# v.4.0 summary data format
+#                      BCR                   varclass           x   total       prop
+#                      10 Northern Rockies   climate 21.651179070   115 1.882711e-01
+#                      10 Northern Rockies      time  2.806286740   115 2.440249e-02
+#                      10 Northern Rockies  veglocal 18.907945015   115 1.644169e-01
+#                      11 Prairie Potholes      topo  5.749344637   125 4.599476e-02
+#                      11 Prairie Potholes   climate 25.935521062   125 2.074842e-01
+#                      11 Prairie Potholes  veglocal 20.333884220   125 1.626711e-01
 
 
-
-# birdlist <- data.frame(bcr=bcrs)
-
-# # create `loop` object (see: "05.Tune.R")
-# bcr.spp <- birdlist %>% 
-#   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
-#   dplyr::filter(use==TRUE) %>% 
-#   dplyr::filter(spp %in% sppuse) %>% 
-#   dplyr::select(-use)
-# 
-# 
-# loop <- bcr.spp %>% 
-#   anti_join(done) %>% 
-#   anti_join(redo) %>% 
-#   mutate(lr = 0.001) %>% 
-#   rbind(redo %>% 
-#           dplyr::select(spp, bcr, lr.next) %>% 
-#           rename(lr = lr.next)) %>% 
-#   arrange(spp, bcr)
