@@ -223,13 +223,13 @@ for(i in 1:nrow(bcr.country)){
   #14. Reduce other areas of overlap----
   overlap.i <- crop(MosaicOverlap, st_transform(bcr.i, crs(MosaicOverlap)), mask=TRUE) |>
     round() |> 
-    resample(dist_fill) |> 
     project(crs(dist_fill))
   overlap.i[overlap.i < 3] <- 1
   overlap.i[overlap.i==3] <- 2/3
   overlap.i[overlap.i==4] <- 1/2
   
-  dist_out <- dist_fill*overlap.i
+  dist_out <- overlap.i*resample(dist_fill, overlap.i)
+  dist_out[dist_out > 1] <- 1
   plot(dist_out)
   
   #15. Crop to international boundary----
@@ -242,5 +242,15 @@ for(i in 1:nrow(bcr.country)){
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
   
 }
+
+#17. Check it----
+check <- list.files(file.path(root, "gis", "edgeweights"), full.names = TRUE)[-c(17,31)] |> 
+  lapply(rast) |> 
+  sprc() |> 
+  mosaic(fun="sum")
+plot(check)
+
+#Nope nope nopeity nope
+
 
 ###################### END OF CODE #####################################
