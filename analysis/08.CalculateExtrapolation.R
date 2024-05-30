@@ -1,6 +1,6 @@
 #-----------------------------------------------------
 # Title: Calculating extrapolation of models
-# Author: Anna Drake, Elly Knight
+# Author: Anna Drake, adapted by Elly Knight
 # Date: March 2024           
 #-----------------------------------------------------------------------------
 
