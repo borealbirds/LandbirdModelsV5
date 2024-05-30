@@ -69,7 +69,7 @@ bcr.can4142 <- bcr.ca |>
          subUnit = 4142)
 st_geometry(bcr.can4142) <- "geometry"
 
-bcr.usa41423 <- bcr.ca |> 
+bcr.usa41423 <- bcr.usa |> 
   dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
   st_union() |> 
   nngeo::st_remove_holes() |> 
