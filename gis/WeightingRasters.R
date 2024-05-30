@@ -109,8 +109,6 @@ OverlapUS <- as.polygons(u.mosaic) %>% .[2]
 writeVector(OverlapUS,paste(root,"MosaicWeighting/","BCR_Overlap_US", sep=""))
 
 #7. Combine the two----
-MosaicOverlap1<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_Can.tif"))
-MosaicOverlap2<-terra::rast(file.path(root,"MosaicWeighting","ModelOverlap_US.tif"))
 MosaicOverlap <- mosaic(MosaicOverlap1, MosaicOverlap2)
 writeRaster(MosaicOverlap, file.path(root, "gis","ModelOverlap.tif", sep=""), overwrite=TRUE)
 
@@ -131,7 +129,7 @@ bcr.can4142 <- bcr.ca |>
          subUnit = 4142)
 st_geometry(bcr.can4142) <- "geometry"
 
-bcr.usa41423 <- bcr.ca |> 
+bcr.usa41423 <- bcr.usa |> 
   dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
   st_union() |> 
   nngeo::st_remove_holes() |> 
@@ -167,6 +165,10 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
   anti_join(bcr.remove) |> 
   mutate(bcr = paste0(country, subUnit))
 
+ggplot(bcr.country |> 
+         dplyr::filter(!bcr %in% c("can8182", "usa414232"))) +
+  geom_sf(aes(fill=bcr), show.legend=FALSE)
+
 #3. Set up loop for BCR buffering----
 for(i in 1:nrow(bcr.country)){
   
@@ -182,7 +184,7 @@ for(i in 1:nrow(bcr.country)){
   #6. Polygon -> line----
   bcr.line <- st_cast(bcr.i, "MULTILINESTRING")
   
-  #7. Get distance from the edge for each point---
+  #7. Get distance from the edge for each point----
   dist <- st_distance(bcr.line, grid)
   
   #8. Dataframe as proportion of max distance----
@@ -198,29 +200,19 @@ for(i in 1:nrow(bcr.country)){
   dist_raster <- rasterize(dist_sf, r, "dist", fun = mean) |> 
     terra::disagg(fact=10, method="bilinear")
   
-  #15. Crop to international boundary----
-  if(bcr.i$country=="can"){ bcr.out <- mask(dist_raster, can)}
-  if(bcr.i$country=="usa"){ bcr.out <- mask(dist_raster, usa)}
+  #10. Save----
+  writeRaster(dist_raster, file.path(root, "gis", "edgeweights", paste0(bcr.i$bcr, ".tif")), overwrite=TRUE)
   
-  #16. Save----
-  writeRaster(bcr.out, paste0(root, "/gis/edgeweights/", bcr.i$bcr, ".tif"), overwrite=TRUE)
-  
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+  cat("Finished", i, "of", nrow(bcr.country), "BCRs \n")
   
 }
 
-#17. Check it----
-check <- list.files(file.path(root, "gis", "edgeweights"), full.names = TRUE)[-c(17,31)] |> 
+#11. Check it----
+check <- list.files(file.path(root, "gis", "edgeweights"), full.names = TRUE)[-c(17, 30)] |> 
   lapply(rast) |> 
   sprc() |> 
   mosaic(fun="sum")
 plot(check)
-
-compare <- list.files(path=file.path(root,"MosaicWeighting","BCR_Weighting"), full.names = TRUE) |> 
-  lapply(rast) |> 
-  sprc() |> 
-  mosaic(fun="sum")
-plot(compare)
 
 ###################### END OF CODE #####################################
                 
