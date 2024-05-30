@@ -6,7 +6,7 @@
 #-----------------------------------
 
 # This code produces 3 outputs: 
-# 1,2. A scored raster of BCR overlap for US and Canada + a shapefile of overlap zones 
+# 1 & 2. A scored raster of BCR overlap for US and Canada + a shapefile of overlap zones 
 # 3. Distance-weighting rasters for every BCR (decreasing weight toward edge)
 # These outputs are generic and are used within species-prediction mosaic code 
 # Distance weighting uses approach by Dominic Roye (dominicroye.github.io)
@@ -198,43 +198,9 @@ for(i in 1:nrow(bcr.country)){
   dist_raster <- rasterize(dist_sf, r, "dist", fun = mean) |> 
     terra::disagg(fact=10, method="bilinear")
   
-  #10. Make bcr raster----
-  bcr.r <- bcr.country[i,] |> 
-    rasterize(r) |> 
-    terra::disagg(fact=10, method="bilinear")
-  
-  #11. Invert----
-  bcr.inv <- bcr.r
-  bcr.inv[bcr.inv==1] <- 0 
-  bcr.inv[is.na(bcr.inv)] <- 1
-  
-  #11. Zero out the center----
-  dist_zero <- dist_raster*bcr.inv
-  
-  #12. Rescale----
-  dist_scale <- dist_zero/dist_zero@cpp[["range_max"]]
-  
-  #13. Fill in the center----
-  dist_fill <- list(dist_scale, bcr.r) |> 
-    sprc() |> 
-    mosaic(fun="sum") |> 
-    crop(st_transform(bcr.i, crs(MosaicOverlap)))
-  
-  #14. Reduce other areas of overlap----
-  overlap.i <- crop(MosaicOverlap, st_transform(bcr.i, crs(MosaicOverlap)), mask=TRUE) |>
-    round() |> 
-    project(crs(dist_fill))
-  overlap.i[overlap.i < 3] <- 1
-  overlap.i[overlap.i==3] <- 2/3
-  overlap.i[overlap.i==4] <- 1/2
-  
-  dist_out <- overlap.i*resample(dist_fill, overlap.i)
-  dist_out[dist_out > 1] <- 1
-  plot(dist_out)
-  
   #15. Crop to international boundary----
-  if(bcr.i$country=="can"){ bcr.out <- mask(dist_out, can)}
-  if(bcr.i$country=="usa"){ bcr.out <- mask(dist_out, usa)}
+  if(bcr.i$country=="can"){ bcr.out <- mask(dist_raster, can)}
+  if(bcr.i$country=="usa"){ bcr.out <- mask(dist_raster, usa)}
   
   #16. Save----
   writeRaster(bcr.out, paste0(root, "/gis/edgeweights/", bcr.i$bcr, ".tif"), overwrite=TRUE)
@@ -250,7 +216,11 @@ check <- list.files(file.path(root, "gis", "edgeweights"), full.names = TRUE)[-c
   mosaic(fun="sum")
 plot(check)
 
-#Nope nope nopeity nope
-
+compare <- list.files(path=file.path(root,"MosaicWeighting","BCR_Weighting"), full.names = TRUE) |> 
+  lapply(rast) |> 
+  sprc() |> 
+  mosaic(fun="sum")
+plot(compare)
 
 ###################### END OF CODE #####################################
+                
