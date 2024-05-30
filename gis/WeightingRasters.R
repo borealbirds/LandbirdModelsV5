@@ -171,8 +171,7 @@ bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, 
 for(i in 1:nrow(bcr.country)){
   
   #4. Filter & buffer shapefile----
-  bcr.i <- bcr.country |>
-    dplyr::filter(row_number()==i) |>
+  bcr.i <- bcr.country[i,] |> 
     st_buffer(100000)
   
   #5. Make fishnet----
@@ -199,11 +198,45 @@ for(i in 1:nrow(bcr.country)){
   dist_raster <- rasterize(dist_sf, r, "dist", fun = mean) |> 
     terra::disagg(fact=10, method="bilinear")
   
-  #10. Crop to international boundary----
-  if(bcr.i$country=="can"){ bcr.out <- mask(dist_raster, can)}
-  if(bcr.i$country=="usa"){ bcr.out <- mask(dist_raster, usa)}
+  #10. Make bcr raster----
+  bcr.r <- bcr.country[i,] |> 
+    rasterize(r) |> 
+    terra::disagg(fact=10, method="bilinear")
   
-  #11. Save----
+  #11. Invert----
+  bcr.inv <- bcr.r
+  bcr.inv[bcr.inv==1] <- 0 
+  bcr.inv[is.na(bcr.inv)] <- 1
+  
+  #11. Zero out the center----
+  dist_zero <- dist_raster*bcr.inv
+  
+  #12. Rescale----
+  dist_scale <- dist_zero/dist_zero@cpp[["range_max"]]
+  
+  #13. Fill in the center----
+  dist_fill <- list(dist_scale, bcr.r) |> 
+    sprc() |> 
+    mosaic(fun="sum") |> 
+    crop(st_transform(bcr.i, crs(MosaicOverlap)))
+  
+  #14. Reduce other areas of overlap----
+  overlap.i <- crop(MosaicOverlap, st_transform(bcr.i, crs(MosaicOverlap)), mask=TRUE) |>
+    round() |> 
+    resample(dist_fill) |> 
+    project(crs(dist_fill))
+  overlap.i[overlap.i < 3] <- 1
+  overlap.i[overlap.i==3] <- 2/3
+  overlap.i[overlap.i==4] <- 1/2
+  
+  dist_out <- dist_fill*overlap.i
+  plot(dist_out)
+  
+  #15. Crop to international boundary----
+  if(bcr.i$country=="can"){ bcr.out <- mask(dist_out, can)}
+  if(bcr.i$country=="usa"){ bcr.out <- mask(dist_out, usa)}
+  
+  #16. Save----
   writeRaster(bcr.out, paste0(root, "/gis/edgeweights/", bcr.i$bcr, ".tif"), overwrite=TRUE)
   
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
