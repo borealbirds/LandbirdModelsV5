@@ -59,7 +59,7 @@ for(i in 1:length(gbm_objs_test)){
   
   # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
   covs[[i]] <- b.i |>
-    gbm::summary.gbm() |>
+    gbm::summary.gbm(plotit = FALSE) |>
     dplyr::left_join(lookup, by="var") |>
     as_tibble() |> 
     dplyr::cross_join(x = _, sample_id[i,])
@@ -92,37 +92,65 @@ covs_all <- purrr::reduce(covs, full_join)
 
 rel_inf_bcr <- function(species=c("all", ...), method){
 
-  var_imp_sum <- 
-    covs[[1]] %>% 
-    group_by(bcr, var_class) %>% 
-    summarise(sum_importance = sum(rel.inf))
+  # sum relative influence by BCR and variable class
+  rel_inf_sum <- 
+    covs_all |> 
+    group_by(bcr, var_class) |> 
+    summarise(sum_influence = sum(rel.inf))
   
+  
+  # sum rel. influence of variable classes 
+  # var_sum <- 
+  #   covs_all |> 
+  #   group_by(var_class)  |>  
+  #   summarise(sum_var_class = sum(rel.inf))
+  
+  
+  # sum rel. influence of BCR
+  bcr_sum <-
+    covs_all |>  
+    group_by(bcr) |>  
+    summarise(sum_bcr = sum(rel.inf))
+  
+  
+  bcr_proportion_inf <- 
+    rel_inf_sum |> 
+    left_join(x = _, bcr_sum, by="bcr") |> 
+    mutate(prop = sum_influence/sum_bcr ) 
+  
+  
+  # colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
+  
+  cbPalette <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+  
+  ggplot() +
+    geom_bar(aes(x=bcr, y=prop, fill=var_class), data=bcr_proportion_inf, stat = "identity") + 
+    scale_fill_manual(values = cbPalette) +
+    theme_classic()
+    # theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    # theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.title =element_blank()) +
+    # theme_bw() 
+  
+  print("plotting proportion of variable influence per BCR")
   
 }
                         
 
-# v.4.0 summary data format
-#                      BCR                   varclass           x   total       prop
-#                      10 Northern Rockies   climate 21.651179070   115 1.882711e-01
-#                      10 Northern Rockies      time  2.806286740   115 2.440249e-02
-#                      10 Northern Rockies  veglocal 18.907945015   115 1.644169e-01
-#                      11 Prairie Potholes      topo  5.749344637   125 4.599476e-02
-#                      11 Prairie Potholes   climate 25.935521062   125 2.074842e-01
-#                      11 Prairie Potholes  veglocal 20.333884220   125 1.626711e-01
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/output/bootstraps"
 
-prediction_files <- list.files(root)
-
-loop <- 
-  prediction_files %>% 
-  stringr::str_split_fixed(pattern="_", n=3) %>% 
-  dplyr::as_tibble() %>% 
-  magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
-  dplyr::arrange(spp, bcr)
-
-bcr.i <- loop$bcr[i]
-spp.i <- loop$spp[i]
-boot.i <- loop$boot[i]
+# root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/output/bootstraps"
+# 
+# prediction_files <- list.files(root)
+# 
+# loop <- 
+#   prediction_files %>% 
+#   stringr::str_split_fixed(pattern="_", n=3) %>% 
+#   dplyr::as_tibble() %>% 
+#   magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
+#   dplyr::arrange(spp, bcr)
+# 
+# bcr.i <- loop$bcr[i]
+# spp.i <- loop$spp[i]
+# boot.i <- loop$boot[i]
 
 
 
