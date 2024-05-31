@@ -13,7 +13,7 @@
 
 # --------------------
 # This code requires:
-# 1) Downloading the "dsmextra" package from https://github.com/densitymodelling/dsmextra
+# 1) Downloading the "dsmextra" package from https://github.com/densitymodelling/dsmextra if running on a local or by loading the "dsmextra_fn.R" script if running on the cluster to get around the absence of rgdal on compute canada
 # 2) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
 
@@ -24,7 +24,6 @@ print("* Loading packages on master *")
 library(sf)
 library(tidyverse)
 library(terra)
-library(dsmextra)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
@@ -61,7 +60,6 @@ print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
-tmpcl <- clusterEvalQ(cl, library(dsmextra))
 
 #8. Load data package----
 print("* Loading data on master *")
@@ -83,6 +81,13 @@ crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +el
 print("* Loading data on workers *")
 
 tmpcl <- clusterExport(cl, c("birdlist", "crs", "cov_clean"))
+
+#12. Load the dsmextra functions----
+if(cc){source("/home/ecknight/NationalModels/dsmextra_fn.R")
+  tmpcl <- clusterExport(cl, c("addLegend_descreasing", "check_crs", "compute_extrapolation", "compute_nearby", "ExDet", "make_X", "map_extrapolation", "n_and_p", "proj_rasters", "rescale_cov", "summarise_extrapolation", "whatif", "whatif.opt"))}
+
+if(!cc){library(dsmextra)
+  tmpcl <- clusterEvalQ(cl, library(dsmextra))}
 
 #WRITE FUNCTION##########
 
