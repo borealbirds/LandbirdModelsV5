@@ -24,6 +24,7 @@ print("* Loading packages on master *")
 library(sf)
 library(tidyverse)
 library(terra)
+library(parallel)
 
 #2. Determine if testing and on local or cluster----
 test <- TRUE
