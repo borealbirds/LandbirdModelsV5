@@ -100,9 +100,9 @@ for(i in 1:nrow(loop)){
   #3. Loop file lists----
   #Take out the BCR aggregation option that's not being used
   predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i,
-                               !bcr %in% c("can8182", "usa414232"))
+                               !bcr %in% c("can8182", "usa41423", "usa2"))
   extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i,
-                                  !bcr %in% c("can8182", "usa414232"))
+                                  !bcr %in% c("can8182", "usa41423", "usa2"))
   
   #Skip loop if rows don't match
   if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } else { loop.i <- full_join(predicted.i, extrapolated.i)}
@@ -155,9 +155,7 @@ for(i in 1:nrow(loop)){
     cori <- classify(cor2, cbind(1,0), others=1)
     
     #11. Get the edge weighting raster----
-    # w <- rast(file.path(root, "gis", "edgeweights", paste0(loop.i$bcr[j], ".tif"))) |> 
-    #   resample(cori)
-    w <- rast(list.files(path=file.path(root,"MosaicWeighting","BCR_Weighting"), pattern=paste(loop.i$bcr[j], sep=""), full.names = TRUE)) |> 
+    w <- rast(file.path(root, "gis", "edgeweights", paste0(loop.i$bcr[j], ".tif"))) |>
       resample(cori)
     
     #12. Modify edge weighting raster to account for removed sections----
