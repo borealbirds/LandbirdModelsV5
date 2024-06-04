@@ -26,10 +26,11 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/"
 
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))
 
-gbm_objs_test <- gbm_objs[1:3] # for testing
-
+# NOTE: This script is currently formatted to find species with TRI as a covariate
+gbm_objs <- list.files(file.path(root, "output", "bootstraps")) |> 
+  grep("_4\\.R", x = _, value = TRUE) |> # filtering for 4th bootstrap (because BBCU only has bootstrap reps 4-10 (missing 1-3))
+  grep("CAJA", x = _, value=TRUE, invert = TRUE) #filtering out Canada Jay because it gave "Error in model.frame.default(formula = dat.i$count ~ . + offset(off.i),  : \n  invalid type (NULL) for variable 'offset(off.i)'\n" when trying to run summary(b.i)
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
 # lookup table is missing "Year" and "Method", so manually adding here
@@ -39,23 +40,42 @@ lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_VariableList.xlsx
   tibble::add_row(var_class = "Method", var = "method") |> 
   tibble::add_row(var_class = "Year", var = "year")
 
+# find which entries have bootstrap = 4 and bad bcrs
+bcr_boot_info <- 
+  gbm_objs |> 
+  stringr::str_split_fixed(pattern="_", n=3) |> 
+  gsub("\\.R", "", x = _) |>
+  dplyr::as_tibble() |> 
+  magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
+  mutate(bcr = str_remove(bcr, "can")) |> 
+  mutate(bcr = str_remove(bcr, "usa"))
+
+# get bad bcrs from Anna's email
+bad_bcr <- c("5", "9", "10", "11", "12", "13", "14", "61", "71", "80", "81", "8182")
+bad_bcr_index <- which(bcr_boot_info$bcr %in% bad_bcr)
+
+gbm_objs_bad_bcr <- gbm_objs[bad_bcr_index]
+
 
 # create an index containing the species (FLBC), BCR, and bootstrap replicate
+# noticing that BBCU only has bootstrap reps 4-10 (missing 1-3)
 sample_id <- 
-  gbm_objs_test |> 
+  gbm_objs_bad_bcr |> 
   stringr::str_split_fixed(pattern="_", n=3) |> 
-  gsub(".R", "", x = _) |>
+  gsub("\\.R", "", x = _) |>
   dplyr::as_tibble() |> 
-  magrittr::set_colnames(c("spp", "bcr", "boot")) |>
-  dplyr::arrange(spp, bcr)
+  magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
+  dplyr::filter(boot == 4) |> # filtering for 4th bootstrap to streamline finding species with TRI as a predictor
+  dplyr::filter(spp != "CAJA") |> 
+  dplyr::arrange(spp, bcr) 
 
-
+# "CAJA_can80_4.R" gives Error in model.frame.default(formula = dat.i$count ~ . + offset(off.i),  : \n  invalid type (NULL) for variable 'offset(off.i)'\n"
 # create a list of dataframes containing relative influence per covariate
 covs <- list()
-for(i in 1:length(gbm_objs_test)){
+for(i in 1:length(gbm_objs_bad_bcr)){
   
    # loads a `gbm` object named `b.i`
-  load(file=file.path(root, "output", "bootstraps", gbm_objs_test[i]))
+  load(file=file.path(root, "output", "bootstraps", gbm_objs_bad_bcr[i]))
   
   # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
   covs[[i]] <- b.i |>
@@ -72,6 +92,13 @@ for(i in 1:length(gbm_objs_test)){
 
 # flatten list of dataframes
 covs_all <- purrr::reduce(covs, full_join)
+
+# find which species have TRI as a predictor
+have_TRI <- covs_all |> 
+  filter(var == "TRI_1km") |> 
+  select(spp) |> 
+  unique()
+
 
 
 #WRITE FUNCTION#######################
