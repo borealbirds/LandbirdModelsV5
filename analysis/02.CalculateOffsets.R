@@ -98,6 +98,9 @@ for (i in 1:length(spp)) {
 }
 colnames(offsets) <- c("id", spp)
 
+#4. Fix GRAJ####
+offsets <- rename(offsets, CAJA = GRAJ)
+
 #E. SAVE####
 
 #1. Save----
