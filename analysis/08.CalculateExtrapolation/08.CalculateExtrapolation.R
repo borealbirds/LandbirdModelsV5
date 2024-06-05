@@ -27,7 +27,7 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -72,7 +72,6 @@ rm(bird, covlist, bcrlist, offsets, visit, gridlist)
 cov_clean <- cov |> 
   dplyr::select(where(is.numeric))
 cov_clean <- cov_clean[names(cov_clean)!="hli3cl_1km"] #remove hli - it is categorical
-cov_clean <- cov_clean[names(cov_clean)!="TRI_1km"] #remove tri - not using
 
 #10. Set crs----
 #NAD83(NSRS2007)/Conus Albers projection (epsg:5072)
@@ -84,8 +83,9 @@ print("* Loading data on workers *")
 tmpcl <- clusterExport(cl, c("birdlist", "crs", "cov_clean"))
 
 #12. Load the dsmextra functions----
+print("* Loading dsmextra *")
 if(cc){source("/home/ecknight/NationalModels/dsmextra_fn.R")
-  tmpcl <- clusterExport(cl, c("addLegend_descreasing", "check_crs", "compute_extrapolation", "compute_nearby", "ExDet", "make_X", "map_extrapolation", "n_and_p", "proj_rasters", "rescale_cov", "summarise_extrapolation", "whatif", "whatif.opt"))}
+  tmpcl <- clusterExport(cl, c("addLegend_decreasing", "check_crs", "compute_extrapolation", "compute_nearby", "ExDet", "make_X", "map_extrapolation", "n_and_p", "proj_rasters", "rescale_cov", "summarise_extrapolation", "whatif", "whatif.opt"))}
 
 if(!cc){library(dsmextra)
   tmpcl <- clusterEvalQ(cl, library(dsmextra))}
@@ -130,12 +130,17 @@ calc_extrapolation <- function(i){
   raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
   raster[raster>0] <- 1  # extrapolated locations in each boot
   raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
-  raster <- mask(raster, stack.i) # crop to BCR + buffer
   
   #14. Write raster----
   writeRaster(raster, file.path(root, "output", "extrapolation", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
 }
+
+#15. Export to clusters----
+print("* Loading function on workers *")
+
+tmpcl <- clusterExport(cl, c("calc_extrapolation"))
+
 
 #RUN EXTRAPOLATION###############
 
