@@ -42,7 +42,7 @@ season_1k<-project(season,r, method="near")
 writeRaster(occur_1k,"occur_1kmFINAL.tif")
 writeRaster(occur_5k,"occur_5kmFINAL.tif")
 writeRaster(recur_1k,"recur_1kmFINAL.tif")
-writeRaster(recur_1k,"recur_1kmFINAL.tif")
+writeRaster(season_1k,"seasonality_1kmFINAL.tif")
 
 
 # Roughness Topography - original BAM layer produced from AdaptWest DEM
