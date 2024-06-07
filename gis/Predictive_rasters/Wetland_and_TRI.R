@@ -1,5 +1,10 @@
-########
-
+################################################3
+#  BAM NM 5.0 - Producing Prediction Rasters JRC Global Surface Water
+#  Correcting 1km terrain roughness layer (coded "TRI" in models)
+#  Wetland data downloaded from GEE to disk
+#  Saved on disk and transfered to Google SharedDrive
+#  Author Anna Drake
+#################################################
 
 require(raster)
 require(terra)
@@ -15,17 +20,19 @@ r<-terra::rast(file.path(root,"PredictionRasters","Topography","mTPI_1km.tif"))
 #var region = ee.Geometry.BBox(-169.57, 71.22,-50.39, 38.09);
 #Export.image.toDrive({image: occur, description: 'Wetland_Occur',region: region,
 #scale: 350, maxPixels: 1e13,crs: 'EPSG:5072'});
-#
 # = ~ area of 200m radius circle, replicating covariate extraction scale
 
 # Occurrence
+
 occur<-terra::rast(file.path("G:/My Drive/Wetland","Wetland_Occur.tif"))
 occur_1k<-project(occur,r, method="near")
 
-## Get 5k scaling up from an averaged 1km resolution (as is done with other variables)
+## Get 5k scaling up from an averaged 1km resolution (as was done with Peatland)
+
 occur_5k<-occur%>%project(.,r)%>%focal(., w=matrix(1,5,5), fun=mean, na.rm=T)
 
 # Recurrence and Seasonality
+
 recur<-terra::rast(file.path("G:/My Drive/Wetland","Wetland_recur.tif"))
 recur_1k<-project(recur,r, method="near")
 
