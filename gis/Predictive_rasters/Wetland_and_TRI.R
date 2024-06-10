@@ -21,15 +21,17 @@ r<-terra::rast(file.path(root,"PredictionRasters","Topography","mTPI_1km.tif"))
 #Export.image.toDrive({image: occur, description: 'Wetland_Occur',region: region,
 #scale: 350, maxPixels: 1e13,crs: 'EPSG:5072'});
 # = ~ area of 200m radius circle, replicating covariate extraction scale
+# Correction - GEE appears to adjust resolution on these variables using
+# it's pyramid approach to categorical variables (likely due to these being temporal
+# not spatial. 350 therefore appears to be a nearest-neighbour sample, not a mean.
+# Alignment and proportional representation with the covariate values seems acceptable however
+# To match 5x5 covariate values in occurrence, image was exported at 5000m scale and 
+# nearest neighbour sampling was used to bring it back to 1km scale
 
 # Occurrence
 
 occur<-terra::rast(file.path("G:/My Drive/Wetland","Wetland_Occur.tif"))
 occur_1k<-project(occur,r, method="near")
-
-## Get 5k scaling up from an averaged 1km resolution (as was done with Peatland)
-
-occur_5k<-occur%>%project(.,r)%>%focal(., w=matrix(1,5,5), fun=mean, na.rm=T)
 
 # Recurrence and Seasonality
 
@@ -43,7 +45,6 @@ writeRaster(occur_1k,"occur_1kmFINAL.tif")
 writeRaster(occur_5k,"occur_5kmFINAL.tif")
 writeRaster(recur_1k,"recur_1kmFINAL.tif")
 writeRaster(season_1k,"seasonality_1kmFINAL.tif")
-
 
 # Roughness Topography - original BAM layer produced from AdaptWest DEM
 
