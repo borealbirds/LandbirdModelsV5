@@ -11,6 +11,8 @@ require(terra)
 require(dplyr)
 require(sf)
 
+root <- "G:/Shared drives/BAM_NationalModels5"
+
 # Template layer
 r<-terra::rast(file.path(root,"PredictionRasters","Topography","mTPI_1km.tif"))
 

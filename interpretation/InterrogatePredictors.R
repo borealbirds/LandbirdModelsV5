@@ -24,7 +24,7 @@ library(tidyverse)
 #   Every list element represents a bootstrap sample 
 
 # connect to BAM Drive and find bootstrap files 
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 
 # NOTE: This script is currently formatted to find species with TRI as a covariate
