@@ -28,9 +28,7 @@ root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/"
 
 
 # NOTE: This script is currently formatted to find species with TRI as a covariate
-gbm_objs <- list.files(file.path(root, "output", "bootstraps")) |> 
-  grep("_4\\.R", x = _, value = TRUE) |> # filtering for 4th bootstrap (because BBCU only has bootstrap reps 4-10 (missing 1-3))
-  grep("CAJA", x = _, value=TRUE, invert = TRUE) #filtering out Canada Jay because it gave "Error in model.frame.default(formula = dat.i$count ~ . + offset(off.i),  : \n  invalid type (NULL) for variable 'offset(off.i)'\n" when trying to run summary(b.i)
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:3]
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
 # lookup table is missing "Year" and "Method", so manually adding here
@@ -40,42 +38,23 @@ lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_VariableList.xlsx
   tibble::add_row(var_class = "Method", var = "method") |> 
   tibble::add_row(var_class = "Year", var = "year")
 
-# find which entries have bootstrap = 4 and bad bcrs
-bcr_boot_info <- 
+
+# create an index containing the species (FLBC), BCR, and bootstrap replicate
+# noticing that BBCU only has bootstrap reps 4-10 (missing 1-3)
+sample_id <- 
   gbm_objs |> 
   stringr::str_split_fixed(pattern="_", n=3) |> 
   gsub("\\.R", "", x = _) |>
   dplyr::as_tibble() |> 
   magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
-  mutate(bcr = str_remove(bcr, "can")) |> 
-  mutate(bcr = str_remove(bcr, "usa"))
-
-# get bad bcrs from Anna's email
-bad_bcr <- c("5", "9", "10", "11", "12", "13", "14", "61", "71", "80", "81", "8182")
-bad_bcr_index <- which(bcr_boot_info$bcr %in% bad_bcr)
-
-gbm_objs_bad_bcr <- gbm_objs[bad_bcr_index]
-
-
-# create an index containing the species (FLBC), BCR, and bootstrap replicate
-# noticing that BBCU only has bootstrap reps 4-10 (missing 1-3)
-sample_id <- 
-  gbm_objs_bad_bcr |> 
-  stringr::str_split_fixed(pattern="_", n=3) |> 
-  gsub("\\.R", "", x = _) |>
-  dplyr::as_tibble() |> 
-  magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
-  dplyr::filter(boot == 4) |> # filtering for 4th bootstrap to streamline finding species with TRI as a predictor
-  dplyr::filter(spp != "CAJA") |> 
   dplyr::arrange(spp, bcr) 
 
-# "CAJA_can80_4.R" gives Error in model.frame.default(formula = dat.i$count ~ . + offset(off.i),  : \n  invalid type (NULL) for variable 'offset(off.i)'\n"
 # create a list of dataframes containing relative influence per covariate
 covs <- list()
-for(i in 1:length(gbm_objs_bad_bcr)){
+for(i in 1:length(gbm_objs)){
   
    # loads a `gbm` object named `b.i`
-  load(file=file.path(root, "output", "bootstraps", gbm_objs_bad_bcr[i]))
+  load(file=file.path(root, "output", "bootstraps", gbm_objs[i]))
   
   # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
   covs[[i]] <- b.i |>
@@ -93,22 +72,21 @@ for(i in 1:length(gbm_objs_bad_bcr)){
 # flatten list of dataframes
 covs_all <- purrr::reduce(covs, full_join)
 
-# find which species have TRI as a predictor
-have_TRI <- covs_all |> 
-  filter(var == "TRI_1km") |> 
-  select(spp) |> 
-  unique()
 
 
 
 #WRITE FUNCTION#######################
 
-#' @param species is `"all"` or a `character` with the FLBC denoting the species of interest. 
-#' See `unique(sample_id$spp)` for possible species. 
+#' @param species The species to be summarised. Can be `"all"` or a `character` with the FLBC denoting the species of interest. 
+#' Perhaps we can work a species list into an exported data.frame, e.g. via `usethis::use_data(unique(sample_id$spp))`. 
 #' 
-#' @param method not sure yet...
+#' @param traits One of `avonet` (Tobias et al 2022), `x`, or `y`. Can also be a `data.frame` with species as rows and traits as columns (can we handle continuous traits?). 
+#' 
+#' @param plot If `TRUE`, creates a stacked bar plot with relative influence.
+#' 
+#' @param colours A `character` of hex codes specifying the colours if `plot = TRUE`. 
 #'
-#' @return a `data.frame` to be passed to a plotting function...tbd
+#' @return a `data.frame` To be passed to a plotting function...tbd
 #'
 #' @examples ...tbd
 
@@ -117,7 +95,7 @@ have_TRI <- covs_all |>
 # rel.inf by bcr
 
 
-rel_inf_bcr <- function(species=c("all", ...), method){
+rel_inf_bcr <- function(species=c("all", ...), traits, plot = FALSE){
 
   # sum relative influence by BCR and variable class
   rel_inf_sum <- 
