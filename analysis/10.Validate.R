@@ -22,7 +22,7 @@ library(DescTools)
 library(carat)
 
 #2. Set root path----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data file----
 load(file.path(root, "data", "04_NM5.0_data_stratify.R"))

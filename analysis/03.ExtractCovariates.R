@@ -20,11 +20,17 @@
 
 #This script extracts covariates for all data points. Efficiency could be improved by removing surveys outside of acceptable survey windows and the survey area prior to extraction
 
-#One way to improve the reproducibility and adding new layers would be to compile the list of layers to extract by comparing the full list to the column names of existing compiled objects instead of using the "running" and "complete" lookup columns. Similarly for GEE extraction and the downloaded files.
+#NOTES FOR V6:
 
-#Oh right, and should probably parallelize it all.
+#1. One way to improve the reproducibility and adding new layers would be to compile the list of layers to extract by comparing the full list to the column names of existing compiled objects instead of using the "running" and "complete" lookup columns. Similarly for GEE extraction and the downloaded files.
 
-#Should swap out reduceregions rgee code for ee_extract in next version for faster implementation
+#2. Oh right, and should probably parallelize it all.
+
+#3. Should swap out reduceregions rgee code for ee_extract in next version for faster implementation
+
+#4. Figure out why ALAN has negative values in extraction
+
+#5. Add sanity check: covariate distribution against prediction layers
 
 #PREAMBLE############################
 
@@ -38,7 +44,7 @@ library(rgee)
 ee_Initialize(gcs=TRUE)
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Get extraction methods lookup table----
 meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")

@@ -29,7 +29,7 @@ library(intrval) #required for QPAD
 library(data.table) #collapse list to dataframe
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #A. LOAD QPAD#####
 

@@ -24,7 +24,7 @@ library(nngeo) #fill holes in polygons
 library(tidyterra) #raster plotting
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with covariate lookup table----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))

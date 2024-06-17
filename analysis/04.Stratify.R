@@ -38,7 +38,7 @@ library(Matrix) #for sparse matrix conversion
 library(usdm) #VIF
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with offsets and covariates----
 load(file.path(root, "Data", "03_NM5.0_data_covariates.R"))
