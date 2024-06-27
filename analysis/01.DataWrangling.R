@@ -46,7 +46,7 @@ library(dggridR) #to make grid for checking for duplicates
 library(QPAD) #to load species list for bird data
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/Data"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #A. DOWNLOAD DATA FROM WILDTRAX#######################
 

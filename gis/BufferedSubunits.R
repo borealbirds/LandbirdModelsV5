@@ -17,7 +17,7 @@ library(sf) #basic shapefile handling
 library(nngeo) #fill holes in polygons
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #SUBUNIT POLYGONS#####################
 

@@ -24,7 +24,7 @@ library(nngeo) #fill holes in polygons
 library(tidyterra) #raster plotting
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with covariate lookup table----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
@@ -133,7 +133,7 @@ units <- bcr.out |>
   st_drop_geometry() |> 
   mutate(bcr = paste0(country, subUnit)) |> 
   unique() |> 
-  expand_grid(year = seq(1985, 2020, 5)) 
+  expand_grid(year = seq(1985, 2020, 5))
 
 for(i in 1:nrow(units)){
   
@@ -237,7 +237,7 @@ for(i in 1:nrow(units)){
 }
 
 #15. Check they're all there----
-files.stack <- data.frame(file=list.files(file.path(root, "stacks"), pattern="*.tif")) |> 
+files.stack <- data.frame(file=list.files(file.path(root, "gis", "stacks"), pattern="*.tif")) |> 
   separate(file, into=c("bcr", "year", "tif"), remove=FALSE) |>
   mutate(year = as.numeric(year)) |> 
   dplyr::filter(str_sub(file, -3, -1)!="xml")

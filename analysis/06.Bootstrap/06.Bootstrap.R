@@ -53,7 +53,7 @@ cl <- makePSOCKcluster(nodeslist, type="PSOCK")
 #6. Set root path----
 print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight"}
-if(!cc){root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0"}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
@@ -181,13 +181,21 @@ if(nrow(done) > 0){
   
 } else { loop <- todo }
 
+#7. Shut down if nothing left to do----
+if(nrow(loop)==0){
+  print("* Shutting down clusters *")
+  stopCluster(cl)
+  
+  if(cc){ q() }
+}
+
 #For testing - take the shortest duration models
 if(test) {loop <- arrange(loop, time)[1:2,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#7. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
+#8. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
 covsnew <- list()
 for(i in 1:nrow(loop)){
   
@@ -203,7 +211,7 @@ for(i in 1:nrow(loop)){
 print("* Loading new covariate lists *")
 tmpcl <- clusterExport(cl, c("covsnew"))
 
-#8. Run BRT function in parallel----
+#9. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),

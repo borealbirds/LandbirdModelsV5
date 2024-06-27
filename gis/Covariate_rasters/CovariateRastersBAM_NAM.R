@@ -19,7 +19,7 @@ library(tidyverse) #basic data wrangling
 library(terra) #basic raster handling
 
 #2. Set root path for data on google drive----
-root <- "G:/Shared drives/BAM_NationalModels/NationalModels4.1"
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #ABOVE#####
 
