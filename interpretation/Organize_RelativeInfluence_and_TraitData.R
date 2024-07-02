@@ -40,7 +40,7 @@ varclass_lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_Variable
   tibble::add_row(var_class = "Year", var = "year")
 
 
-# import Institute for Bird Populations database for appending scientific names to FLBCs
+# import IBP nomenclature for appending scientific names to FLBCs
 ibp <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "institute_for_bird_populations_species_codes.csv")) |> 
   dplyr::select(SPEC, SCINAME, COMMONNAME) |> 
   dplyr::rename(spp = SPEC, sci_name = SCINAME, common_name = COMMONNAME)
@@ -89,14 +89,22 @@ covs_all <- purrr::reduce(covs, full_join)
 
 #3. import trait databases----
 
-
+# AVONET: https://doi.org/10.1111/ele.13898
 avonet <- readxl::read_excel(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "avonet_database_eBird_taxonomy.xlsx"), sheet="AVONET2_eBird")
+pif
 
+
+# ACAD Scores
+# Population Size (`PS-g`) 
+# Breeding and Non-breeding Distributions (`BD-g` and `ND-g`)
+# Threats to Breeding (`TB-c`) and Non-breeding (`TN-c`)
+# Population Trend (`PT-c`)
+acad <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "acad_global_2024.csv"))
 
 
 # check that all BAM species are represented in trait databases 
 all(sample_id$sci_name %in% avonet$Species2)
-
+all(sample_id$sci_name %in% acad$sci_name)
 
 
 

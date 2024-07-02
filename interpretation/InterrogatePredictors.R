@@ -22,30 +22,29 @@
 
 #WRITE FUNCTION#######################
 #'
-#'@param .data An exported `data.frame` (see: `data(xyz)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
-#'@param ... `<tidy-select>` An unquoted expression specifying the grouping variable by which to summarise the relative influence of model covariates. E.g. `bcr` summarises the relative influence of model covariates by Bird Conservation Region, while `species` summarises covariates by taxon.  
+#'@param group_by `<tidy-select>` An unquoted expression specifying the grouping variable(s) by which to summarise the relative influence of model covariates. E.g. `bcr` summarises the relative influence of model covariates by Bird Conservation Region, while `species` summarises covariates by taxon. Expressions must be columns that exist in `bam_covariate_importance` or one of the trait databases (see: `traits` argument).  
 #'
-#' @param species The species to be summarised. Default is `"all"` but can also be a `character` with the FLBC or scientific name denoting the species of interest. We follow the taxonomy of the AOS 64th Supplement (July 21, 2023). 
+#'@param species The species to be summarised. Default is `"all"` but can also be a `character` with names (common, scientific, or FLBCs) denoting the species of interest. We follow the taxonomy of the AOS 64th Supplement (July 21, 2023). 
 #' Perhaps we can work a list of available species into an exported data.frame, e.g. via `usethis::use_data(unique(sample_id$sci_name))`. 
 #' 
-#' @param traits One of `avonet` (Tobias et al 2022), `x`, or `y`. Can also be a `data.frame` with species as rows (see `species` argument above) and traits as columns (can we handle continuous traits?). 
+#'@param bcr The Bird Conservation Regions to be summarised. Works in the same manner as `species`.
 #' 
-#' @param plot If `TRUE`, creates a stacked bar plot with relative influence.
+#'@param traits One of `avonet` (Tobias et al 2022) or `acad`. Can also be a `data.frame` with species as rows (see `species` argument above) and traits as columns (can we handle continuous traits?). 
 #' 
-#' @param colours A `character` of hex codes specifying the colours if `plot = TRUE`. 
+#'@param plot If `TRUE`, creates a stacked bar plot with relative influence.
+#' 
+#'@param colours A `character` of hex codes specifying the colours if `plot = TRUE`. 
 #'
-#' @return a `data.frame` To be passed to a plotting function...tbd
+#'@param export If `TRUE`, exports to an object the dataframe underlying any plots created by this function.
+#' 
+#'@return ...tbd
 #'
-#' @examples ...tbd
-
-# what a user might want:
-# rel.inf by species
-# rel.inf by bcr
-# to be able to choose what covariates they want to compare (i.e. exclude some covariates)? Or does that misrepresent the models somehow?
+#'@examples ...tbd
 
 
-bam_relative_influence <- function(.data = covs_all, ..., species=c("all", ...), traits = NULL, plot = FALSE){
+bam_explore <- function(data = covs_all, ..., species=c("all", ...), traits = NULL, plot = FALSE){
 
   
   # Filter the dataset based on the species if specified
