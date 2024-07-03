@@ -47,6 +47,7 @@
 
 # colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
 cbPalette <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+groups <- c("bcr", "var_class")
 
 bam_explore(data=covs_all, groups=c("bcr", "var_class"), traits=NULL)
 
@@ -73,9 +74,14 @@ bam_explore <- function(data = covs_all, groups=NULL, species="all", bcr="all", 
     print("trait data must be a `data.frame`")
   }
   
-  # sum relative influence by user-specified variable and variable class
-  
+  # get mean and std. deviation across bootstraps for each species x bcr x var_class permutation
   group_sym <- rlang::syms(groups) # for group_by
+  
+  boot_variance <-
+    covs_all |> 
+    group_by(!!!group_sym, sci_name) |> 
+    summarise(mean_boot = mean(rel.inf), sd_boot = sd(rel.inf))
+  
   
   # summarise covariate importance across user-specified groups
   rel_inf_sum <- 
@@ -116,39 +122,3 @@ bam_explore <- function(data = covs_all, groups=NULL, species="all", bcr="all", 
   
 }
                         
-
-
-# root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/output/bootstraps"
-# 
-# prediction_files <- list.files(root)
-# 
-# loop <- 
-#   prediction_files %>% 
-#   stringr::str_split_fixed(pattern="_", n=3) %>% 
-#   dplyr::as_tibble() %>% 
-#   magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
-#   dplyr::arrange(spp, bcr)
-# 
-# bcr.i <- loop$bcr[i]
-# spp.i <- loop$spp[i]
-# boot.i <- loop$boot[i]
-
-
-
-
-#4. create nested dataframe ----
-
-# Main Dataframe
-# main_df <- data.frame(
-#   species = unique(covs_all$sci_name),
-#   common_name = unique(covs_all$common_name)
-# )
-# 
-# # Species Dataframes with nested BCR and Trait Dataframes
-# species1_df <- data.frame(
-#   Habitat = "Habitat 1",
-#   Population = 100,
-#   BCRData = I(list(data.frame(BCRValue = 0.8))),
-#   TraitData = I(list(data.frame(Trait1 = "Trait1 Value 1", Trait2 = "Trait2 Value 1")))
-# )
-

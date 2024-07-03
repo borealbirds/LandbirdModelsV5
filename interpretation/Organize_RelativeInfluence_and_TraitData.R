@@ -28,7 +28,7 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:3]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:100]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -81,7 +81,6 @@ for(i in 1:length(gbm_objs)){
 
 # flatten list of dataframes
 covs_all <- purrr::reduce(covs, full_join)
-
 
 
 
