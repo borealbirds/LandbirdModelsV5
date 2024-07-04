@@ -10,7 +10,7 @@
 
 # The outputs will be analysed for identifying covariates of importance across several metrics (e.g. BCR, ecology, etc.).
 
-# This script generates the exported data for the R package function. 
+# This script generates the exported data for R package functions that summarise covariate performance. 
 
 
 
@@ -28,7 +28,7 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:100]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:3000, 100)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -80,7 +80,7 @@ for(i in 1:length(gbm_objs)){
 }
 
 # flatten list of dataframes
-covs_all <- purrr::reduce(covs, full_join)
+bam_covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
 
 
 

@@ -4,24 +4,6 @@
 # created: May 22, 2024
 # ---
 
-
-#NOTES################################
-
-# This script extracts covariate contributions to model predictions. 
-
-# The outputs will be analysed for identifying covariates of importance across several metrics (e.g. BCR, ecology, etc.)
-
-# The first part of this script generates the exported data for the R package function. 
-
-# The second part is the function that summarises the v.5.0 models. 
-
-
-
-
-
-
-#WRITE FUNCTION#######################
-#'
 #'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
 #'@param species The species to be summarised. Default is `"all"` but can also be a `character` with names (common, scientific, or FLBCs) denoting the species of interest. We follow the taxonomy of the AOS 64th Supplement (July 21, 2023). 
@@ -31,8 +13,9 @@
 #' 
 #'@param traits One of `avonet` (Tobias et al 2022) or `acad`. Can also be a `data.frame` with species as rows (see `species` argument above) and traits as columns (can we handle continuous traits?). 
 #' 
-#'@param group_by `<tidy-select>` An unquoted expression specifying 1-2 grouping variable(s) by which to summarise the relative influence of model covariates. 
-#'E.g. `group_by = bcr` summarises the relative influence of model covariates by Bird Conservation Region, while `species` summarises covariates by taxon. 
+#'@param groups A `character` specifying two grouping variables by which to summarise the relative influence of model covariates. 
+#'E.g. `groups = c("bcr", "var_class)"` summarises the relative influence of model covariates by Bird Conservation Region and variable class (e.g. Landcover, Biomass, Climate).
+#'Note that the first grouping variable must be discrete and will constitute the x-axis of a stacked barplot, while the relative influence will be estimated for the second grouping variable.  
 #'Expressions must be columns that exist in `bam_covariate_importance` or one of the trait databases (see: `traits` argument).  
 #' 
 #'@param plot If `TRUE`, creates a stacked bar plot with relative influence.
@@ -41,25 +24,22 @@
 #'
 #'@param export If `TRUE`, exports to an object the dataframe underlying any plots created by this function.
 #' 
-#'@return ...tbd
+#'@return A stacked barchart. The y-axis is the proportion of covariate importance.
 #'
 #'@examples ...tbd
 
-# colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
-cbPalette <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
-groups <- c("bcr", "var_class")
-
-bam_explore(data=covs_all, groups=c("bcr", "var_class"), traits=NULL)
 
 
-bam_explore <- function(data = covs_all, groups=NULL, species="all", bcr="all", traits = NULL, plot = FALSE, colours=NULL){
+bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
 
   
   # Filter the dataset by species if specified
   user_species <- species
   
   if (species != "all") {
-    covs_all <- covs_all |> dplyr::filter(species %in% user_species)
+    bam_covariate_importancel <- 
+      bam_covariate_importance |> 
+      dplyr::filter(species %in% user_species)
   }
   
   
@@ -70,31 +50,26 @@ bam_explore <- function(data = covs_all, groups=NULL, species="all", bcr="all", 
     
   
   # Check that trait data is the right class
-  if (is.data.frame(traits) == FALSE) {
-    print("trait data must be a `data.frame`")
+  if (is.null(traits) == FALSE & is.data.frame(traits) == FALSE) {
+    print("argument `traits` must be NULL or a `data.frame`")
   }
   
-  # get mean and std. deviation across bootstraps for each species x bcr x var_class permutation
-  group_sym <- rlang::syms(groups) # for group_by
-  
-  boot_variance <-
-    covs_all |> 
-    group_by(!!!group_sym, sci_name) |> 
-    summarise(mean_boot = mean(rel.inf), sd_boot = sd(rel.inf))
+  # for dplyr::group_by
+  group_sym <- rlang::syms(groups) 
   
   
   # summarise covariate importance across user-specified groups
   rel_inf_sum <- 
-    covs_all |> 
+    bam_covariate_importance |> 
     group_by(!!!group_sym) |> 
-    summarise(sum_influence = sum(rel.inf))
+    summarise(sum_influence = sum(rel.inf), .groups="keep")
 
   
   # calculate the sum of rel. influence of group 1
   var_sum1 <-
     rel_inf_sum |>
     group_by(!!group_sym[[1]])  |>
-    summarise(sum_group1 = sum(sum_influence))
+    summarise(sum_group1 = sum(sum_influence), .groups="keep")
   
   
   # calculate the sum of rel. influence of group 2
@@ -110,15 +85,86 @@ bam_explore <- function(data = covs_all, groups=NULL, species="all", bcr="all", 
     mutate(prop = sum_influence/sum_group1) 
   
   
-  ggplot() +
-    geom_bar(aes(x=groups[1], y=prop, fill=var_class), data=proportion_inf, stat = "identity") + 
-    scale_fill_manual(values = colours) +
-    theme_classic()
-    # theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    # theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.title =element_blank()) +
-    # theme_bw() 
+  barplot <- 
+    ggplot() +
+    geom_bar(aes(x=!!group_sym[[1]], y=prop, fill=!!group_sym[[2]]), data=proportion_inf, stat = "identity") + 
+    # scale_fill_manual(values = colours) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    
   
-  print(paste("plotting proportion of variable influence per"), grouping_vars, sep=" ")
+  print(barplot)
+  print(paste("plotting proportion of variable influence by", groups[1], "and", groups[2], sep=" "))
   
 }
-                        
+
+# test function
+# colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
+# colours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name", "var_class"), traits=NULL, colours=colours)
+
+
+}
+  
+
+
+
+
+
+
+
+
+
+
+
+
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+
+
+bamexplorer_boxplots(data = covs_all, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
+  
+ 
+    # for dplyr::group_by
+  group_sym <- rlang::syms(group) 
+  
+  # need to be able to specify what BCRs (or species or bird group, etc) to plot by
+  # summarise covariate importance across user-specified groups
+  rel_inf_sum <- 
+    bam_covariate_importance |> 
+    group_by(!!!group_sym) |> 
+    summarise(sum_influence = sum(rel.inf), .groups="keep")
+  
+  # calculate the sum of rel. influence of the grouped variable (e.g. species)
+  var_sum1 <-
+    rel_inf_sum |>
+    group_by(!!!group_sym)  |>
+    summarise(sum_group1 = sum(sum_influence), .groups="keep")
+  
+  proportion_inf <- 
+    rel_inf_sum |> 
+    left_join(x = _, var_sum1, by=group) |> 
+    mutate(prop = sum_influence/sum_group1) 
+  
+  ggplot(bam_covariate_importance[1:1000,], aes(x = var_class, y = rel.inf, fill = common_name)) +
+    geom_boxplot() +
+    labs(x = "Variable Class", y = "Relative Importance (%)", 
+         title = "Boxplot of Relative Importance for Biomass by Species") +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+}
+
+group <- "common_name"
+
+
+
+
+boot_variance <-
+  covs_all |> 
+  group_by(!!!group_sym, sci_name) |> 
+  summarise(mean_boot = mean(rel.inf), sd_boot = sd(rel.inf), .groups="keep")
