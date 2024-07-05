@@ -36,7 +36,8 @@ bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups 
   # Filter the dataset by species if specified
   user_species <- species
   
-  if (species != "all") {
+  if (user_species != "all" & 
+      (all(user_species %in% data$common_name)==TRUE | all(user_species %in% data$sci_name)==TRUE)) {
     bam_covariate_importancel <- 
       bam_covariate_importance |> 
       dplyr::filter(species %in% user_species)
@@ -58,30 +59,23 @@ bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups 
   group_sym <- rlang::syms(groups) 
   
   
-  # summarise covariate importance across user-specified groups
+  # sum covariate importance across for every permutation of group1 and group2
   rel_inf_sum <- 
     bam_covariate_importance |> 
     group_by(!!!group_sym) |> 
     summarise(sum_influence = sum(rel.inf), .groups="keep")
 
   
-  # calculate the sum of rel. influence of group 1
-  var_sum1 <-
+  # sum of covariate importance for each of group1 (all group2 sums are amalgamated into group1 bins)
+  group1_sum <-
     rel_inf_sum |>
     group_by(!!group_sym[[1]])  |>
     summarise(sum_group1 = sum(sum_influence), .groups="keep")
   
-  
-  # calculate the sum of rel. influence of group 2
-  # var_sum2 <-
-  #   rel_inf_sum |>  
-  #   group_by(!!group_sym[[2]]) |>  
-  #   summarise(sum_group2 = sum(sum_influence))
-  
-  
+  # get the %contribution of group2 covariates to overall covariate importance for a given group1
   proportion_inf <- 
     rel_inf_sum |> 
-    left_join(x = _, var_sum1, by=groups[1]) |> 
+    left_join(x = _, group1_sum, by=groups[1]) |> 
     mutate(prop = sum_influence/sum_group1) 
   
   
@@ -104,7 +98,7 @@ bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups 
 bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name", "var_class"), traits=NULL, colours=colours)
 
 
-}
+
   
 
 
@@ -128,32 +122,35 @@ bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name
 
 bamexplorer_boxplots(data = covs_all, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
   
- 
-    # for dplyr::group_by
-  group_sym <- rlang::syms(group) 
+  
+  
+  # for dplyr::group_by
+  group_sym <- rlang::syms(c(group, "var_class", "boot"))
   
   # need to be able to specify what BCRs (or species or bird group, etc) to plot by
-  # summarise covariate importance across user-specified groups
+  # sum rel. influence of the grouped variable (e.g. species) per `var_class` and `boot` replicate
   rel_inf_sum <- 
     bam_covariate_importance |> 
     group_by(!!!group_sym) |> 
     summarise(sum_influence = sum(rel.inf), .groups="keep")
   
-  # calculate the sum of rel. influence of the grouped variable (e.g. species)
-  var_sum1 <-
+  
+  # sum of covariate importance for each of group1 (all var_class sums are amalgamated into group1 bins)
+  group1_sum <-
     rel_inf_sum |>
-    group_by(!!!group_sym)  |>
+    group_by(!!group_sym[[1]], !!group_sym[[2]])  |>
     summarise(sum_group1 = sum(sum_influence), .groups="keep")
   
   proportion_inf <- 
     rel_inf_sum |> 
-    left_join(x = _, var_sum1, by=group) |> 
+    left_join(x = _, group1_sum, by=c(group, "var_class")) |> 
     mutate(prop = sum_influence/sum_group1) 
   
-  ggplot(bam_covariate_importance[1:1000,], aes(x = var_class, y = rel.inf, fill = common_name)) +
-    geom_boxplot() +
+  ggplot(proportion_inf[1:164,], aes(x = var_class, y = prop, fill = common_name)) +
+    geom_boxplot(alpha=0.05) +
+    geom_point(aes(colour=factor(!!group_sym[[1]])),  position = position_dodge(width = 0.75), alpha=0.7, size=2.5) +
     labs(x = "Variable Class", y = "Relative Importance (%)", 
-         title = "Boxplot of Relative Importance for Biomass by Species") +
+         title = "Covariate importance by Species") +
     theme_classic() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
