@@ -41,9 +41,7 @@ varclass_lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_Variable
 
 
 # import IBP nomenclature for appending scientific names to FLBCs
-ibp <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "institute_for_bird_populations_species_codes.csv")) |> 
-  dplyr::select(SPEC, SCINAME, COMMONNAME) |> 
-  dplyr::rename(spp = SPEC, sci_name = SCINAME, common_name = COMMONNAME)
+ibp <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "institute_for_bird_populations_species_codes.csv")) 
 
 
 # create an index containing the species (FLBC), BCR, and bootstrap replicate
