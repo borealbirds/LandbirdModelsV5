@@ -28,7 +28,7 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:3000, 100)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:500, 50)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -77,7 +77,7 @@ for(i in 1:length(gbm_objs)){
   Sys.sleep(0.05)
 }
 
-# flatten list of dataframes
+# mergelist of dataframes
 bam_covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
 
 

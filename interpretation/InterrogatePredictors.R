@@ -95,7 +95,7 @@ bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups 
 # test function
 # colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
 # colours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
-bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name", "var_class"), traits=NULL, colours=colours)
+bamexplorer_stackedbarchart(groups=c("common_name", "var_class"))
 
 
 
@@ -111,7 +111,7 @@ bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name
 
 
 
-
+# side-by-side boxplots displaying bootstrap variation by variable class
 #'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
 #'
@@ -120,8 +120,7 @@ bamexplorer_stackedbarchart(data=bam_covariate_importance, groups=c("common_name
 #'@examples ...tbd
 
 
-bamexplorer_boxplots(data = covs_all, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
-  
+bamexplorer_boxplots <- function(data = bam_covariate_importance, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
   
   
   # for dplyr::group_by
@@ -141,27 +140,82 @@ bamexplorer_boxplots(data = covs_all, group = NULL, species = "all", bcr = "all"
     group_by(!!group_sym[[1]], !!group_sym[[2]])  |>
     summarise(sum_group1 = sum(sum_influence), .groups="keep")
   
+  
   proportion_inf <- 
     rel_inf_sum |> 
     left_join(x = _, group1_sum, by=c(group, "var_class")) |> 
     mutate(prop = sum_influence/sum_group1) 
   
-  ggplot(proportion_inf[1:164,], aes(x = var_class, y = prop, fill = common_name)) +
-    geom_boxplot(alpha=0.05) +
+  
+  ggplot(proportion_inf, aes(x = var_class, y = prop, fill = !!group_sym[[1]])) +
+    geom_boxplot(position = position_dodge(width = 0.75), alpha=0.05) +
     geom_point(aes(colour=factor(!!group_sym[[1]])),  position = position_dodge(width = 0.75), alpha=0.7, size=2.5) +
     labs(x = "Variable Class", y = "Relative Importance (%)", 
-         title = "Covariate importance by Species") +
+         title = paste("Covariate importance by", group, sep=" ")) +
     theme_classic() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
 }
 
-group <- "common_name"
+# test function
+bamexplorer_boxplots(group="common_name")
 
 
 
 
-boot_variance <-
-  covs_all |> 
-  group_by(!!!group_sym, sci_name) |> 
-  summarise(mean_boot = mean(rel.inf), sd_boot = sd(rel.inf), .groups="keep")
+
+
+
+
+
+
+# partial dependence plot
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'
+#'@param ... This allows users to pass additional arguments to `gbm::plot.gbm()`
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+
+
+# group by bootstrap
+f <- function(model, ...){
+  
+  plot.gbm(x=model, ...)
+  
+}
+
+f(model=b.i, i.var="SCANFIDouglasFir_1km")
+
+
+
+# group `b.i` objects by `bcr` x `species` x `var_class` (or var?)
+# group_rows() finds their row index
+boot_groups <- 
+  bam_covariate_importance |> 
+  dplyr::group_by(bcr, common_name, var_class) |> 
+  dplyr::group_rows()
+
+# get average model predictions for each `bcr` x `species` x `var_class` group (`return=TRUE` in `plot.gbm()`)
+pd_pred_list <- list()
+for (i in 1:length(boot_groups)){
+  
+  for (j in 1:length(boot_groups[[i]]) {
+    # Generate the partial dependence data for each model
+    pd_pred_list[[i]] <- gbm::plot.gbm(gbm_objs[[]], i.var = i.var, n.trees = n.trees, return.grid = TRUE)
+    
+}
+
+f <- function(x){
+    
+  load(file=file.path(root, "output", "bootstraps", gbm_objs[i]))
+}
+lapply(gbm_objs, gbm::plot.gbm, return.grid=TRUE)
+
+
+#####
+
+# 1. load a b.i
+# 2. get model predictions? But I need an i.var...?
+
