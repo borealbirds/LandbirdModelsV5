@@ -28,7 +28,7 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:500, 50)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:500, 250)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -52,7 +52,6 @@ sample_id <-
   gsub("\\.R", "", x = _) |>
   tibble::as_tibble() |> 
   magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
-  dplyr::arrange(spp, bcr) |> 
   dplyr::left_join(ibp)
 
 
@@ -70,11 +69,12 @@ for(i in 1:length(gbm_objs)){
     gbm::summary.gbm(plotit = FALSE) |>
     dplyr::left_join(varclass_lookup, by="var") |>
     as_tibble() |> 
-    dplyr::cross_join(x = _, sample_id[i,]) 
+    dplyr::cross_join(x = _, sample_id[i,]) |> 
+    dplyr::mutate(file_name = gbm_objs[i])
   
   # print progress
   cat(paste("\riteration", i))
-  Sys.sleep(0.05)
+  Sys.sleep(0.001)
 }
 
 # mergelist of dataframes

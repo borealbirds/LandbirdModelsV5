@@ -179,43 +179,84 @@ bamexplorer_boxplots(group="common_name")
 #'@examples ...tbd
 
 
-# group by bootstrap
-f <- function(model, ...){
+# this loop creates a list of lists of `data.frame`s. 
+# each top level element is a bootstrap replicate, each second-level element represents a covariate for that bootstrap.
+# each covariate has a corresponding `data.frame`, with column 1 being the covariate domain and column 2 being the predicted range.
+boot_pts <- list()
+for (q in 1:length(gbm_objs)){
   
-  plot.gbm(x=model, ...)
+  # load a bootstrap replicate 
+  load(file.path(root, "output", "bootstraps", gbm_objs[q]))
   
+  # find evaluation points (`data.frame`) for every covariate (indexed by `i`)  
+  pts <- list()
+  for (i in 1:length(b.i$var.names)){
+  pts[[i]] <- plot.gbm(x=b.i, return.grid = TRUE, i.var = i)
+  }
+  
+  boot_pts[[q]] <- pts
+  
+  # print progress
+  cat(paste("\riteration", q))
+  Sys.sleep(0.001)
 }
 
-f(model=b.i, i.var="SCANFIDouglasFir_1km")
+# now, for every species x bcr x var permutation, i want to find the average and s.d. x and y grid
 
-
-
-# group `b.i` objects by `bcr` x `species` x `var_class` (or var?)
-# group_rows() finds their row index
-boot_groups <- 
+# group `b.i` objects by bcr x species x var (or var_class?)
+# group_keys() finds the names of the group permutations
+# 1617 permutations of  bcr x common_name x var 
+boot_group_keys <- 
   bam_covariate_importance |> 
-  dplyr::group_by(bcr, common_name, var_class) |> 
-  dplyr::group_rows()
+  dplyr::group_by(bcr, common_name, var) |> 
+  dplyr::group_keys()
 
-# get average model predictions for each `bcr` x `species` x `var_class` group (`return=TRUE` in `plot.gbm()`)
-pd_pred_list <- list()
-for (i in 1:length(boot_groups)){
+
+# go into boot_group_rows[i] and find row numbers for the ith species x bcr x var permutation
+# the name of the sbv permutation is boot_group_keys[i,]
+# use boot_group_keys[i,]$var to get the variable name; use that name to search the column names of boot_pts[[i]]
+# when the column 1 name matches boot_group_keys[i], then assign it to newlist[[i]]
+
+
+# output: a list of lists where the top level elements are species x bcr x var permutations, 
+# and the second-level elements are dataframes of the associated bootstrapped model predictions
+
+boot_pts_sorted <- list()
+for (z in 1:length(boot_group_rows)){
   
-  for (j in 1:length(boot_groups[[i]]) {
-    # Generate the partial dependence data for each model
-    pd_pred_list[[i]] <- gbm::plot.gbm(gbm_objs[[]], i.var = i.var, n.trees = n.trees, return.grid = TRUE)
+  key_z <- boot_group_keys[z,]
+  
+  # `sample_id` and `boot_pts` have the same length and order
+  # so we can annotate elements in `boot_pts` using info from `sample_id`
+  boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
+  
+  # a list of bootstrap predictions for zth species x bcr permutation 
+  spp_bcr_list <- boot_pts[boot_pts_index]
+  
+  # search for all bootstrap predictions for the zth covariate
+  spp_bcr_var <- list()
+  for (w in 1:length(spp_bcr_list)) {
     
+    # get covariate names for the current spp x bcr permutation 
+    var_names <- 
+      lapply(spp_bcr_list[[w]], colnames) |> 
+      lapply(X=_, `[[`, 1) |> #don't need the name of the y variable
+      purrr::flatten_chr()
+    
+    # find which elements match the current covariate of interest
+    spp_bcr_var[[w]] <- spp_bcr_list[[w]][which(var_names %in% key_z)] 
+  }
+  
+  boot_pts_sorted[[z]] <- spp_bcr_var
+  names(boot_pts_sorted[[z]]) <- toString(boot_group_keys[z,])
+  
+  # print progress
+  cat(paste("\riteration", z))
+  Sys.sleep(0.001)
 }
 
-f <- function(x){
-    
-  load(file=file.path(root, "output", "bootstraps", gbm_objs[i]))
-}
-lapply(gbm_objs, gbm::plot.gbm, return.grid=TRUE)
+ 
 
 
-#####
 
-# 1. load a b.i
-# 2. get model predictions? But I need an i.var...?
 
