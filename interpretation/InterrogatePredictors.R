@@ -168,7 +168,6 @@ bamexplorer_boxplots(group="common_name")
 
 
 
-
 # partial dependence plot
 #'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
@@ -178,85 +177,87 @@ bamexplorer_boxplots(group="common_name")
 #'
 #'@examples ...tbd
 
-
-# this loop creates a list of lists of `data.frame`s. 
-# each top level element is a bootstrap replicate, each second-level element represents a covariate for that bootstrap.
-# each covariate has a corresponding `data.frame`, with column 1 being the covariate domain and column 2 being the predicted range.
-boot_pts <- list()
-for (q in 1:length(gbm_objs)){
-  
-  # load a bootstrap replicate 
-  load(file.path(root, "output", "bootstraps", gbm_objs[q]))
-  
-  # find evaluation points (`data.frame`) for every covariate (indexed by `i`)  
-  pts <- list()
-  for (i in 1:length(b.i$var.names)){
-  pts[[i]] <- plot.gbm(x=b.i, return.grid = TRUE, i.var = i)
-  }
-  
-  boot_pts[[q]] <- pts
-  
-  # print progress
-  cat(paste("\riteration", q))
-  Sys.sleep(0.001)
-}
-
 # now, for every species x bcr x var permutation, i want to find the average and s.d. x and y grid
+library(splines)
 
-# group `b.i` objects by bcr x species x var (or var_class?)
-# group_keys() finds the names of the group permutations
-# 1617 permutations of  bcr x common_name x var 
-boot_group_keys <- 
-  bam_covariate_importance |> 
-  dplyr::group_by(bcr, common_name, var) |> 
-  dplyr::group_keys()
-
-
-# go into boot_group_rows[i] and find row numbers for the ith species x bcr x var permutation
-# the name of the sbv permutation is boot_group_keys[i,]
-# use boot_group_keys[i,]$var to get the variable name; use that name to search the column names of boot_pts[[i]]
-# when the column 1 name matches boot_group_keys[i], then assign it to newlist[[i]]
-
-
-# output: a list of lists where the top level elements are species x bcr x var permutations, 
-# and the second-level elements are dataframes of the associated bootstrapped model predictions
-
-boot_pts_sorted <- list()
-for (z in 1:length(boot_group_rows)){
+bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_name, covariate) {
   
-  key_z <- boot_group_keys[z,]
+  # construct the key for accessing the desired data frame
+  key <- paste(bcr, common_name, covariate, sep = "_")
   
-  # `sample_id` and `boot_pts` have the same length and order
-  # so we can annotate elements in `boot_pts` using info from `sample_id`
-  boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
-  
-  # a list of bootstrap predictions for zth species x bcr permutation 
-  spp_bcr_list <- boot_pts[boot_pts_index]
-  
-  # search for all bootstrap predictions for the zth covariate
-  spp_bcr_var <- list()
-  for (w in 1:length(spp_bcr_list)) {
-    
-    # get covariate names for the current spp x bcr permutation 
-    var_names <- 
-      lapply(spp_bcr_list[[w]], colnames) |> 
-      lapply(X=_, `[[`, 1) |> #don't need the name of the y variable
-      purrr::flatten_chr()
-    
-    # find which elements match the current covariate of interest
-    spp_bcr_var[[w]] <- spp_bcr_list[[w]][which(var_names %in% key_z)] 
+  # check if the key exists in the data
+  if (!key %in% names(data)) {
+    stop("The specified combination of species, bcr, and covariate does not exist.")
   }
   
-  boot_pts_sorted[[z]] <- spp_bcr_var
-  names(boot_pts_sorted[[z]]) <- toString(boot_group_keys[z,])
+  # combine all the data frames into a single data frame
+  combined_df <- bind_rows(data[[key]], .id = "replicate")
   
-  # print progress
-  cat(paste("\riteration", z))
-  Sys.sleep(0.001)
+  # convert the covariate to a symbol for dynamic grouping
+  covariate_sym <- rlang::sym(covariate)
+  
+  # create a grid of x values for prediction
+  x_grid <- seq(min(combined_df[[covariate]]), max(combined_df[[covariate]]), length.out = 100)
+  
+  # Fit a smoothing function to each bootstrap replicate and predict over the grid
+  predictions <- map(data[[key]], ~ {
+    df <- .x
+    fit <- smooth.spline(df[[covariate]], df$y)
+    predict(fit, x_grid)$y
+  })
+  
+  # Combine predictions into a data frame
+  prediction_df <- do.call(cbind, predictions)
+  colnames(prediction_df) <- paste0("Replicate_", seq_along(predictions))
+  prediction_df <- as.data.frame(prediction_df)
+  prediction_df[[covariate]] <- x_grid
+  
+  # Calculate summary statistics (mean and error bounds) for each x value
+  summary_df <- prediction_df %>%
+    pivot_longer(cols = starts_with("Replicate_"), names_to = "Replicate", values_to = "PredictedResponse") %>%
+    group_by(!!covariate_sym) %>%
+    summarise(
+      MeanResponse = mean(PredictedResponse),
+      LowerBound = quantile(PredictedResponse, 0.025),
+      UpperBound = quantile(PredictedResponse, 0.975)
+    )
+  
+  # Create the partial dependence plot with error envelope
+  ggplot(summary_df, aes(x = !!covariate_sym, y = MeanResponse)) +
+    geom_line(color = "blue") +
+    geom_ribbon(aes(ymin = LowerBound, ymax = UpperBound), alpha = 0.2, fill = "blue") +
+    labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate),
+         x = covariate, y = "Predicted Response") +
+    theme_minimal()
+  
+  
 }
 
- 
 
+# single plot
+ggplot(boot_pts_sorted[[2]]$`bootstrap replicate_1`, aes(x = AHM_1km, y=y))+
+  geom_line()
 
+# faceted plot
+# Extract each bootstrap replicate from boot_pts_sorted[[1]]
+replicate_1 <- boot_pts_sorted[[1]][[1]]
+replicate_2 <- boot_pts_sorted[[1]][[2]]
+replicate_3 <- boot_pts_sorted[[1]][[3]]
+replicate_4 <- boot_pts_sorted[[1]][[4]]
 
+# Combine into one data frame with a 'replicate' identifier
+combined_data <- bind_rows(
+  mutate(replicate_1, replicate = "Replicate 1"),
+  mutate(replicate_2, replicate = "Replicate 2"),
+  mutate(replicate_3, replicate = "Replicate 3"),
+  mutate(replicate_4, replicate = "Replicate 4")
+)
 
+# Convert 'replicate' to a factor for correct faceting
+combined_data$replicate <- factor(combined_data$replicate, levels = c("Replicate 1", "Replicate 2", "Replicate 3", "Replicate 4"))
+
+# Create faceted plot
+ggplot(combined_data, aes(x = AHM_1km, y = y)) +
+  geom_line() +
+  facet_wrap(~ replicate, scales = "free") +
+  labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
