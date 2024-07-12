@@ -301,18 +301,18 @@ for(i in 1:nrow(todo)){
   #17. Save some things----
   #Save test data for national evaluation
   test.list[[i]] <- test.i |> 
-    dplyr::filter(id, year, cell, count, offset, fitted, prediction) |> 
+    dplyr::select(id, year, cell, count, offset, fitted, prediction) |> 
     mutate(spp=spp.i,
            bcr=bcr.i,
            boot=boot.i)
   
   print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
   
-  save(out.list, test.list, file = file.path(root, "output", "ModelEvaluation_BCRata"))
+  save(out.list, test.list, file = file.path(root, "output", "validation", "ModelValidation_BCRData"))
   
 }
 
 #17. Package and save----
 out <- data.table::rbindlist(out.list, fill=TRUE)
 
-write.csv(out, file.path(root, "output", "ModelEvaluation_BCR.csv"), row.names = FALSE)
+write.csv(out, file.path(root, "output", "validation", "ModelValidation_BCR.csv"), row.names = FALSE)
