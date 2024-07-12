@@ -262,4 +262,4 @@ ggplot(combined_data, aes(x = AHM_1km, y = y)) +
   facet_wrap(~ replicate, scales = "free") +
   labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
 
-# small change
+# folder change
