@@ -6,9 +6,17 @@
 
 #NOTES################################
 
-# This script uses the withheld data from each bootstrap to validate the spatial predictions of the models at two levels:
-# 1. Study area: uses the tiff output from '10.MosaicPredictions.R' 
-# 2. BCR: uses the tiff output from '08.Predict.R'
+# This script uses the withheld data from each bootstrap to validate the spatial the models.
+
+# Validation is done by using the raw model object to predict values to the withheld data instead of spatial predictions because predictions were made for particular years, but the withheld data is across all years.
+
+# Validation is done for two spatial extents:
+# 1. BCR: uses the single bootstrapped model to predict. Points that were used to build the model in the 100 km buffer are removed from validation because the packaged subunit predictions exclude the buffer.
+# 2. Study area: uses the workflow in `09.MosaicPredictions.R` to select the validation data....
+
+#TO DO: FIGURE STUDY AREA VALIDATION OUT####
+#TO DO: MEAN & SD OF VALIDATIONS######
+
 
 #PREAMBLE############################
 
@@ -86,7 +94,7 @@ bcr.can4142 <- bcr.ca |>
          subUnit = 4142)
 st_geometry(bcr.can4142) <- "geometry"
 
-bcr.usa41423 <- bcr.ca |> 
+bcr.usa41423 <- bcr.usa |> 
   dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
   st_union() |> 
   nngeo::st_remove_holes() |> 
@@ -132,7 +140,8 @@ todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"),
 
 #2. Set up loop----
 out.list <- list()
-for(i in 41:nrow(todo)){
+test.list <- list()
+for(i in 1:nrow(todo)){
   
   #3. Get loop settings----
   bcr.i <- todo$bcr[i]
@@ -177,7 +186,7 @@ for(i in 41:nrow(todo)){
   #7. Make predictions----
   test.i$fitted <- predict(b.i, test.i)
   test.i$prediction <- exp(test.i$fitted + test.i$offset)
-  
+
   #8. Calculate total and training residual deviance----
   total.dev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
   
@@ -289,7 +298,17 @@ for(i in 41:nrow(todo)){
                       discrim.slope = lm.i$coefficients[2],
                       pseudor2 <-r2.i[1])
   
+  #17. Save some things----
+  #Save test data for national evaluation
+  test.list[[i]] <- test.i |> 
+    dplyr::filter(id, year, cell, count, offset, fitted, prediction) |> 
+    mutate(spp=spp.i,
+           bcr=bcr.i,
+           boot=boot.i)
+  
   print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
+  
+  save(out.list, test.list, file = file.path(root, "output", "ModelEvaluation_BCRata"))
   
 }
 
