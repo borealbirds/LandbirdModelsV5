@@ -1,8 +1,10 @@
-#-----------------------------------------------------
+# ---
 # Title: Mosaicking prediction rasters by bootstrap with extrapolation mask & border blend
 # Author: Anna Drake, adapted by Elly Knight
-# Date: March 2024           
-#-----------------------------------------------------------------------------
+# Date: March 2024
+# ---
+
+#NOTES################################
 
 # Extrapolation analysis is run for each species-BCR-bootstrap. Because of time-varying
 # prediction rasters (e.g. biomass variables), year needs to be specified as well.
@@ -23,9 +25,6 @@
 # in "gis/WeightingRasters.R"
 # 3) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
-
-#TO DO: ADD MEAN AND SD ACROSS BOOTSTRAPS#####
-#TO DO: DECIDE ON CROPPING BY RANGE########
 
 #PREAMBLE####
 
@@ -51,6 +50,8 @@ MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
 load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 
 #INVENTORY####
+
+#TO DO: MOVE AGGREGATION OPTION TO HERE####
 
 #1. Get list of predictions----
 predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
@@ -158,8 +159,7 @@ for(i in 1:nrow(loop)){
     
     #9. Crop correction raster to bcr----
     cor <- Correction |> 
-      crop(mask.j) |> 
-      mask(mask.j)
+      crop(mask.j, mask=TRUE)
     
     #10. Multiply by masking raster----
     #if missing and substitute exists (1*1=1), if not missing or no substitute (0*1/1*0=0)
