@@ -59,17 +59,10 @@ predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predic
   mutate(year = as.numeric(str_sub(year, -100, -5)))
 
 #2. Get list of extrapolations----
-# extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
-#                         file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff")) |> 
-#   separate(file.extrap, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
-#   mutate(year = as.numeric(str_sub(year, -100, -5)))
-extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tif", full.names=TRUE),
-                           file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tif")) |> 
-  separate(file.extrap, into=c("junk", "bcr", "boot", "spp", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -4)),
-         boot = str_sub(boot, 5, 6)) |> 
-  dplyr::filter(!is.na(year)) |> 
-  dplyr::select(-junk)
+extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
+                        file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff")) |>
+  separate(file.extrap, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>
+  mutate(year = as.numeric(str_sub(year, -100, -5)))
 
 #3. Get list of mosaics completed----
 mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics"), pattern="*.tiff", full.names=TRUE),
@@ -78,12 +71,32 @@ mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosa
   mutate(boot = str_sub(boot, -100, -3))
 
 #4. Make the to-do list----
-loop <- inner_join(predicted, extrapolated) |> 
-  anti_join(mosaicked) |> 
+all <- inner_join(predicted, extrapolated) |> 
+  anti_join(mosaicked)
+
+todo <- all |> 
   dplyr::select(spp, boot, year) |> 
   unique()
+  
+#5. Check against bcr list per species----
+spp <- birdlist |> 
+  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+  dplyr::filter(use==TRUE)  
 
-#TO DO: CONSIDER MATCHING WITH BCRLIST HERE####
+loop <- data.frame()
+for(i in 1:nrow(todo)){
+  
+  all.i <- all |> 
+    dplyr::filter(spp==todo$spp[i],
+                  boot==todo$boot[i],
+                  year==todo$year[i])
+  
+  spp.i <- spp |> 
+    dplyr::filter(spp==todo$spp[i])
+  
+  if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i])}
+  
+}
 
 #MOSAIC####
 
