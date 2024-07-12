@@ -1,9 +1,15 @@
-#TO DO: PACKAGE AS MULTISPECIES#####
 #TO DO: MASK OUT WATER########
-#LIST OF PRODUCTS:
+#TO DO: ADD SAMPLING PER SPECIES#######
+#TO DO: MEANS AND SD######
+#LIST OF PRODUCTS PER SPECIES:
 #2 extents: boreal, regional
-#Products in both: mean, sd, extrapolation
-#Products in boreal: sampling intensity
+#Products in both: mean, sd, extrapolation, sampling
+
+
+#LIST OF SAMPLING PRODUCT:
+#All the extrapolation
+#Sampling density
+#Distance to sampling
 
 
 
