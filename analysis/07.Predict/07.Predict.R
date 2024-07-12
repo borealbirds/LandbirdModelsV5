@@ -77,7 +77,8 @@ brt_predict <- function(i){
   load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
   #3. Load raster stack----
-  stack.i <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif")))
+  stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
+  if(inherits(stack.i, "try-error")){ next }
   stack.i$meth.i <- stack.i$method
 
   #4. Predict----
@@ -110,7 +111,8 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
 #Sort longest to shortest duration to get the big models going first
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
-  expand_grid(year=years)
+  expand_grid(year=years) |> 
+  arrange(spp, boot, year, bcr)
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
