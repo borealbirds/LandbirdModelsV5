@@ -24,6 +24,8 @@
 
 #Removal of non-dawn surveys is a secondary line of defense in case temporal patterns of QPAD offsets are unrealistic. In other words, we are restricting the dataset to times of day when p(availability) should be relatively high. This filter should be removed once QPAD offsets have been revisited. It should also be revisited if/when the national models include nocturnal species.
 
+#To consider for V6: stratification across years for year-specific validation.
+
 #PREAMBLE############################
 
 #1. Load packages----
