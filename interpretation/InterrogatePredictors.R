@@ -4,159 +4,262 @@
 # created: May 22, 2024
 # ---
 
-
-#NOTES################################
-
-# This script extracts covariate contributions to model predictions. 
-
-# The outputs will be analysed for identifying covariates of importance across several metrics (e.g. BCR, ecology, etc.)
-
-
-
-#PREAMBLE############################
-
-#1. Attach packages----
-library(gbm)
-library(tidyverse)
-
-
-#2. Create a list of dataframes containing relative influence per covariate----
-#   Every list element represents a bootstrap sample 
-
-# connect to BAM Drive and find bootstrap files 
-root <- "G:/Shared drives/BAM_NationalModels5"
-
-
-# NOTE: This script is currently formatted to find species with TRI as a covariate
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:3]
-
-# import extraction lookup table to obtain covariate classes (`var_class`)
-# lookup table is missing "Year" and "Method", so manually adding here
-lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet="ExtractionLookup") |>
-  dplyr::select(Category, Label) |> 
-  dplyr::rename(var_class = Category, var = Label) |> 
-  tibble::add_row(var_class = "Method", var = "method") |> 
-  tibble::add_row(var_class = "Year", var = "year")
-
-
-# create an index containing the species (FLBC), BCR, and bootstrap replicate
-# noticing that BBCU only has bootstrap reps 4-10 (missing 1-3)
-sample_id <- 
-  gbm_objs |> 
-  stringr::str_split_fixed(pattern="_", n=3) |> 
-  gsub("\\.R", "", x = _) |>
-  dplyr::as_tibble() |> 
-  magrittr::set_colnames(c("spp", "bcr", "boot")) |> 
-  dplyr::arrange(spp, bcr) 
-
-# create a list of dataframes containing relative influence per covariate
-covs <- list()
-for(i in 1:length(gbm_objs)){
-  
-   # loads a `gbm` object named `b.i`
-  load(file=file.path(root, "output", "bootstraps", gbm_objs[i]))
-  
-  # `summary(b.i)` is a `data.frame` with columns `var` and `rel.inf`
-  covs[[i]] <- b.i |>
-    gbm::summary.gbm(plotit = FALSE) |>
-    dplyr::left_join(lookup, by="var") |>
-    as_tibble() |> 
-    dplyr::cross_join(x = _, sample_id[i,])
-   
-  # print progress
-  cat(paste("\riteration", i))
-    Sys.sleep(0.5)
-}
-
-
-# flatten list of dataframes
-covs_all <- purrr::reduce(covs, full_join)
-
-
-
-
-#WRITE FUNCTION#######################
-
-#' @param species The species to be summarised. Can be `"all"` or a `character` with the FLBC denoting the species of interest. 
-#' Perhaps we can work a species list into an exported data.frame, e.g. via `usethis::use_data(unique(sample_id$spp))`. 
-#' 
-#' @param traits One of `avonet` (Tobias et al 2022), `x`, or `y`. Can also be a `data.frame` with species as rows and traits as columns (can we handle continuous traits?). 
-#' 
-#' @param plot If `TRUE`, creates a stacked bar plot with relative influence.
-#' 
-#' @param colours A `character` of hex codes specifying the colours if `plot = TRUE`. 
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
-#' @return a `data.frame` To be passed to a plotting function...tbd
+#'@param species The species to be summarised. Default is `"all"` but can also be a `character` with names (common, scientific, or FLBCs) denoting the species of interest. We follow the taxonomy of the AOS 64th Supplement (July 21, 2023). 
+#' Perhaps we can work a list of available species into an exported data.frame, e.g. via `usethis::use_data(unique(sample_id$sci_name))`. 
+#' 
+#'@param bcr The Bird Conservation Regions to be summarised. Works in the same manner as `species`.
+#' 
+#'@param traits One of `avonet` (Tobias et al 2022) or `acad`. Can also be a `data.frame` with species as rows (see `species` argument above) and traits as columns (can we handle continuous traits?). 
+#' 
+#'@param groups A `character` specifying two grouping variables by which to summarise the relative influence of model covariates. 
+#'E.g. `groups = c("bcr", "var_class)"` summarises the relative influence of model covariates by Bird Conservation Region and variable class (e.g. Landcover, Biomass, Climate).
+#'Note that the first grouping variable must be discrete and will constitute the x-axis of a stacked barplot, while the relative influence will be estimated for the second grouping variable.  
+#'Expressions must be columns that exist in `bam_covariate_importance` or one of the trait databases (see: `traits` argument).  
+#' 
+#'@param plot If `TRUE`, creates a stacked bar plot with relative influence.
+#' 
+#'@param colours A `character` of hex codes specifying the colours if `plot = TRUE`. 
 #'
-#' @examples ...tbd
+#'@param export If `TRUE`, exports to an object the dataframe underlying any plots created by this function.
+#' 
+#'@return A stacked barchart. The y-axis is the proportion of covariate importance.
+#'
+#'@examples ...tbd
 
-# what a user might want:
-# rel.inf by species
-# rel.inf by bcr
 
 
-rel_inf_bcr <- function(species=c("all", ...), traits, plot = FALSE){
+bamexplorer_stackedbarchart <- function(data = bam_covariate_importance, groups = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
 
-  # sum relative influence by BCR and variable class
+  
+  # Filter the dataset by species if specified
+  user_species <- species
+  
+  if (user_species != "all" & 
+      (all(user_species %in% data$common_name)==TRUE | all(user_species %in% data$sci_name)==TRUE)) {
+    bam_covariate_importancel <- 
+      bam_covariate_importance |> 
+      dplyr::filter(species %in% user_species)
+  }
+  
+  
+  # If user specifies built-in dataset, load it via `data()`, otherwise use user-specified dataset
+  # if (traits %in% c("avonet", "acad")){
+  #   traits <- data(traits)
+  # } else {traits <- trait} 
+    
+  
+  # Check that trait data is the right class
+  if (is.null(traits) == FALSE & is.data.frame(traits) == FALSE) {
+    print("argument `traits` must be NULL or a `data.frame`")
+  }
+  
+  # for dplyr::group_by
+  group_sym <- rlang::syms(groups) 
+  
+  
+  # sum covariate importance across for every permutation of group1 and group2
   rel_inf_sum <- 
-    covs_all |> 
-    group_by(bcr, var_class) |> 
-    summarise(sum_influence = sum(rel.inf))
+    bam_covariate_importance |> 
+    group_by(!!!group_sym) |> 
+    summarise(sum_influence = sum(rel.inf), .groups="keep")
+
   
+  # sum of covariate importance for each of group1 (all group2 sums are amalgamated into group1 bins)
+  group1_sum <-
+    rel_inf_sum |>
+    group_by(!!group_sym[[1]])  |>
+    summarise(sum_group1 = sum(sum_influence), .groups="keep")
   
-  # sum rel. influence of variable classes 
-  # var_sum <- 
-  #   covs_all |> 
-  #   group_by(var_class)  |>  
-  #   summarise(sum_var_class = sum(rel.inf))
-  
-  
-  # sum rel. influence of BCR
-  bcr_sum <-
-    covs_all |>  
-    group_by(bcr) |>  
-    summarise(sum_bcr = sum(rel.inf))
-  
-  
-  bcr_proportion_inf <- 
+  # get the %contribution of group2 covariates to overall covariate importance for a given group1
+  proportion_inf <- 
     rel_inf_sum |> 
-    left_join(x = _, bcr_sum, by="bcr") |> 
-    mutate(prop = sum_influence/sum_bcr ) 
+    left_join(x = _, group1_sum, by=groups[1]) |> 
+    mutate(prop = sum_influence/sum_group1) 
   
   
-  # colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
+  barplot <- 
+    ggplot() +
+    geom_bar(aes(x=!!group_sym[[1]], y=prop, fill=!!group_sym[[2]]), data=proportion_inf, stat = "identity") + 
+    # scale_fill_manual(values = colours) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    
   
-  cbPalette <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
-  
-  ggplot() +
-    geom_bar(aes(x=bcr, y=prop, fill=var_class), data=bcr_proportion_inf, stat = "identity") + 
-    scale_fill_manual(values = cbPalette) +
-    theme_classic()
-    # theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    # theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.title =element_blank()) +
-    # theme_bw() 
-  
-  print("plotting proportion of variable influence per BCR")
+  print(barplot)
+  print(paste("plotting proportion of variable influence by", groups[1], "and", groups[2], sep=" "))
   
 }
-                        
+
+# test function
+# colour blind palette from: https://colorbrewer2.org/#type=qualitative&scheme=Set3&n=12
+# colours <- c("#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f")
+bamexplorer_stackedbarchart(groups=c("common_name", "var_class"))
 
 
-# root <- "G:/Shared drives/BAM_NationalModels/NationalModels5.0/output/bootstraps"
-# 
-# prediction_files <- list.files(root)
-# 
-# loop <- 
-#   prediction_files %>% 
-#   stringr::str_split_fixed(pattern="_", n=3) %>% 
-#   dplyr::as_tibble() %>% 
-#   magrittr::set_colnames(c("spp", "bcr", "boot")) %>% 
-#   dplyr::arrange(spp, bcr)
-# 
-# bcr.i <- loop$bcr[i]
-# spp.i <- loop$spp[i]
-# boot.i <- loop$boot[i]
+
+  
 
 
 
 
+
+
+
+
+
+
+
+# side-by-side boxplots displaying bootstrap variation by variable class
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+
+
+bamexplorer_boxplots <- function(data = bam_covariate_importance, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
+  
+  
+  # for dplyr::group_by
+  group_sym <- rlang::syms(c(group, "var_class", "boot"))
+  
+  # need to be able to specify what BCRs (or species or bird group, etc) to plot by
+  # sum rel. influence of the grouped variable (e.g. species) per `var_class` and `boot` replicate
+  rel_inf_sum <- 
+    bam_covariate_importance |> 
+    group_by(!!!group_sym) |> 
+    summarise(sum_influence = sum(rel.inf), .groups="keep")
+  
+  
+  # sum of covariate importance for each of group1 (all var_class sums are amalgamated into group1 bins)
+  group1_sum <-
+    rel_inf_sum |>
+    group_by(!!group_sym[[1]], !!group_sym[[2]])  |>
+    summarise(sum_group1 = sum(sum_influence), .groups="keep")
+  
+  
+  proportion_inf <- 
+    rel_inf_sum |> 
+    left_join(x = _, group1_sum, by=c(group, "var_class")) |> 
+    mutate(prop = sum_influence/sum_group1) 
+  
+  
+  ggplot(proportion_inf, aes(x = var_class, y = prop, fill = !!group_sym[[1]])) +
+    geom_boxplot(position = position_dodge(width = 0.75), alpha=0.05) +
+    geom_point(aes(colour=factor(!!group_sym[[1]])),  position = position_dodge(width = 0.75), alpha=0.7, size=2.5) +
+    labs(x = "Variable Class", y = "Relative Importance (%)", 
+         title = paste("Covariate importance by", group, sep=" ")) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+}
+
+# test function
+bamexplorer_boxplots(group="common_name")
+
+
+
+
+
+
+
+
+
+# partial dependence plot
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'
+#'@param ... This allows users to pass additional arguments to `gbm::plot.gbm()`
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+
+# now, for every species x bcr x var permutation, i want to find the average and s.d. x and y grid
+library(splines)
+
+bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_name, covariate) {
+  
+  # construct the key for accessing the desired data frame
+  key <- paste(bcr, common_name, covariate, sep = "_")
+  
+  # check if the key exists in the data
+  if (!key %in% names(data)) {
+    stop("The specified combination of species, bcr, and covariate does not exist.")
+  }
+  
+  # combine all the data frames into a single data frame
+  combined_df <- bind_rows(data[[key]], .id = "replicate")
+  
+  # convert the covariate to a symbol for dynamic grouping
+  covariate_sym <- rlang::sym(covariate)
+  
+  # create a grid of x values for prediction
+  x_grid <- seq(min(combined_df[[covariate]]), max(combined_df[[covariate]]), length.out = 100)
+  
+  # Fit a smoothing function to each bootstrap replicate and predict over the grid
+  predictions <- map(data[[key]], ~ {
+    df <- .x
+    fit <- smooth.spline(df[[covariate]], df$y)
+    predict(fit, x_grid)$y
+  })
+  
+  # Combine predictions into a data frame
+  prediction_df <- do.call(cbind, predictions)
+  colnames(prediction_df) <- paste0("Replicate_", seq_along(predictions))
+  prediction_df <- as.data.frame(prediction_df)
+  prediction_df[[covariate]] <- x_grid
+  
+  # Calculate summary statistics (mean and error bounds) for each x value
+  summary_df <- prediction_df %>%
+    pivot_longer(cols = starts_with("Replicate_"), names_to = "Replicate", values_to = "PredictedResponse") %>%
+    group_by(!!covariate_sym) %>%
+    summarise(
+      MeanResponse = mean(PredictedResponse),
+      LowerBound = quantile(PredictedResponse, 0.025),
+      UpperBound = quantile(PredictedResponse, 0.975)
+    )
+  
+  # Create the partial dependence plot with error envelope
+  ggplot(summary_df, aes(x = !!covariate_sym, y = MeanResponse)) +
+    geom_line(color = "blue") +
+    geom_ribbon(aes(ymin = LowerBound, ymax = UpperBound), alpha = 0.2, fill = "blue") +
+    labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate),
+         x = covariate, y = "Predicted Response") +
+    theme_minimal()
+  
+  
+}
+
+
+# single plot
+ggplot(boot_pts_sorted[[2]]$`bootstrap replicate_1`, aes(x = AHM_1km, y=y))+
+  geom_line()
+
+# faceted plot
+# Extract each bootstrap replicate from boot_pts_sorted[[1]]
+replicate_1 <- boot_pts_sorted[[1]][[1]]
+replicate_2 <- boot_pts_sorted[[1]][[2]]
+replicate_3 <- boot_pts_sorted[[1]][[3]]
+replicate_4 <- boot_pts_sorted[[1]][[4]]
+
+# Combine into one data frame with a 'replicate' identifier
+combined_data <- bind_rows(
+  mutate(replicate_1, replicate = "Replicate 1"),
+  mutate(replicate_2, replicate = "Replicate 2"),
+  mutate(replicate_3, replicate = "Replicate 3"),
+  mutate(replicate_4, replicate = "Replicate 4")
+)
+
+# Convert 'replicate' to a factor for correct faceting
+combined_data$replicate <- factor(combined_data$replicate, levels = c("Replicate 1", "Replicate 2", "Replicate 3", "Replicate 4"))
+
+# Create faceted plot
+ggplot(combined_data, aes(x = AHM_1km, y = y)) +
+  geom_line() +
+  facet_wrap(~ replicate, scales = "free") +
+  labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
+
+# folder change
