@@ -244,3 +244,21 @@ files.stack <- data.frame(file=list.files(file.path(root, "gis", "stacks"), patt
 
 todo.stack <- anti_join(units, files.stack)
 nrow(todo.stack)
+
+#16. Check that they load properly----
+corrupt <- data.frame()
+for(i in 1:nrow(files.stack)){
+  
+  bcr.i <- files.stack$bcr[i]
+  year.i <- files.stack$year[i]
+  
+  stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
+  
+  if(inherits(stack.i, "try-error")){corrupt <- rbind(corrupt, files.stack[i,])}
+  
+  cat(i, ": Raster", bcr.i, "-", year.i, "OK\n")
+  
+  
+}
+
+nrow(corrupt)
