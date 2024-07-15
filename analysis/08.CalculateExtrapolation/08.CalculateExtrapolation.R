@@ -1,8 +1,10 @@
-#-----------------------------------------------------
+# ---
 # Title: Calculating extrapolation of models
 # Author: Anna Drake, adapted by Elly Knight
-# Date: March 2024           
-#-----------------------------------------------------------------------------
+# Date: March 2024 
+# ---
+
+#NOTES################################
 
 # Extrapolation analysis is run for each species-BCR-bootstrap. Because of time-varying
 # prediction rasters (e.g. biomass variables), year needs to be specified as well.
@@ -154,10 +156,10 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #3. Create to do list----
-#Sort longest to shortest duration to get the big models going first
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
-  expand_grid(year=years)
+  expand_grid(year=years) |> 
+  arrange(spp, bcr, boot)
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
