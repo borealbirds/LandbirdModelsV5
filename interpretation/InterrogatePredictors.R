@@ -190,42 +190,45 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
     stop("The specified combination of species, bcr, and covariate does not exist.")
   }
   
-  # combine all the data frames into a single data frame
+  # combine all the relevant into a single data frame with a column`replicate` with its bootstrap ID
   combined_df <- bind_rows(data[[key]], .id = "replicate")
   
   # convert the covariate to a symbol for dynamic grouping
   covariate_sym <- rlang::sym(covariate)
   
-  # create a grid of x values for prediction
-  x_grid <- seq(min(combined_df[[covariate]]), max(combined_df[[covariate]]), length.out = 100)
+  # create a vector of x values (covering the domain of the combined bootstraps) for prediction using `smooth.spline()`
+  x_grid <- seq(min(combined_df[[covariate]]), max(combined_df[[covariate]]), length.out = 1000)
   
-  # Fit a smoothing function to each bootstrap replicate and predict over the grid
-  predictions <- map(data[[key]], ~ {
-    df <- .x
+  # fit a smoothing function to each bootstrap replicate and predict over the domain of x values
+  predictions <- 
+    lapply(data[[key]], function(df) {
     fit <- smooth.spline(df[[covariate]], df$y)
-    predict(fit, x_grid)$y
+    predict(fit, x_grid)$y 
   })
   
-  # Combine predictions into a data frame
+  # combine predictions into a data frame
   prediction_df <- do.call(cbind, predictions)
-  colnames(prediction_df) <- paste0("Replicate_", seq_along(predictions))
-  prediction_df <- as.data.frame(prediction_df)
+  
+  # simplify column names
+  colnames(prediction_df) <- paste0("replicate_", seq_along(predictions))
+  prediction_df <- as_tibble(prediction_df)
   prediction_df[[covariate]] <- x_grid
   
-  # Calculate summary statistics (mean and error bounds) for each x value
-  summary_df <- prediction_df %>%
-    pivot_longer(cols = starts_with("Replicate_"), names_to = "Replicate", values_to = "PredictedResponse") %>%
-    group_by(!!covariate_sym) %>%
+  # calculate summary statistics (mean and error bounds) for each x value
+  summary_df <- 
+    prediction_df |>
+    pivot_longer(data = _, cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") |>
+    group_by(.data = _, !!covariate_sym) |>
     summarise(
-      MeanResponse = mean(PredictedResponse),
-      LowerBound = quantile(PredictedResponse, 0.025),
-      UpperBound = quantile(PredictedResponse, 0.975)
+      mean_response = mean(predicted_response),
+      lower_bound = quantile(predicted_response, 0.025),
+      upper_bound = quantile(predicted_response, 0.975)
     )
   
-  # Create the partial dependence plot with error envelope
-  ggplot(summary_df, aes(x = !!covariate_sym, y = MeanResponse)) +
+  # create a partial dependence plot with error envelope
+  ggplot(summary_df, aes(x = !!covariate_sym, y = mean_response)) +
     geom_line(color = "blue") +
-    geom_ribbon(aes(ymin = LowerBound, ymax = UpperBound), alpha = 0.2, fill = "blue") +
+    geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2, fill = "blue") +
     labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate),
          x = covariate, y = "Predicted Response") +
     theme_minimal()
@@ -233,7 +236,7 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
   
 }
 
-
+"can81_Alder Flycatcher_StandardGreenup_1km"
 # single plot
 ggplot(boot_pts_sorted[[2]]$`bootstrap replicate_1`, aes(x = AHM_1km, y=y))+
   geom_line()
