@@ -59,15 +59,15 @@ visit.v <- visit |>
   st_transform(5072) |> 
   vect()
 
-#2. Read in buffered shapefile----
-bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+#2. Read in buffered & shapefile----
+bcr.buff <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
   
 #3. Set up loop for BCR attribution----
 bcr.df <- data.frame(id=visit$id)
-for(i in 1:nrow(bcr.country)){
+for(i in 1:nrow(bcr.buff)){
   
   #4. Filter bcr shapefile----
-  bcr.i <- bcr.country |> 
+  bcr.i <- bcr.buff |> 
     dplyr::filter(row_number()==i)
   
   #5. Convert to raster for fast extraction----
@@ -79,11 +79,11 @@ for(i in 1:nrow(bcr.country)){
     mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
   bcr.df[,(i+1)] <- bcr.out$use
   
-  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr.buff)))
   
 }
 
-colnames(bcr.df) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
+colnames(bcr.df) <- c("id", paste0(bcr.buff$country, bcr.buff$subUnit))
 
 #FILTERING######################
 
@@ -132,7 +132,7 @@ bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
 write.csv(bcr.n, file.path(root, "Regions", "SubUnitSampleSizes.csv"), row.names=FALSE)
 
 #2. Plot sample sizes----
-bcr.sf <- bcr.country |> 
+bcr.sf <- bcr.buff |> 
   mutate(bcr = paste0(country, "_", subUnit)) |> 
   left_join(bcr.n)
 
