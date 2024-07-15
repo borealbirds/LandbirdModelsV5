@@ -104,6 +104,8 @@ bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
 bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) |> 
   anti_join(bcr.remove)
 
+write_sf(bcr.country, file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
+
 #6. Set up loop for BCR buffering----
 bcr.out <- data.frame()
 for(i in 1:nrow(bcr.country)){

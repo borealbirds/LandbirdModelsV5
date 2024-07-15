@@ -1,5 +1,5 @@
 # ---
-# title: National Models 5.0 - validate predictions
+# title: National Models 5.0 - validate subunit predictions
 # author: Elly Knight
 # created: April 29, 2024
 # ---
@@ -12,7 +12,7 @@
 
 # Validation is done for two spatial extents:
 # 1. BCR: uses the single bootstrapped model to predict. Points that were used to build the model in the 100 km buffer are removed from validation because the packaged subunit predictions exclude the buffer.
-# 2. Study area: uses the workflow in `09.MosaicPredictions.R` to select the validation data....
+# 2. Study area: The predicted values from each subunit model are saved out in this script and used in the subsequent script `12.ValidateMosaics.R` to evaluate the mosaic predictions.
 
 #PREAMBLE############################
 
@@ -52,79 +52,8 @@ pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
   c(R2=R2, R2adj=R2adj, Deviance=D0 - DR, Dev0=D0, DevR=DR, p_value=p_value)
 }
 
-#SUBUNIT POLYGONS#####################
-
-#1. Read in country shapefiles----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
-  st_transform(crs=5072) 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) |> 
-  st_transform(crs=5072) 
-
-#2. Read in BCR shapefile----
-#Remove subunit 1
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
-  dplyr::filter(subUnit!=1) |> 
-  st_transform(crs=5072)
-
-ggplot(bcr) +
-  geom_sf(aes(fill=factor(subUnit)))
-
-#3. Identify BCRs for each country----
-bcr.ca <- bcr |> 
-  st_intersection(can) |> 
-  mutate(country="can") |> 
-  dplyr::select(subUnit, country)
-
-bcr.usa <- bcr |> 
-  st_intersection(usa) |> 
-  mutate(country="usa") |> 
-  dplyr::select(subUnit, country)
-
-#4. Make merged subunits----
-bcr.can4142 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(41, 42)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 4142)
-st_geometry(bcr.can4142) <- "geometry"
-
-bcr.usa41423 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="usa",
-         subUnit = 41423)
-st_geometry(bcr.usa41423) <- "geometry"
-
-bcr.usa414232 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3, 2)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="usa",
-         subUnit = 414232)
-st_geometry(bcr.usa414232) <- "geometry"
-
-bcr.can8182 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(81, 82)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 8182)
-st_geometry(bcr.can8182) <- "geometry"
-
-#polygons to remove
-bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
-                         subUnit=c(41, 42, 3, 42, 41))
-
-#5. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) |> 
-  anti_join(bcr.remove) |> 
-  mutate(bcr = paste0(country, subUnit))
+#6. Subunit polygons----
+bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
 
 #BCR MODELS###############
 
@@ -269,6 +198,11 @@ for(i in start:nrow(todo)){
   
   cor.spearman.i = cor(test.i$prediction, test.i$count, method="spearman")
   cor.pearson.i = cor(test.i$prediction, test.i$count, method="pearson")
+  
+  #14. Calculate test deviance & residuals----
+  test.dev.i <- calc.deviance(test.i$count, test.i$prediction, family="poisson")
+  
+  test.resid.i <- mean(abs(test.i$count - test.i$prediction))
   
   #15. Calculate pseudo-R2----
   r2.i <- pseudo_r2(test.i$count, test.i$prediction)
