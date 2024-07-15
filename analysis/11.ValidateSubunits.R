@@ -52,10 +52,42 @@ pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
   c(R2=R2, R2adj=R2adj, Deviance=D0 - DR, Dev0=D0, DevR=DR, p_value=p_value)
 }
 
-#6. Subunit polygons----
+#UNBUFFERED ATTRIBUTION########
+
+#1. Subunit polygons----
 bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
 
-#BCR MODELS###############
+#2. Make visit a vector object----
+visit.v <- visit |> 
+  dplyr::select(id, lat, lon) |> 
+  st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
+  st_transform(5072) |> 
+  vect()
+
+#3. Set up loop for BCR attribution----
+bcrdf <- data.frame(id=visit$id)
+for(i in 1:nrow(bcr.country)){
+  
+  #4. Filter bcr shapefile----
+  bcr.i <- bcr.country |> 
+    dplyr::filter(row_number()==i)
+  
+  #5. Convert to raster for fast extraction----
+  r <- rast(ext(bcr.i), resolution=1000, crs=crs(bcr.i))
+  bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
+  
+  #6. Extract raster value----
+  bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) |> 
+    mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
+  bcrdf[,(i+1)] <- bcr.out$use
+  
+  print(paste0("Finished bcr ", i, " of ", nrow(bcr.country)))
+  
+}
+
+colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
+
+#VALIDATE###############
 
 #1. Get list of models----
 todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
@@ -91,41 +123,47 @@ for(i in start:nrow(todo)){
   
   #5. Get training data----
   train.i <- visit.i |> 
-    left_join(visit) |> 
+    left_join(visit, by=c("id", "year")) |> 
     inner_join(bcrlist |> 
                  dplyr::select(id, todo$bcr[i]) |> 
                  rename(bcr = todo$bcr[i]) |>
-                 dplyr::filter(bcr==TRUE)) |> 
+                 dplyr::filter(bcr==TRUE),
+               by = "id") |> 
     inner_join(bird.df |> 
                  dplyr::select(id, todo$spp[i]) |> 
-                 rename(count = todo$spp[i]))
+                 rename(count = todo$spp[i]),
+               by = "id")
   
   #6. Get withheld test data----
   #add species presence/absence
   #add offset
   withheld.i <- gridlist[bcrlist[,bcr.i],] |> 
-    anti_join(visit.i) |> 
-    left_join(visit) |>
+    anti_join(visit.i, by=c("id", "year", "cell")) |> 
+    left_join(visit, by=c("id", "year")) |>
     left_join(bird.df |> 
                 dplyr::select(id, todo$spp[i]) |> 
-                rename(count = todo$spp[i])) |> 
+                rename(count = todo$spp[i]),
+              by="id") |> 
     mutate(p = ifelse(count > 0, 1, 0)) |> 
     left_join(offsets |> 
                 dplyr::select(id, todo$spp[i]) |> 
-                rename(offset = todo$spp[i])) |> 
-    left_join(cov) |> 
+                rename(offset = todo$spp[i]),
+              by="id") |> 
+    left_join(cov,
+              by=c("id", "tagMethod", "method")) |> 
     mutate(meth.i = method)
   
   #7. Make predictions----
   withheld.i$fitted <- predict(b.i, withheld.i)
   withheld.i$prediction <- exp(withheld.i$fitted + withheld.i$offset)
   
-  #8. Clip to BCR boundary for validation----
-  test.i <- withheld.i  |> 
-    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
-    st_transform(crs=5072) |> 
-    st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
-    st_drop_geometry()
+  #8. Use within BCR only for validation----
+  test.i <- withheld.i |> 
+     inner_join(bcrdf |> 
+                 dplyr::select(id, todo$bcr[i]) |> 
+                 rename(bcr = todo$bcr[i]) |>
+                 dplyr::filter(bcr==TRUE),
+                by="id")
 
   #9. Calculate total and training residual deviance----
   totaldev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
