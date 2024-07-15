@@ -138,9 +138,17 @@ todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"),
   separate(modfile, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#2. Set up loop----
-out.list <- list()
-test.list <- list()
+#2. Get previously run output----
+if(exists(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))) {
+  
+  load(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
+  
+  todo <- todo[-c(1:length(out.list)),]
+  
+} else { 
+    out.list <- list()
+    }
+
 for(i in 1:nrow(todo)){
   
   #3. Get loop settings----
@@ -269,7 +277,7 @@ for(i in 1:nrow(todo)){
   r2.i <- pseudo_r2(test.i$count, test.i$prediction)
   
   #16. Put together----
-  out.list[[i]] <- data.frame(spp=spp.i,
+  out.vals <- data.frame(spp=spp.i,
                       bcr=bcr.i,
                       boot=boot.i,
                       trees = b.i$n.trees,
@@ -298,18 +306,24 @@ for(i in 1:nrow(todo)){
                       discrim.slope = lm.i$coefficients[2],
                       pseudor2 <-r2.i[1])
   
-  #17. Save some things----
-  #Save test data for national evaluation
-  test.list[[i]] <- test.i |> 
+  #17. Save interim object----
+  out.list[[i]] <- out.vals
+  
+  save(out.list, file = file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
+  
+  #18. Save test data for national evaluation----
+  test <- test.i |> 
     dplyr::select(id, year, cell, count, offset, fitted, prediction) |> 
     mutate(spp=spp.i,
            bcr=bcr.i,
            boot=boot.i)
   
+  write.csv(test, file.path(root, "output", "validation", "data",
+                            paste0(spp.i, "_", bcr.i, "_", boot.i, ".csv")), row.names = FALSE)
+  
   print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
   
-  save(out.list, test.list, file = file.path(root, "output", "validation", "ModelValidation_BCRData"))
-  
+
 }
 
 #17. Package and save----

@@ -143,7 +143,9 @@ for(i in 1:nrow(loop)){
                   year==year.i)
   
   #7. Read them in----
-  stack.i <- rast(pred.i$path.pred)
+  stack.i <- try(rast(pred.i$path.pred))
+  
+  if(inherits(stack.i, "try-error")){ next }
   
   #8. Get the BCR boundary----
   sf.i <- bcr.country |> 
@@ -170,6 +172,9 @@ for(i in 1:nrow(loop)){
   cat("Finished", i, "of", nrow(loop), "prediction sets\n")
   
 }
+
+#12. Check output against todo list----
+files <- list.files(file.path(root, "output", "averages", "subunit"))
 
 #MOSAIC AVERAGING#########
 
@@ -208,7 +213,9 @@ for(i in 1:nrow(loop)){
                   year==year.i)
   
   #7. Read them in----
-  stack.i <- rast(pred.i$path.pred)
+  stack.i <- try(rast(pred.i$path.pred))
+  
+  if(inherits(stack.i, "try-error")){ next }
   
   #8. Calculate mean----
   #Also crop and mask
@@ -231,3 +238,6 @@ for(i in 1:nrow(loop)){
   cat("Finished", i, "of", nrow(loop), "prediction sets")
   
 }
+
+#12. Check output against todo list----
+files <- list.files(file.path(root, "output", "averages", "mosaic"))
