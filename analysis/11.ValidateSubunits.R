@@ -14,10 +14,6 @@
 # 1. BCR: uses the single bootstrapped model to predict. Points that were used to build the model in the 100 km buffer are removed from validation because the packaged subunit predictions exclude the buffer.
 # 2. Study area: uses the workflow in `09.MosaicPredictions.R` to select the validation data....
 
-#TO DO: FIGURE STUDY AREA VALIDATION OUT####
-#TO DO: MEAN & SD OF VALIDATIONS######
-
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -139,17 +135,22 @@ todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"),
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #2. Get previously run output----
-if(exists(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))) {
+if(file.exists(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))){
   
   load(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
   
-  todo <- todo[-c(1:length(out.list)),]
+  start <- length(out.list) + 1
   
-} else { 
+} else {
+  
     out.list <- list()
+    start <- 1
+    
     }
 
-for(i in 1:nrow(todo)){
+for(i in start:nrow(todo)){
+  
+  start.i <- Sys.time()
   
   #3. Get loop settings----
   bcr.i <- todo$bcr[i]
@@ -171,16 +172,11 @@ for(i in 1:nrow(todo)){
                  rename(count = todo$spp[i]))
   
   #6. Get withheld test data----
-  #clip to actual BCR boundary - THINK ABOUT THIS####
   #add species presence/absence
   #add offset
-  test.i <- gridlist[bcrlist[,bcr.i],] |> 
+  withheld.i <- gridlist[bcrlist[,bcr.i],] |> 
     anti_join(visit.i) |> 
     left_join(visit) |>
-    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
-    st_transform(crs=5072) |> 
-    st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
-    st_drop_geometry() |> 
     left_join(bird.df |> 
                 dplyr::select(id, todo$spp[i]) |> 
                 rename(count = todo$spp[i])) |> 
@@ -192,27 +188,33 @@ for(i in 1:nrow(todo)){
     mutate(meth.i = method)
   
   #7. Make predictions----
-  test.i$fitted <- predict(b.i, test.i)
-  test.i$prediction <- exp(test.i$fitted + test.i$offset)
+  withheld.i$fitted <- predict(b.i, withheld.i)
+  withheld.i$prediction <- exp(withheld.i$fitted + withheld.i$offset)
+  
+  #8. Clip to BCR boundary for validation----
+  test.i <- withheld.i  |> 
+    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
+    st_transform(crs=5072) |> 
+    st_intersection(bcr.country |> dplyr::filter(bcr==bcr.i)) |> 
+    st_drop_geometry()
 
-  #8. Calculate total and training residual deviance----
-  total.dev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
+  #9. Calculate total and training residual deviance----
+  totaldev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
   
   train.resid.i <- mean(b.i$train.error^2)
   
-  #9. Determine whether can evaluate----  
+  #10. Determine whether can evaluate----  
   #Skip to next loop if there's no withheld data or positive detections for that time period
   if(nrow(test.i)==0 | sum(test.i$p) == 0){
     
     out.i <- data.frame(spp=spp.i,
                         bcr=bcr.i,
                         boot=boot.i,
-                        year=year.i,
                         trees = b.i$n.trees,
                         n.train = b.i$nTrain,
-                        n.train.p = nrow(train.p.i),
-                        n.train.a = nrow(visit.i) - nrow(train.p.i),
-                        total.dev = total.dev.i,
+                        n.train.p = nrow(dplyr::filter(train.i, count > 0)),
+                        n.train.a = nrow(dplyr::filter(train.i, count == 0)),
+                        total.dev = totaldev.i,
                         train.resid = train.resid.i,
                         train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
                         n.test.p = sum(test.i$p),
@@ -267,11 +269,6 @@ for(i in 1:nrow(todo)){
   
   cor.spearman.i = cor(test.i$prediction, test.i$count, method="spearman")
   cor.pearson.i = cor(test.i$prediction, test.i$count, method="pearson")
-           
-  #14. Calculate test deviance & residuals----
-  test.dev.i <- calc.deviance(test.i$count, test.i$prediction, family="poisson")
-  
-  test.resid.i <- mean(abs(test.i$count - test.i$prediction))
   
   #15. Calculate pseudo-R2----
   r2.i <- pseudo_r2(test.i$count, test.i$prediction)
@@ -282,14 +279,14 @@ for(i in 1:nrow(todo)){
                       boot=boot.i,
                       trees = b.i$n.trees,
                       n.train = b.i$nTrain,
-                      n.train.p = nrow(train.p.i),
-                      n.train.a = nrow(visit.i) - nrow(train.p.i),
-                      total.dev = total.dev.i,
+                      n.train.p = nrow(dplyr::filter(train.i, count > 0)),
+                      n.train.a = nrow(dplyr::filter(train.i, count == 0)),
+                      total.dev = totaldev.i,
                       test.dev = test.dev.i,
                       train.resid = train.resid.i,
                       test.resid = test.resid.i,
-                      train.d2 = (total.dev.i - train.resid.i)/total.dev.i,
-                      test.d2 = (total.dev.i - test.resid.i)/total.dev.i, 
+                      train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
+                      test.d2 = (totaldev.i - test.resid.i)/totaldev.i, 
                       n.test.p = sum(test.i$p),
                       n.test.a = nrow(test.i) - sum(test.i$p),
                       ssb.p = ssb.i[1],
@@ -304,7 +301,8 @@ for(i in 1:nrow(todo)){
                       precision = precision.i,
                       discrim.intercept = lm.i$coefficients[1],
                       discrim.slope = lm.i$coefficients[2],
-                      pseudor2 <-r2.i[1])
+                      pseudor2 <-r2.i[1],
+                      duration = as.numeric(difftime(Sys.time(), start.i, units="mins")))
   
   #17. Save interim object----
   out.list[[i]] <- out.vals
