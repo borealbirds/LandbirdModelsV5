@@ -87,7 +87,7 @@ for(i in 1:nrow(bcr.country)){
 
 colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 
-#VALIDATE###############
+#VALIDATE SUBUNITS###############
 
 #1. Get list of models----
 todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
@@ -95,7 +95,25 @@ todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"),
   separate(modfile, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
-#2. Get previously run output----
+#2. Get list of predictions----
+predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
+                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
+  separate(file.pred, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
+  mutate(year = as.numeric(str_sub(year, -100, -5)),
+         boot = as.numeric(boot)) |> 
+  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
+
+#3. Make todo list----
+years <- seq(1985, 2020, 5)
+
+loop <- predicted |> 
+  group_by(spp, bcr, boot) |> 
+  summarize(n=n()) |> 
+  ungroup() |> 
+  dplyr::filter(n==length(years)) |> 
+  inner_join(todo)
+
+#4. Get previously run output----
 if(file.exists(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))){
   
   load(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
@@ -109,29 +127,29 @@ if(file.exists(file.path(root, "output", "validation", "ModelValidation_InterimO
     
     }
 
-for(i in start:nrow(todo)){
+for(i in start:nrow(loop)){
   
   start.i <- Sys.time()
   
   #3. Get loop settings----
-  bcr.i <- todo$bcr[i]
-  spp.i <- todo$spp[i]
-  boot.i <- todo$boot[i]
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  boot.i <- loop$boot[i]
   
   #4. Read in files----
-  load(todo$modpath[i])
+  load(loop$modpath[i])
   
   #5. Get training data----
   train.i <- visit.i |> 
     left_join(visit, by=c("id", "year")) |> 
     inner_join(bcrlist |> 
-                 dplyr::select(id, todo$bcr[i]) |> 
-                 rename(bcr = todo$bcr[i]) |>
+                 dplyr::select(id, loop$bcr[i]) |> 
+                 rename(bcr = loop$bcr[i]) |>
                  dplyr::filter(bcr==TRUE),
                by = "id") |> 
     inner_join(bird.df |> 
-                 dplyr::select(id, todo$spp[i]) |> 
-                 rename(count = todo$spp[i]),
+                 dplyr::select(id, loop$spp[i]) |> 
+                 rename(count = loop$spp[i]),
                by = "id")
   
   #6. Get withheld test data----
@@ -141,27 +159,59 @@ for(i in start:nrow(todo)){
     anti_join(visit.i, by=c("id", "year", "cell")) |> 
     left_join(visit, by=c("id", "year")) |>
     left_join(bird.df |> 
-                dplyr::select(id, todo$spp[i]) |> 
-                rename(count = todo$spp[i]),
+                dplyr::select(id, loop$spp[i]) |> 
+                rename(count = loop$spp[i]),
               by="id") |> 
     mutate(p = ifelse(count > 0, 1, 0)) |> 
     left_join(offsets |> 
-                dplyr::select(id, todo$spp[i]) |> 
-                rename(offset = todo$spp[i]),
+                dplyr::select(id, loop$spp[i]) |> 
+                rename(offset = loop$spp[i]),
               by="id") |> 
     left_join(cov,
               by=c("id", "tagMethod", "method")) |> 
-    mutate(meth.i = method)
+    rename(year1 = year) |> 
+    mutate(meth.i = method,
+           year = round(year1/5)*5,
+           year = ifelse(year==1980, 1985, year)) 
   
-  #7. Make predictions----
-  withheld.i$fitted <- predict(b.i, withheld.i)
-  withheld.i$prediction <- exp(withheld.i$fitted + withheld.i$offset)
+  #7. Get predictions----
+  
+  #Get rounded years in data
+  years.i <- sort(unique(withheld.i$year))
+  
+  #Make data frame to hold predictions
+  prediction.i <- data.frame()
+  
+  #Loop through years
+  for(j in 1:length(years.i)){
+    
+    #Read in prediction raster
+    rast.j <- rast(file.path(root, "output", "predictions",
+                             paste0(spp.i, "_", bcr.i, "_", boot.i, "_", years.i[j], ".tiff")))
+    
+    #filter and project data
+    withheld.j <- withheld.i |> 
+      dplyr::filter(year==years.i[j])
+    
+    vect.j <- withheld.j |> 
+      st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
+      st_transform(crs=crs(rast.j)) |> 
+      vect()
+    
+    #Extract predictions
+    withheld.j$prediction <- extract(rast.j, vect.j)$lyr1
+    
+    prediction.i <- rbind(prediction.i, withheld.j)
+    
+    cat("Year", years.i[j], "\n")
+    
+  }
   
   #8. Use within BCR only for validation----
-  test.i <- withheld.i |> 
+  test.i <- prediction.i |> 
      inner_join(bcrdf |> 
-                 dplyr::select(id, todo$bcr[i]) |> 
-                 rename(bcr = todo$bcr[i]) |>
+                 dplyr::select(id, loop$bcr[i]) |> 
+                 rename(bcr = loop$bcr[i]) |>
                  dplyr::filter(bcr==TRUE),
                 by="id")
 
@@ -185,7 +235,8 @@ for(i in start:nrow(todo)){
                         train.resid = train.resid.i,
                         train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
                         n.test.p = sum(test.i$p),
-                        n.test.a = nrow(test.i) - sum(test.i$p))
+                        n.test.a = nrow(test.i) - sum(test.i$p),
+                        duration = as.numeric(difftime(Sys.time(), start.i, units="mins")))
     
     next
   }
@@ -283,7 +334,7 @@ for(i in start:nrow(todo)){
   
   #18. Save test data for national evaluation----
   test <- test.i |> 
-    dplyr::select(id, year, cell, count, offset, fitted, prediction) |> 
+    dplyr::select(id, year, cell, count, offset, prediction) |> 
     mutate(spp=spp.i,
            bcr=bcr.i,
            boot=boot.i)
@@ -291,7 +342,7 @@ for(i in start:nrow(todo)){
   write.csv(test, file.path(root, "output", "validation", "data",
                             paste0(spp.i, "_", bcr.i, "_", boot.i, ".csv")), row.names = FALSE)
   
-  print(paste0("Finished evaluation ", i, " of ", nrow(todo)))
+  print(paste0("Finished evaluation ", i, " of ", nrow(loop), " in ", out.vals$duration, " minutes"))
   
 
 }
