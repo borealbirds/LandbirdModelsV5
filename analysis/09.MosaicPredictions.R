@@ -51,19 +51,21 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 
 #INVENTORY####
 
-#TO DO: MOVE AGGREGATION OPTION TO HERE####
+#Take out the BCR aggregation option that's not being used
 
 #1. Get list of predictions----
 predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
                      file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
   separate(file.pred, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)))
+  mutate(year = as.numeric(str_sub(year, -100, -5))) |> 
+  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #2. Get list of extrapolations----
 extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
                         file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff")) |>
   separate(file.extrap, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>
-  mutate(year = as.numeric(str_sub(year, -100, -5)))
+  mutate(year = as.numeric(str_sub(year, -100, -5))) |> 
+  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #3. Get list of mosaics completed----
 mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics"), pattern="*.tiff", full.names=TRUE),
@@ -112,11 +114,8 @@ for(i in 1:nrow(loop)){
   year.i <- loop$year[i]
   
   #3. Loop file lists----
-  #Take out the BCR aggregation option that's not being used
-  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i,
-                               !bcr %in% c("can8182", "usa41423", "usa2"))
-  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i,
-                                  !bcr %in% c("can8182", "usa41423", "usa2"))
+  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
+  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
   
   #Skip loop if rows don't match
   if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } else { loop.i <- full_join(predicted.i, extrapolated.i)}
