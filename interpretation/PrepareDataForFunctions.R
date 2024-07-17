@@ -84,29 +84,7 @@ bam_covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
 
 
 
-#3. import trait databases----
-
-# AVONET: https://doi.org/10.1111/ele.13898
-avonet <- readxl::read_excel(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "avonet_database_eBird_taxonomy.xlsx"), sheet="AVONET2_eBird")
-pif
-
-
-# ACAD Scores
-# Population Size (`PS-g`) 
-# Breeding and Non-breeding Distributions (`BD-g` and `ND-g`)
-# Threats to Breeding (`TB-c`) and Non-breeding (`TN-c`)
-# Population Trend (`PT-c`)
-acad <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "acad_global_2024.csv"))
-
-
-# check that all BAM species are represented in trait databases 
-all(sample_id$sci_name %in% avonet$Species2)
-all(sample_id$sci_name %in% acad$sci_name)
-
-
-
-
-#4. Create list of bcr x species x covariate permutations (with bootstraps)----
+#3. Create list of bcr x species x covariate permutations (with bootstraps)----
 # for partial dependence plotting  
 
 
@@ -134,9 +112,9 @@ for (q in 1:length(gbm_objs)){
 
 
 
-# group `b.i` objects by bcr x species x var (or var_class?)
+# group `b.i` objects by bcr x species x var 
 # group_keys() finds the names of the group permutations
-# 0000 permutations of  bcr x common_name x var 
+# There are 0000 permutations of  bcr x common_name x var 
 boot_group_keys <- 
   bam_covariate_importance |> 
   dplyr::group_by(bcr, common_name, var) |> 
@@ -146,7 +124,7 @@ boot_group_keys <-
 
 # for every zth species x bcr x covariate permutation:
 # gather the relevant bootstrap predictions from `boot_pts`
-# and enter each wth dataframe as an element of [[z]]
+# and enter each wth dataframe as a sub-element of [[z]]
 # output: a list of lists where the top level elements are species x bcr x var permutations, 
 # and the second-level elements are dataframes of the associated bootstrapped model predictions
 
@@ -186,3 +164,23 @@ for (z in 1:nrow(boot_group_keys)){
   Sys.sleep(0.001)
 }
 
+
+
+#4. import and structure trait datasets----
+
+# AVONET: https://doi.org/10.1111/ele.13898
+avonet <- readxl::read_excel(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "avonet_database_eBird_taxonomy.xlsx"), sheet="AVONET2_eBird")
+pif
+
+
+# ACAD Scores
+# Population Size (`PS-g`) 
+# Breeding and Non-breeding Distributions (`BD-g` and `ND-g`)
+# Threats to Breeding (`TB-c`) and Non-breeding (`TN-c`)
+# Population Trend (`PT-c`)
+acad <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "acad_global_2024.csv"))
+
+
+# check that all BAM species are represented in trait databases 
+all(sample_id$sci_name %in% avonet$Species2)
+all(sample_id$sci_name %in% acad$sci_name)

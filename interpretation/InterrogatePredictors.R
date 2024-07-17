@@ -107,10 +107,6 @@ bamexplorer_stackedbarchart(groups=c("common_name", "var_class"))
 
 
 
-
-
-
-
 # side-by-side boxplots displaying bootstrap variation by variable class
 #'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
 #'
@@ -122,6 +118,7 @@ bamexplorer_stackedbarchart(groups=c("common_name", "var_class"))
 
 bamexplorer_boxplots <- function(data = bam_covariate_importance, group = NULL, species = "all", bcr = "all", traits = NULL, plot = FALSE, colours = NULL){
   
+  ifelse(bcr == "all", bcr_to_filter <- unique(bam_covariate_importance$bcr), bcr_to_filter <- bcr)
   
   # for dplyr::group_by
   group_sym <- rlang::syms(c(group, "var_class", "boot"))
@@ -131,6 +128,7 @@ bamexplorer_boxplots <- function(data = bam_covariate_importance, group = NULL, 
   rel_inf_sum <- 
     bam_covariate_importance |> 
     group_by(!!!group_sym) |> 
+    dplyr::filter(bcr %in% bcr_to_filter) |> 
     summarise(sum_influence = sum(rel.inf), .groups="keep")
   
   
@@ -226,9 +224,9 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
     )
   
   # create a partial dependence plot with error envelope
-  ggplot(summary_df, aes(x = !!covariate_sym, y = mean_response)) +
+  ggplot(summary_df, aes(x = !!covariate_sym, y = exp(mean_response))) +
     geom_line(color = "blue") +
-    geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2, fill = "blue") +
+    geom_ribbon(aes(ymin = exp(lower_bound), ymax = exp(upper_bound)), alpha = 0.2, fill = "blue") +
     labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate),
          x = covariate, y = "Predicted Response") +
     theme_minimal()
