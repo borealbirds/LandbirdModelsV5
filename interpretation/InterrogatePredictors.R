@@ -167,7 +167,7 @@ bamexplorer_boxplots(group="common_name")
 
 
 # partial dependence plot
-#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'@param data An exported `list` of `data.frame`s (see: `data(boot_pts_sorted)` where list elements are xy coordinates of covariates and predicted responses for a given species x bcr x bootstrap permutation.
 #'
 #'@param ... This allows users to pass additional arguments to `gbm::plot.gbm()`
 #'
@@ -224,11 +224,11 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
     )
   
   # create a partial dependence plot with error envelope
-  ggplot(summary_df, aes(x = !!covariate_sym, y = exp(mean_response))) +
+  ggplot(summary_df, aes(x = !!covariate_sym, y = mean_response)) +
     geom_line(color = "blue") +
-    geom_ribbon(aes(ymin = exp(lower_bound), ymax = exp(upper_bound)), alpha = 0.2, fill = "blue") +
-    labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate),
-         x = covariate, y = "Predicted Response") +
+    geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2, fill = "blue") +
+    labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate, "across 10 bootstraps"),
+         x = covariate, y = "singing males per Ha") +
     theme_minimal()
   
   
@@ -263,4 +263,58 @@ ggplot(combined_data, aes(x = AHM_1km, y = y)) +
   facet_wrap(~ replicate, scales = "free") +
   labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
 
-# folder change
+
+
+
+
+
+# important interactions
+#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+#'
+#'@param bcr A `character` specifying the Bird Conservation Regions (BCRs) of interest.
+#'
+#'@param common_name A `character` specifying the species of interest.
+#'
+#'@param covariates By default `all` where every covariate interaction (for a given BCR and species) is searched. 
+#' Otherwise, the search can be narrowed by specifying a `character` specifying a single covariate (for `n_interactions=2` or `n_interactions=3`) 
+#' or two covariates (for `n_interactions=3`) to narrow the search to interactions of interest.
+#'
+#'@param n_interactions A `numeric` specifying the degree of interactions. Can be `n=2` for two-way interactions or `n=3` for three-way interactions. 
+#'
+#'@param threshold A `numeric` specifying the number of most influential interactions to output. E.g. `threshold=10` will print the top 5 most influential interactions.
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+#'
+#'
+
+# for every species x bcr x (var x var) permutation we want variable importance
+# we also want to group by bootstrap
+bamexplorer_interactions <- function(data = boot_group_keys, bcr, common_name, n_interactions, covariates="all", threshold=5)
+  
+  if (covariates=="all"){
+    covariates <- unique(bam_covariate_importance$var)
+  } 
+  
+  
+  # construct the key for accessing the desired gbm objects
+  # note that `paste()` can handle vectors so (e.g.) `bcr` or `covariates` may have length > 1.
+  keys <- paste(bcr, common_name, covariates, sep = "_")  
+  
+  boot_group_keys
+
+  # for every zth species x bcr x covariate permutation (rows in `boot_group_keys`):
+  
+  
+  
+  
+test <- plot.gbm(b.i, i.var = c(1,7), return.grid = TRUE)
+plot.gbm(b.i, i.var = c(1,7))
+
+
+
+#################################################
+
+
+
