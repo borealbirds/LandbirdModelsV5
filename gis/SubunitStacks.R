@@ -14,6 +14,8 @@
 
 #The stacks can then be moved over to compute canada for model prediction.
 
+#WARNING: This script searches the "PredictionRasters" folder of the working google drive to inventory the available years of prediction layers for each covariate. That folder must be perfectly maintained with no duplicates to ensure this script runs as intended. 
+
 #PREAMBLE############################
 
 #1. Load packages----
