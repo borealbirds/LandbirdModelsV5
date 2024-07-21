@@ -186,8 +186,11 @@ for(i in start:nrow(loop)){
   for(j in 1:length(years.i)){
     
     #Read in prediction raster
-    rast.j <- rast(file.path(root, "output", "predictions",
-                             paste0(spp.i, "_", bcr.i, "_", boot.i, "_", years.i[j], ".tiff")))
+    rast.j <- try(rast(file.path(root, "output", "predictions",
+                             paste0(spp.i, "_", bcr.i, "_", boot.i, "_", years.i[j], ".tiff"))))
+    
+    #End loop if raster doesn't load
+    if(inherits(rast.j, "try-error")){ break }
     
     #filter and project data
     withheld.j <- withheld.i |> 
@@ -206,6 +209,9 @@ for(i in start:nrow(loop)){
     cat("Year", years.i[j], "\n")
     
   }
+  
+  #Go to next in loop
+  if(inherits(rast.j, "try-error")){ next }
   
   #8. Use within BCR only for validation----
   test.i <- prediction.i |> 
