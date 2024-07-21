@@ -18,6 +18,8 @@
 
 #The list of visits in the output is crucial for determining the training and testing data when we do model evaluation.
 
+#Although the `gbm.fit` function might provided faster performance, we use `gbm` here to ensure the model terms match the terms in the prediction raster stack. The prediction and extrapolation scripts are by far the most time-intensive steps in the model building process, and so we prioritize redundancy over speed in the `06.Bootstrap.R` script to ensure predictions are correct. Otherwise, the order of variables in the raster stacks must match those in the model building.
+
 #PREAMBLE############################
 
 #1. Load packages----
