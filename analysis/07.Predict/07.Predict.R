@@ -67,27 +67,42 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 
 brt_predict <- function(i){
   
+  df <- data.frame()
+  
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/hellohereIam.csv", row.names=FALSE))
+  
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- loop$boot[i]
   year.i <- loop$year[i]
   
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/0ModelSettings_", bcr.i, "_", spp.i, "_", boot.i, "_", year.i, ".csv", row.names=FALSE))
+  
   #2. Load model----
-  load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  load.i <- try(load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
+  if(inherits(load.i, "try-error")){ next }
+  
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/1ModelLoaded_", bcr.i, "_", spp.i, "_", boot.i, "_", year.i, ".csv", row.names=FALSE))
   
   #3. Load raster stack----
   stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
   if(inherits(stack.i, "try-error")){ next }
   stack.i$meth.i <- stack.i$method
+  
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/2StackLoaded_", bcr.i, "_", spp.i, "_", boot.i, "_", year.i, ".csv", row.names=FALSE))
 
   #4. Predict----
   pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
+  
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/3PredictionMade_", bcr.i, "_", spp.i, "_", boot.i, "_", year.i, ".csv", row.names=FALSE))
 
   #7. Save----
   if(class(pred.i)[1]=="SpatRaster"){
     writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   }
+  
+  write.csv(df, file = paste0("/home/ecknight/NationalModels/debugging/4RasterWritten_", bcr.i, "_", spp.i, "_", boot.i, "_", year.i, ".csv", row.names=FALSE))
   
 }
 
@@ -108,11 +123,13 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #3. Create to do list----
-#Sort longest to shortest duration to get the big models going first
+#currently set to prioritize 
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years) |> 
-  arrange(spp, boot, year, bcr)
+  arrange(spp, boot, year, bcr) |> 
+  dplyr::filter(spp %in% c("CAWA"),
+                !bcr %in% c("can8182", "usa41423", "usa2"))
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
