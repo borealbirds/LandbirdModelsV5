@@ -90,17 +90,18 @@ colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 #VALIDATE SUBUNITS###############
 
 #1. Get list of models----
-todo <- data.frame(modpath = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
-                   modfile = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
-  separate(modfile, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
+todo <- data.frame(path.mod = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
+                   file.mod = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
+  separate(file.mod, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #2. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
-                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
-  separate(file.pred, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)),
+predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
          boot = as.numeric(boot)) |> 
+  dplyr::select(-folder, -file) |> 
   dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #3. Make todo list----
@@ -114,9 +115,9 @@ loop <- predicted |>
   inner_join(todo)
 
 #4. Get previously run output----
-if(file.exists(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))){
+if(file.exists(file.path(root, "output", "validation", "ModelValidation_BCR.RData"))){
   
-  load(file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
+  load(file.path(root, "output", "validation", "ModelValidation_BCR.RData"))
   
   start <- length(out.list) + 1
   
@@ -137,7 +138,7 @@ for(i in start:nrow(loop)){
   boot.i <- loop$boot[i]
   
   #4. Read in files----
-  load(loop$modpath[i])
+  load(loop$path.mod[i])
   
   #5. Get training data----
   train.i <- visit.i |> 
@@ -186,7 +187,7 @@ for(i in start:nrow(loop)){
   for(j in 1:length(years.i)){
     
     #Read in prediction raster
-    rast.j <- try(rast(file.path(root, "output", "predictions",
+    rast.j <- try(rast(file.path(root, "output", "predictions", spp.i,
                              paste0(spp.i, "_", bcr.i, "_", boot.i, "_", years.i[j], ".tiff"))))
     
     #End loop if raster doesn't load
@@ -336,7 +337,7 @@ for(i in start:nrow(loop)){
   #17. Save interim object----
   out.list[[i]] <- out.vals
   
-  save(out.list, file = file.path(root, "output", "validation", "ModelValidation_InterimOutput.RData"))
+  save(out.list, file = file.path(root, "output", "validation", "ModelValidation_BCR.RData"))
   
   #18. Save test data for national evaluation----
   test <- test.i |> 
@@ -352,8 +353,3 @@ for(i in start:nrow(loop)){
   
 
 }
-
-#17. Package and save----
-out <- data.table::rbindlist(out.list, fill=TRUE)
-
-write.csv(out, file.path(root, "output", "validation", "ModelValidation_BCR.csv"), row.names = FALSE)

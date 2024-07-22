@@ -29,7 +29,7 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -134,7 +134,10 @@ calc_extrapolation <- function(i){
   raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
   
   #14. Write raster----
-  writeRaster(raster, file.path(root, "output", "extrapolation", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+  if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
+    dir.create(file.path(root, "output", "extrapolation", spp.i))
+  }
+  writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
 }
 
@@ -156,17 +159,21 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #3. Create to do list----
+#currently set to prioritize 
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years) |> 
-  arrange(spp, bcr, boot)
+  arrange(spp, bcr, boot) |> 
+  dplyr::filter(spp %in% c("CAWA"),
+                !bcr %in% c("can8182", "usa41423", "usa2"))
 
 #4. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff")) |> 
-  separate(file, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>  
-  mutate(year = as.numeric(str_sub(year, -100, -6)),
-         boot = as.numeric(boot))
+done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         boot = as.numeric(boot)) |> 
+    dplyr::select(-folder, -file)
 
 #5. Create final to do list----
 if(nrow(done) > 0){

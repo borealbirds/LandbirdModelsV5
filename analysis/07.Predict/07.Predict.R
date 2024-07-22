@@ -27,7 +27,7 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -86,8 +86,11 @@ brt_predict <- function(i){
   pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
 
   #7. Save----
-  if(class(pred.i)[1]=="SpatRaster"){
-    writeRaster(pred.i, file=file.path(root, "output", "predictions", paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
+  if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
+    dir.create(file.path(root, "output", "predictions", spp.i))
+  }
+  if(inherits(pred.i, "SpatRaster")){
+    writeRaster(pred.i, file=file.path(root, "output", "predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
   }
   
 }
@@ -118,11 +121,12 @@ todo <- booted |>
                 !bcr %in% c("can8182", "usa41423", "usa2"))
 
 #4. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
-  separate(file, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>  
-  mutate(year = as.numeric(str_sub(year, -100, -6)),
-         boot = as.numeric(boot))
+done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         boot = as.numeric(boot)) |> 
+  dplyr::select(-folder, -file)
 
 #5. Create final to do list----
 if(nrow(done) > 0){

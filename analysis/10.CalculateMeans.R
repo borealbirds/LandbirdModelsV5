@@ -36,10 +36,12 @@ bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffe
 #SUBUNIT AVERAGING#########
 
 #1. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
-                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
-  separate(file.pred, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)))
+predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
+                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         boot = as.numeric(boot)) |> 
+  dplyr::select(-folder, -file)
 
 #2. Remove ones without a full set of bootstraps----
 boots <- 10

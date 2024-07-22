@@ -54,17 +54,21 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 #Take out the BCR aggregation option that's not being used
 
 #1. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE),
-                     file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff")) |> 
-  separate(file.pred, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5))) |> 
+predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         boot = as.numeric(boot)) |> 
+  dplyr::select(-folder, -file) |> 
   dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #2. Get list of extrapolations----
-extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE),
-                        file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff")) |>
-  separate(file.extrap, into=c("spp", "bcr", "boot", "year"), sep="_", remove=FALSE) |>
-  mutate(year = as.numeric(str_sub(year, -100, -5))) |> 
+extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                           file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", recursive = TRUE)) |> 
+    separate(file.extrap, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
+    mutate(year = as.numeric(year),
+           boot = as.numeric(boot)) |> 
+    dplyr::select(-folder, -file) |> 
   dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #3. Get list of mosaics completed----
