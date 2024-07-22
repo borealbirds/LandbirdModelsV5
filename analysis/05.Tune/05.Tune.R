@@ -27,7 +27,7 @@
 
 #The steps for running on compute canada (for this and other scripts are):
 #1. Transfer this script and your data object between local computer and compute canada's servers using Globus Connect.
-#2. Create any folders you need for saving output into (as per your script).
+#2. Create any folders you need for saving output into (as per your script). You'll want to work in the scratch space, given the volume of output we will produce.
 #3. Log in to compute canada in the terminal with the ssh function.
 #4. Figure out which modules you need to run your R packages (if making any changes) and load them.
 #5. Load an instance of R in the test node and install the packages you need. Close it.
@@ -38,6 +38,10 @@
 #10. Rerun the script as many times as you need to work through all the required models (see note above).
 
 #see medium.com/the-nature-of-food/how-to-run-your-r-script-with-compute-canada-c325c0ab2973 for the most straightforward tutorial I found for compute canada
+
+#BAM has previously used the Graham cluster; however, we hit major obstacles with innaccessibility of the scratch space during V5 and moved our work to Cedar.
+
+#To consider for V6: Store output in species subfolders to facilitate moving files around to and from Compute Canada. This is implemented in the extrapolation and prediction scripts of V5, but should be extended to the other cluster steps for V6.
 
 #PREAMBLE############################
 
