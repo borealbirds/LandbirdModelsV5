@@ -29,7 +29,7 @@ library(tidyverse)
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:500, 250)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:300, 100)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -98,7 +98,8 @@ for (q in 1:length(gbm_objs)){
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
   
-  # find evaluation points (`data.frame`) for every covariate (indexed by `i`)  
+  # find evaluation points (`data.frame`) for every covariate (indexed by `i`)
+  # this can sped up by reducing `continuous.resolution=100` in `plot.gbm()`
   pts <- list()
   for (i in 1:length(b.i$var.names)){
     pts[[i]] <- plot.gbm(x=b.i, return.grid = TRUE, i.var = i, type="response")
@@ -128,7 +129,7 @@ boot_group_keys <-
 # and enter each wth dataframe as a sub-element of [[z]]
 # output: a list of lists where the top level elements are species x bcr x var permutations, 
 # and the second-level elements are dataframes of the associated bootstrapped model predictions
-
+# you can query every zth top level element for its bcr x species x var label by: names(boot_pts_sorted)[z] 
 boot_pts_sorted <- list()
 for (z in 1:nrow(boot_group_keys)){
   
@@ -174,16 +175,21 @@ for (z in 1:nrow(boot_group_keys)){
 # this loop creates a list of lists of `data.frame`s. 
 # each top level element is a bootstrap replicate, each second-level element represents a 2-way covariate interaction for that bootstrap.
 # each covariate interaction has a corresponding `data.frame`, with columns 1 and 2 being the covariate domains and column 3 being the interaction strength.
+# NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant dataframe structure will differ compared to interactions between two continuous variables.
+# The `MODISLCC_1km` column will first list the first level of the variable n times, set by `continuous.resolution=n` in `plot.gbm()`. The second level of `MODISLCC_1km` will follow, and so on. 
+# If the second variable is continuous, that column will describe the range of responses over the domain of a given level of `MODISLCC_1km`. 
+# This means that `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
+
 
 boot_pts_i2 <- list()
-for (q in 1:3){ #length(gbm_objs)
+for (q in 1:2){ #length(gbm_objs)
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
-  n <- 10 #length(b.i$var.names) # get the number of variables
+  n <- length(b.i$var.names) # get the number of variables
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
@@ -192,9 +198,9 @@ for (q in 1:3){ #length(gbm_objs)
     # start at i+1 to avoid finding the interaction of variable 1 x variable 1
     for (j in (i+1):n) { 
       
-      # `continuous.resolution` is defaulted at 100, but this produces a dataframe of length=100*100 (10000 rows)
-      # by lowering to 50, we get 2500 rows, which should be enough resolution to find local maximums
-      pts[[interaction_index]] <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution = 32, type="response")
+      # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
+      # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
+      pts[[interaction_index]] <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")
       names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = "_") # label the interaction
       interaction_index <- interaction_index + 1
     }
@@ -206,6 +212,13 @@ for (q in 1:3){ #length(gbm_objs)
   cat(paste("\riteration", q))
   Sys.sleep(0.001)
 }
+
+
+data <- plot.gbm(x=b.i, i.var=c("SCANFIBlackSpruce_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+data2 <- plot.gbm(x=b.i, i.var=c("WetSeason_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+data3 <- plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+
+# take the mean and SD of the response (y) across the 2-way interaction space. 
 
 
 # create an index of every bcr x common_name x 2-way interactions 
@@ -266,6 +279,10 @@ for (z in 1:nrow(boot_group_keys_i2)){
   cat(paste("\riteration", z))
   Sys.sleep(0.001)
 }
+
+
+
+
 
 
 
