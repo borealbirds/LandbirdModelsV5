@@ -175,18 +175,21 @@ for (z in 1:nrow(boot_group_keys)){
 # this loop creates a list of lists of `data.frame`s. 
 # each top level element is a bootstrap replicate, each second-level element represents a 2-way covariate interaction for that bootstrap.
 # each covariate interaction has a corresponding `data.frame`, with columns 1 and 2 being the covariate domains and column 3 being the interaction strength.
+# NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant dataframe structure will differ compared to interactions between two continuous variables.
+# The `MODISLCC_1km` column will first list the first level of the variable n times, set by `continuous.resolution=n` in `plot.gbm()`. The second level of `MODISLCC_1km` will follow, and so on. 
+# If the second variable is continuous, that column will describe the range of responses over the domain of a given level of `MODISLCC_1km`. 
+# This means that `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
 
 
-# PROBLEM HERE: WHY DO DISCRETE VARIABLES LIKE MODIS landcover class end up with repeating dataframes?
 boot_pts_i2 <- list()
-for (q in 1:5){ #length(gbm_objs)
+for (q in 1:2){ #length(gbm_objs)
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
-  n <- 10 #length(b.i$var.names) # get the number of variables
+  n <- length(b.i$var.names) # get the number of variables
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
@@ -197,7 +200,7 @@ for (q in 1:5){ #length(gbm_objs)
       
       # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
       # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
-      pts[[interaction_index]] <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), type="response")
+      pts[[interaction_index]] <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")
       names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = "_") # label the interaction
       interaction_index <- interaction_index + 1
     }
@@ -209,6 +212,13 @@ for (q in 1:5){ #length(gbm_objs)
   cat(paste("\riteration", q))
   Sys.sleep(0.001)
 }
+
+
+data <- plot.gbm(x=b.i, i.var=c("SCANFIBlackSpruce_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+data2 <- plot.gbm(x=b.i, i.var=c("WetSeason_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+data3 <- plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
+
+# take the mean and SD of the response (y) across the 2-way interaction space. 
 
 
 # create an index of every bcr x common_name x 2-way interactions 
@@ -271,8 +281,12 @@ for (z in 1:nrow(boot_group_keys_i2)){
 }
 
 
-plot.gbm(x=b.i, i.var=c("year", "ERAMAT_1km"))
-plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "WetOccur_5x5"))
+
+
+
+
+
+
 
 
 
