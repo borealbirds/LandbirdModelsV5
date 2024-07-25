@@ -34,29 +34,18 @@ cc <- TRUE
 if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 2}
 
-#4. Create nodes list----
-print("* Creating nodes list *")
-
-#For running on cluster
-nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
-
-#For testing on local
-if(!cc){ nodeslist <- nodes }
-
-print(nodeslist)
-
-#5. Create and register clusters----
+#4. Create and register clusters----
 print("* Creating clusters *")
-cl <- makePSOCKcluster(nodeslist, type="PSOCK")
+cl <- makePSOCKcluster(nodes, type="PSOCK")
 
-#6. Set root path----
+#5. Set root path----
 print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
-#7. Load packages on clusters----
+#6. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
