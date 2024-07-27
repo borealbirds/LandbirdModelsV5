@@ -18,6 +18,7 @@
 
 #1. Attach packages----
 library(gbm)
+library(RcppAlgos)
 library(tidyverse)
 
 
@@ -29,6 +30,7 @@ library(tidyverse)
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
+# 129.2 GB for 10 bootstraps
 gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:300, 100)]
 
 
@@ -89,20 +91,19 @@ bam_covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
 # for partial dependence plotting  
 
 
-# this loop creates a list of lists of `data.frame`s. 
-# each top level element is a bootstrap replicate, each second-level element represents a covariate for that bootstrap.
-# each covariate interaction has a corresponding `data.frame`, with column 1 being the covariate domain and column 2 being the predicted range.
+# this loop creates a nested list of `data.frame`s. 
+# each top level element a bcr x species x bootstrap tuple, with second-level elements as the rth covariate for that bootstrap.
 boot_pts <- list()
 for (q in 1:length(gbm_objs)){
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
   
-  # find evaluation points (`data.frame`) for every covariate (indexed by `i`)
+  # find evaluation points (`data.frame`) for every covariate (indexed by `r`)
   # this can sped up by reducing `continuous.resolution=100` in `plot.gbm()`
   pts <- list()
-  for (i in 1:length(b.i$var.names)){
-    pts[[i]] <- plot.gbm(x=b.i, return.grid = TRUE, i.var = i, type="response")
+  for (r in 1:length(b.i$var.names)){
+    pts[[r]] <- plot.gbm(x=b.i, return.grid = TRUE, i.var = r, type="response")
   }
   
   boot_pts[[q]] <- pts
@@ -114,9 +115,9 @@ for (q in 1:length(gbm_objs)){
 
 
 
-# group `b.i` objects by bcr x species x var 
-# group_keys() finds the names of the group permutations
-# There are 0000 permutations of  bcr x common_name x var 
+# from the family of sets (BCRs, species, covariates) 
+# group_keys() finds the names of the unique tuples
+# There are 00000 bcr x common_name x var tuples 
 boot_group_keys <- 
   bam_covariate_importance |> 
   dplyr::group_by(bcr, common_name, var) |> 
@@ -124,37 +125,38 @@ boot_group_keys <-
 
 
 
-# for every zth species x bcr x covariate permutation (rows in `boot_group_keys`):
-# gather the relevant bootstrap predictions from `boot_pts`
-# and enter each wth dataframe as a sub-element of [[z]]
-# output: a list of lists where the top level elements are species x bcr x var permutations, 
-# and the second-level elements are dataframes of the associated bootstrapped model predictions
-# you can query every zth top level element for its bcr x species x var label by: names(boot_pts_sorted)[z] 
+# for every zth bcr x species x var tuple (rows in `boot_group_keys`):
+# search for the relevant bootstrap predictions in `boot_pts` by matching species and bcr at the top level of `boot_pts` then matching `var` at the second level
+# then, enter bootstrap dataframes for a given bcr x species x var tuple as a sub-element of [[z]]
+# output: a list of lists where the top level elements are species x bcr x var tuples, 
+# and the second-level elements are dataframes of that tuple's bootstrapped model predictions
+# you can query every zth tuple for its bcr x species x var identity by: names(boot_pts_sorted)[z] 
 boot_pts_sorted <- list()
 for (z in 1:nrow(boot_group_keys)){
   
-  # zth covariate
+  # zth bcr x species x var tuple
   key_z <- boot_group_keys[z,]
   
-  # `sample_id` and `boot_pts` have the same length and order
-  # so we can annotate elements in `boot_pts` using info from `sample_id`
+  # `sample_id` and `boot_pts` have the same length and order (they are derived from `gbm_objs`)
+  # so we can identify elements in the latter using info from the former
+  # search for all bootstraps for a given bcr x sample tuple
   boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
   
-  # a list of bootstrap predictions for zth species x bcr permutation 
+  # a list of bootstrap predictions for species x bcr tuple
   spp_bcr_list <- boot_pts[boot_pts_index]
   
-  # search for all bootstrap predictions for the zth covariate
+  # for a given bcr x species tuple, search within every bootstrap model for
   spp_bcr_var <- list()
   for (w in 1:length(spp_bcr_list)) {
     
-    # get covariate names for the current spp x bcr permutation 
+    # get all possible covariate names for the current bcr x species bootstrap
     var_names <- 
       lapply(spp_bcr_list[[w]], colnames) |> 
       lapply(X=_, `[[`, 1) |> #don't need the name of the y variable
       purrr::flatten_chr()
     
-    # find which elements match the current covariate of interest
-    spp_bcr_var[w] <- spp_bcr_list[[w]][which(var_names %in% key_z)] 
+    # search the wth bootstrap to find the current covariate of interest
+    spp_bcr_var[w] <- spp_bcr_list[[w]][which(var_names %in% key_z$var)]
     names(spp_bcr_var)[w] <- paste("bootstrap replicate", w, sep="_")
   }
   
@@ -168,21 +170,17 @@ for (z in 1:nrow(boot_group_keys)){
 
 
 
-
-
 #4. Create a list of two-way covariate interactions by bcr x species x bootstrap replicate----
 
 # this loop creates a list of lists of `data.frame`s. 
 # each top level element is a bootstrap replicate, each second-level element represents a 2-way covariate interaction for that bootstrap.
-# each covariate interaction has a corresponding `data.frame`, with columns 1 and 2 being the covariate domains and column 3 being the interaction strength.
-# NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant dataframe structure will differ compared to interactions between two continuous variables.
-# The `MODISLCC_1km` column will first list the first level of the variable n times, set by `continuous.resolution=n` in `plot.gbm()`. The second level of `MODISLCC_1km` will follow, and so on. 
-# If the second variable is continuous, that column will describe the range of responses over the domain of a given level of `MODISLCC_1km`. 
-# This means that `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
+# each covariate interaction has a corresponding `data.frame`, with columns 1 and 2 being the covariate domains and column 3 being the response (density)
+# NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant plot will differ compared to interactions between two continuous variables (heatmap).
+# `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
 
 
 boot_pts_i2 <- list()
-for (q in 1:2){ #length(gbm_objs)
+for (q in 1:length(gbm_objs)){
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
@@ -223,20 +221,24 @@ data3 <- plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "year"), type="response", conti
 
 # create an index of every bcr x common_name x 2-way interactions 
 # there are 0000 permutations of  bcr x common_name x 2-way interactions 
+unique_bcr_spp <- dplyr::distinct(bam_covariate_importance, bcr, common_name)
+
 boot_group_keys_i2 <- 
-  bam_covariate_importance |>
-  dplyr::group_by(bcr, common_name) |> # group `b.i` objects by bcr x species, then `summarise()` into a tibble with a list column `vars`
-  dplyr::summarise(vars = list(combn(var, m=2, simplify=FALSE)), .groups = 'drop') |> # every element of vars is a bcr x species permutation with nested elements describing every 2-way interaction
-  tidyr::unnest(vars) |> # flatten the list-column into a tibble
-  dplyr::mutate(var1 = sapply(vars, `[[`, 1), var2 = sapply(vars, `[[`, 2)) |> # extract (`[[`) the first (`1`) and second (`2`) covariates from each 2-way interaction and create new columns `var1` and `var2`
-  dplyr::select(-vars)
+  comboGrid(unique(bam_covariate_importance$var), 
+            unique(bam_covariate_importance$var), repetition =  FALSE) |> 
+  as_tibble() |> 
+  tidyr::crossing(unique_bcr_spp) |> 
+  dplyr::rename(var1=Var1, var2=Var2)
+  
+  
 
+# NEED TO BE CAREFUL THAT the horizontal order of var1 and var2 in boot_group_keys_i2 
+# does not affect the loop's ability to find interactions (e.g. the loop searches for var2, var1 and fails when var1, var2 exists)
 
-
-# for every zth species x bcr x covariate permutation (rows in `boot_group_keys`):
-# gather the relevant bootstrap predictions from `boot_pts`
+# for every zth species x bcr x 2-way interaction tuple (rows in `boot_group_keys_i2`):
+# gather the relevant bootstrap predictions from `boot_pts_i2`
 # and enter each wth dataframe as a sub-element of [[z]]
-# output: a list of lists where the top level elements are species x bcr x var permutations, 
+# output: a list of lists where the top level elements are species x bcr x 2-way interaction permutations, 
 # and the second-level elements are dataframes of the associated bootstrapped model predictions
 
 boot_pts_sorted_i2 <- list()
@@ -245,42 +247,45 @@ for (z in 1:nrow(boot_group_keys_i2)){
   # zth bcr x species x 2-way interaction permutation
   key_z <- boot_group_keys_i2[z,]
   
-  # CHECK IF TRUE: `sample_id` and `boot_pts_i2` have the same length and order 
-  # so we can annotate elements in `boot_pts` using info from `sample_id`
+  # `sample_id` and `boot_pts_i2` have the same length and order 
+  # so we can annotate elements in `boot_pts_i2` using info from `sample_id`
+  # identify a unique species x bcr combo, then gather covariate interactions into it
   boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
   
   # a list of bootstrap predictions for zth species x bcr permutation 
   spp_bcr_list <- boot_pts_i2[boot_pts_index]
   
-  # search for all bootstrap predictions for the zth covariate combination
+  # search for all bootstrap predictions for the zth species x bcr permutation
   spp_bcr_var <- list()
   for (w in 1:length(spp_bcr_list)) {
     
     # get covariate names for the current spp x bcr permutation 
-    var_names <- 
+    i2_names <- 
       lapply(spp_bcr_list[[w]], colnames) |> 
-      lapply(X=_, `[[`, 1) |> #don't need the name of the y variable
+      lapply(X=_, `[[`, 1) |> # don't need the name of the y variable
       purrr::flatten_chr()
     
     # find which elements match the current covariate combination of interest
-    matching_indices <- which((var_names == key_z$var1) | (var_names == key_z$var2))
+    matching_indices <- which((i2_names == key_z$var1) | (i2_names == key_z$var2))
     spp_bcr_var[[w]] <- spp_bcr_list[[w]][matching_indices]
     names(spp_bcr_var)[w] <- paste("bootstrap replicate", w, sep="_")
   }
   
   interaction_name <- paste(key_z$bcr, key_z$common_name, paste(key_z$var1, key_z$var2, sep = "_"), sep = "_")
-  if (!interaction_name %in% names(boot_pts_sorted)) {
-    boot_pts_sorted[[interaction_name]] <- list()
+  if (!interaction_name %in% names(boot_pts_sorted_i2)) {
+    boot_pts_sorted_i2[[interaction_name]] <- list()
   }
   
-  boot_pts_sorted[[interaction_name]][[length(boot_pts_sorted[[interaction_name]]) + 1]] <- spp_bcr_var
+  boot_pts_sorted_i2[[interaction_name]][[length(boot_pts_sorted_i2[[interaction_name]]) + 1]] <- spp_bcr_var
   
   # print progress
   cat(paste("\riteration", z))
   Sys.sleep(0.001)
 }
 
-
+# list with 37487 elements
+# 1 species x 3 bcrs x 100 bootstraps x 66! 2-way interactions
+# 12 var_classes = 12! = 479 million
 
 
 
