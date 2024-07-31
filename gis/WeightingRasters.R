@@ -109,7 +109,7 @@ OverlapUS <- as.polygons(u.mosaic) %>% .[2]
 writeVector(OverlapUS,paste(root,"MosaicWeighting/","BCR_Overlap_US", sep=""))
 
 #7. Combine the two----
-MosaicOverlap <- mosaic(MosaicOverlap1, MosaicOverlap2)
+MosaicOverlap <- merge(MosaicOverlap1, MosaicOverlap2)
 writeRaster(MosaicOverlap, file.path(root, "gis","ModelOverlap.tif", sep=""), overwrite=TRUE)
 
 #DISTANCE TO EDGE######
