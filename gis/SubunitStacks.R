@@ -14,6 +14,8 @@
 
 #The stacks can then be moved over to compute canada for model prediction.
 
+#NOTE: This stage is critical. If these stacks aren't built correctly and have to be fixed, the prediction & extrapolation scripts will need to be rerun. I have tried to build in checks where possible (e.g., checking resolution, check output), but other checks could potentially be incorporated.
+
 #WARNING: This script searches the "PredictionRasters" folder of the working google drive to inventory the available years of prediction layers for each covariate. That folder must be perfectly maintained with no duplicates to ensure this script runs as intended. 
 
 #PREAMBLE############################
@@ -135,7 +137,8 @@ units <- bcr.out |>
   st_drop_geometry() |> 
   mutate(bcr = paste0(country, subUnit)) |> 
   unique() |> 
-  expand_grid(year = seq(1985, 2020, 5))
+  expand_grid(year = seq(1985, 2020, 5)) |> 
+  dplyr::filter(bcr %in% c("usa40", "usa43", "usa2", "usa41423", "usa414232", "usa5"))
 
 for(i in 1:nrow(units)){
   
@@ -167,6 +170,15 @@ for(i in 1:nrow(units)){
     rast.i <- rast(files.i$path[j])
     
     print("read")
+    
+    #Check resolution
+    if(round(res(rast.i))[1]!=1000){ 
+      
+      cat("STOP: resolution is wrong:", res(rast.i)[1], "for", files.i$path[j])
+      
+      break
+      
+      }
     
     #8. Reproject as needed----
     if(crs(rast.i)!=crs(shp.i)){rast.i <- project(rast.i, crs(shp.i))}
@@ -256,7 +268,7 @@ for(i in 1:nrow(files.stack)){
   
   stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
   
-  if(inherits(stack.i, "try-error")){corrupt <- rbind(corrupt, files.stack[i,])}
+  if(inherits(stack.i, "try-error")){corrupt <- rbind(corrupt, files.stack[i,])} 
   
   cat(i, ": Raster", bcr.i, "-", year.i, "OK\n")
   
