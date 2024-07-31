@@ -22,9 +22,8 @@
 #if (!require("remotes")) install.packages("remotes")
 #remotes::install_github("densitymodelling/dsmextra")
 
-pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, 
-               rlang, leaflet, dplyr, terra, smoothr, stringi,
-               readr, ecospat, mapview)
+pacman::p_load(dsmextra, sp, tidyverse, sf, rlang, leaflet, dplyr, 
+               terra, smoothr, stringi, readr, ecospat)
 
 # extra function
 `%notin%` <- Negate(`%in%`)
