@@ -8,7 +8,12 @@
 # This code uses dsextra to quantify extrapolation
 # This package calls the "ExDet" function which needs it's
 # tolerances adjusted to avoid singular matrices (rounding low values down)
-
+#-----------------------------
+#Tweak ExDet function in dsmextra by increasing the tolerance (tol) 
+#of the Mahalanobis function for mah.ref + mah.pro: 
+#getAnywhere(ExDet) - then change:
+#mah.ref <- stats::mahalanobis(x = ref, center = aa, cov = bb, tol=1e-20) 
+#------------------------------
 #PREAMBLE############################
 
 #1. Load packages----
@@ -16,10 +21,6 @@
 # Import dsmextra
 #if (!require("remotes")) install.packages("remotes")
 #remotes::install_github("densitymodelling/dsmextra")
-#-----------------------------
-#Tweak ExDet function in dsmextra by increasing 
-#the tolerance of the Mahalanobis function: 
-#getAnywhere(ExDet)
 
 pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, 
                rlang, leaflet, dplyr, terra, smoothr, stringi,
@@ -54,15 +55,15 @@ us <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>%
 Lookup <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")%>% 
   dplyr::select(Category,Label,YearMatch, TemporalResolution, PredictPath)
 
-#Modify t-1 notation for ERA
+#Modify t-1 notation for ERA -----
 Lookup$Raster<-Lookup$Label
 Lookup$Raster[Lookup$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
 Lookup$Raster[Lookup$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
 
-#Remove hli3cl and SCANFI_1km - categorical, not continuous 
+#Remove hli3cl and SCANFI_1km - categorical, not continuous -------
 Lookup<-subset(Lookup, Lookup$Label %notin% c("hli3cl_1km","SCANFI_1km"))
 
-#Get grouping categories and remove LCC
+#Get grouping categories and remove LCC ------
 Lookup$Category<-ifelse(Lookup$Category=="Road","Disturbance",ifelse(Lookup$Category=="Greenup","Annual Climate", Lookup$Category)) ### need to finish aligning categories
 Grouping<-unique(Lookup$Category) #Groupings
 Grouping<- Grouping[! Grouping %in% c('Landcover','LCC_MODIS')] #LCC is NA for this
@@ -117,7 +118,6 @@ Get_paths<- function(Grouping, YR){
   
   return(list(Path_list,Name_list))
 }
-
 
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
 # this uses the above "Get_paths" function to extract appropriate rasters for stacking
@@ -195,7 +195,7 @@ sample.i<-sample.i %>%.[,colSums(.,na.rm=T)!=0] # remove covariates with no data
 #    st_transform(crs=crs) %>%
 #    as(.,"Spatial") 
 
-# Extract BCR specific data frames for each group. pick year of interest e.g Year=2020  ---  
+# Extract BCR specific data frames for each group. *pick year of interest* e.g Year=2020  ---  
 
 Dataframe<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)  
 
@@ -310,11 +310,11 @@ c26 <- c("lightgrey","chartreuse4","gold1","chartreuse1","darkgoldenrod2","darks
   "red3","salmon2","darkorchid1","purple3","deeppink3","purple4","#633333","dodgerblue3","yellow",
   "darkturquoise","yellow3","blue","gold3","navy","salmon4","black","#CC79A7","#FB9A99")
 
-# Point colour, water colour
+#Point colour, water colour ------------
 Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
 W_col <- rgb(185, 217, 245, max = 255, alpha = 180)
 
-## Survey locations:
+## Survey locations: if including points ------------
 loc <- visit %>% 
   dplyr::select(id, lat, lon) %>% 
   unique() %>% 
@@ -340,3 +340,5 @@ plot(water$geometry,lwd=0.1,col="white",border = "#436175", add=T)
 #plot(loc$geometry,col=Pnt_col,cex=0.001, add=T) # add survey locations
 plot(bcr$geometry,lwd=0.2,add=T)
 dev.off()
+
+################################ END OF CODE ############################
