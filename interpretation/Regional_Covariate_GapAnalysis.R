@@ -1,327 +1,342 @@
 # ---
-# title: National Models 5.0 - Gap Analysis
+# title: National Models 5.0 - Gap analysis of all covariates
 # author: Anna Drake
-# created: November 2023
+# created: June 30, 2024
 # ---
 
 #NOTES################################
-
 # This code uses dsextra to quantify extrapolation
-# The package calls the ExDet function which needs it's
+# This package calls the "ExDet" function which needs it's
 # tolerances adjusted to avoid singular matrices (rounding low values down)
-
-# The first analysis uses all sampling data (-) to assess coverage of the predictor 
-# variable environment
-# The second analysis will look at temporal variation in coverage (assuming year * predictor
-# interactions occur). We use sampling of 10-year windows straddling 5-year 
-# predictor rasters (2000,2005,2010,2015,2020).
-
-# extra function
-`%notin%` <- Negate(`%in%`)
-
-# NAD83(NSRS2007)/Conus Albers projection (epsg:5072)
-crs<-"+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
 #PREAMBLE############################
 
 #1. Load packages----
 
 # Import dsmextra
-  #if (!require("remotes")) install.packages("remotes")
-  #remotes::install_github("densitymodelling/dsmextra")
+#if (!require("remotes")) install.packages("remotes")
+#remotes::install_github("densitymodelling/dsmextra")
+#-----------------------------
+#Tweak ExDet function in dsmextra by increasing 
+#the tolerance of the Mahalanobis function: 
+#getAnywhere(ExDet)
 
-pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, lattice,
-               rlang, rgeos, tools, dplyr, plyr, terra, smoothr, utils, 
-               knitr, ecospat, magrittr, utils, readr, mapview, htmlwidgets)
+pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, 
+               rlang, leaflet, dplyr, terra, smoothr, stringi,
+               readr, ecospat, mapview)
 
-# Tweak ExDet function in dsmextra: increase the tolerance of the Mahalanobis function 
+# extra function
+`%notin%` <- Negate(`%in%`)
 
-#getAnywhere(ExDet) 
+#2. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
+crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
-ExDet<-function (ref, tg, xp) 
-{
-  tg <- as.matrix(tg)
-  ref <- as.matrix(ref)
-  a <- apply(ref, 2, min, na.rm = TRUE)
-  b <- apply(ref, 2, max, na.rm = TRUE)
-  minref <- matrix(a, nrow = nrow(tg), ncol = ncol(tg), byrow = TRUE)
-  maxref <- matrix(b, nrow = nrow(tg), ncol = ncol(tg), byrow = TRUE)
-  nt1.df <- data.frame(apply(array(data = c(tg - minref, maxref - 
-                                              tg, rep(0, nrow(tg) * ncol(tg))), dim = c(dim(tg), 3)), 
-                             c(1, 2), min)/(maxref - minref))
-  names(nt1.df) <- xp
-  nt1 <- rowSums(nt1.df)
-  mic_nt1 <- apply(nt1.df, 1, FUN = function(x) base::which.min(x))
-  univ.rge <- which(nt1 == 0)
-  mic_nt1[univ.rge] <- NA
-  tg.univ <- matrix(tg[univ.rge, ], ncol = ncol(tg))
-  aa <- apply(ref, 2, mean, na.rm = TRUE)
-  bb <- stats::var(ref, na.rm = TRUE)
-  mah.ref <- stats::mahalanobis(x = ref, center = aa, cov = bb, tol=1e-20) # increase tolerance
-  mah.pro <- stats::mahalanobis(x = tg.univ, center = aa, cov = bb, tol=1e-20)# increase tolerance
-  mah.max <- max(mah.ref[is.finite(mah.ref)])
-  nt2 <- mah.pro/mah.max
-  nt1[univ.rge] <- nt2
-  if (length(xp) == 1) 
-    cov.combs <- matrix(1)
-  if (length(xp) > 1) 
-    cov.combs <- utils::combn(x = 1:ncol(tg.univ), m = length(xp) - 
-                                1)
-  cov.combs <- as.list(data.frame(cov.combs))
-  if (length(xp) == 1) {
-    cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[, 
-                                                               .]), 2, mean))
-    cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[, 
-                                                             .])))
-  }
-  else {
-    cov.aa <- cov.combs %>% purrr::map(., ~apply(as.matrix(ref[, 
-                                                               .]), 2, mean, na.rm = TRUE))
-    cov.bb <- cov.combs %>% purrr::map(., ~var(as.matrix(ref[, 
-                                                             .]), na.rm = TRUE))
-  }
-  if (nrow(tg.univ) < 2) {
-    warning("Only one prediction point within analogue conditions. Mahalanobis distances cannot be calculated.")
-    mah_nt2 <- vector(mode = "list", length = length(cov.combs))
-  }
-  else {
-    mah_nt2 <- purrr::pmap(.l = list(cov.combs, cov.aa, cov.bb), 
-                           .f = function(a, b, c) stats::mahalanobis(x = as.matrix(tg.univ[, 
-                                                                                           a]), center = b, cov = c, tol=1e-20))# increase tolerance
-  }
-  mah_nt2 <- mah_nt2 %>% purrr::set_names(., xp)
-  mah_nt2 <- mah_nt2 %>% purrr::map_df(., cbind)
-  mah_nt2 <- as.matrix(mah_nt2)
-  mic_nt2 <- 100 * (mah.pro - mah_nt2)/mah_nt2
-  mic_nt2 <- apply(mic_nt2, 1, FUN = function(x) base::which.max(x))
-  results <- tibble::tibble(ExDet = nt1, mic_univariate = mic_nt1, 
-                            mic_combinatorial = NA)
-  if (nrow(tg.univ) > 1) 
-    results$mic_combinatorial[univ.rge] <- mic_nt2
-  results <- results %>% dplyr::mutate(mic_combinatorial = ifelse(ExDet >= 
-                                                                    0 & ExDet <= 1, NA, mic_combinatorial))
-  results <- results %>% dplyr::mutate(mic = rowSums(.[2:3], 
-                                                     na.rm = TRUE))
-  return(results)
-}
+#3. Set file paths ----
+root<-"G:/Shared drives/BAM_NationalModels5"
 
-
-#2. Set root path for data on google drive ----
-root <- "/Volumes/GoogleDrive/Shared drives/BAM_NationalModels/NationalModels5.0"
-
-#3. Load data package with covariates and BCR lists ----
+#4. Load data package with covariates and BCR lists ----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
 rm(bird,birdlist,gridlist,offsets)
 
-#clean sample covariates
-cov_clean<-cov%>%dplyr::select(where(is.numeric))
+cov_clean<-cov%>%dplyr::select(where(is.numeric)) #limit to numeric covariates
 
-#temp value correction for negative biomass values
-cov_clean[c(10:23,30:53)][cov_clean[c(10:23,30:53)]<0]<- NA
+#5. Import BCR boundaries with political boundaries + the political boundaries alone ----
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) %>% 
+  st_transform(crs=crs)
 
-#4. Get BCR boundaries ----
 can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
   st_transform(crs=crs) # Canadian boundary
 
-bcr.ca <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>% 
-  dplyr::filter(subUnit!=1) %>% # remove BCR 1
-  st_transform(crs=crs) %>%
-  st_intersection(can) %>% 
-  mutate(country="ca") # Restrict to Canadian BCRs
+us <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
+  st_transform(crs=crs) # US boundary
 
-#5. Produce look-up table: "BCR label"-"spatial sf subunit"   ----
-BCR_Names <- colnames(bcrlist)%>%.[grep('ca',.)]
-BCR_lookup <- data.frame(matrix(nrow=length(BCR_Names),ncol=0))
-BCR_lookup$Names<-BCR_Names
+#6. Load prediction raster categories -----
+Lookup <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")%>% 
+  dplyr::select(Category,Label,YearMatch, TemporalResolution, PredictPath)
 
-BCR_lookup$subUnit<-as.numeric(gsub("\\D", "", BCR_Names))
+#Modify t-1 notation for ERA
+Lookup$Raster<-Lookup$Label
+Lookup$Raster[Lookup$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
+Lookup$Raster[Lookup$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
 
-Left<-Right<-subset(BCR_lookup,BCR_lookup$subUnit>100) #set both component BCRs to link to merged BCR
-Left$subUnit<-as.numeric(substr(Left$subUnit,1,2))
-Right$subUnit<-as.numeric(substr(Right$subUnit,3,4))
+#Remove hli3cl and SCANFI_1km - categorical, not continuous 
+Lookup<-subset(Lookup, Lookup$Label %notin% c("hli3cl_1km","SCANFI_1km"))
 
-BCR_lookup<-rbind(subset(BCR_lookup,BCR_lookup$subUnit<100),Left,Right)
-rm(Left,Right,BCR_Names)
+#Get grouping categories and remove LCC
+Lookup$Category<-ifelse(Lookup$Category=="Road","Disturbance",ifelse(Lookup$Category=="Greenup","Annual Climate", Lookup$Category)) ### need to finish aligning categories
+Grouping<-unique(Lookup$Category) #Groupings
+Grouping<- Grouping[! Grouping %in% c('Landcover','LCC_MODIS')] #LCC is NA for this
 
-#6. Load prediction raster look-up, get Canadian prediction variables ----
+# MAIN ##########################################################
 
-Canada <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), 
-                             sheet = "ExtractionLookup") %>%
-                             dplyr::filter(Extent %in% c("Canada","global","north america","Canada-forested"))
-
-Canada$Raster<-Canada$Label
-Canada$Raster[Canada$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
-Canada$Raster[Canada$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
-
-Grouping<-unique(Canada$Category) #Groupings
-Grouping<-Grouping[-c(1,3,6,7,9)] ##**dropping annual climate for now with labelling issue unresolved
-
-#7. Functions to get and prep data for analysis -----
+#7. Run functions to retrieve and prep data for analysis -----
 
 #(1) Function to extract raster list - returns matrix of raster pathways [1,] + variable names [2,]
+
 Get_paths<- function(Grouping, YR){
   
   Path_list<-Name_list<-c()
-  Group.j<-dplyr::filter(Canada,Canada$Category==Grouping)
-
-for (k in (1:nrow(Group.j))){ # Get variables within each group
-    
-Period<-Static<-Name<-NULL
-    
-# Return the closest year to desired period
-if(Group.j$TemporalResolution[k]=="match") {
+  Group.k<-dplyr::filter(Lookup,Lookup$Category==Grouping)
+ 
+  for (k in (1:nrow(Group.k))){ # Get variables within each group
   
-  years<-dir(file.path(root,Group.j$PredictPath[k]))%>%
-    stringr::str_sub(.,-8,-5)%>%as.numeric(.)%>%suppressWarnings()  #pull all years
+    Matched<-Static<-Name<-NULL
     
-  Match<-which(abs(years - YR) == min(abs(years - YR),na.rm=T))%>%
-    years[.]%>%unique(.)  #ID closest year (minimum value when multiple options)
-
-if(Group.j$YearMatch[k]==0){
+    fdir<-dir(file.path(root,Group.k$PredictPath[k])) # full directory
     
-    Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Match,".tif",sep="")
-}    
-  
-else if (Group.j$YearMatch[k]==(-1)){
+    # Return the closest year to desired period
+    if(Group.k$TemporalResolution[k]=="match") {
     
-    Lag<-min(which(abs(years[years!=Match]- (YR-1)) == min(abs(years[years!=Match] - (YR-1)),na.rm=T)))%>%
-      years[.]%>%unique(.)
+      years<-fdir[grep(Group.k$Raster[k], fdir)] %>%  #isolate variable of interest
+      stringi::stri_sub(-8,-5)%>% as.numeric()%>% suppressWarnings()  #pull all years
     
-    Period<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],"_",Lag,".tif",sep="")
-}
-  
-} else {
-      Static<-paste(Group.j$PredictPath[k],"/",Group.j$Raster[k],".tif",sep="")
+    if(Group.k$YearMatch[k]==0){
+    
+      Match<- which(abs(years - YR) == min(abs(years - YR),na.rm=T)) %>%
+      years[.]    #ID closest year 
+      
+      Matched<-paste(Group.k$PredictPath[k],"/",Group.k$Raster[k],"_",Match,".tif",sep="")
+      }    
+      
+      else if (Group.k$YearMatch[k]==(-1)){
+        
+      Lag<-min(which(abs(years- (YR-1)) == min(abs(years- (YR-1)),na.rm=T))) %>%
+      years[.]  # ID lagged closest year
+        
+      Matched<-paste(Group.k$PredictPath[k],"/",Group.k$Raster[k],"_",Lag,".tif",sep="")
+      }
+      
+    } else {
+      Static<-paste(Group.k$PredictPath[k],"/",Group.k$Raster[k],".tif",sep="")
     }
     
-Path_list<-c(Path_list,Period,Static) #early and static list
-Name_list<-c(Name_list,Group.j$Label[k]) 
- 
-} # close group
+    Path_list<-c(Path_list,Matched,Static) #Join matched and static list
+    Name_list<-c(Name_list,Group.k$Label[k]) 
+    
+  } # close group
   
   return(list(Path_list,Name_list))
 }
 
+
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
-# uses "Get_paths" function to extract rasters for stacking
+# this uses the above "Get_paths" function to extract appropriate rasters for stacking
 
 create_df <- function(Grouping,YR,bcr.i){
   
-Stack<-list()  
-e<-ext(bcr.i)
+  Stack<-list()  
+  e<-ext(bcr.i)
 
-call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr name
-covariates<-covlist%>%dplyr::filter(bcr==call[1])%>%.[,.==TRUE]%>% colnames()#get co-variates, assumes that BCR covariates don't differ from pooled BCRs (81,82 and 41,42)
-
-Var<-sapply(Grouping,Get_paths,YR=2000) #get raster paths
-
-Names<-Var[2,]%>%unlist(.)
-Retain<-Names %in% covariates  # ID ones we want by names [2,]
-
-Path<-data.frame(unlist(Var[1,]),Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
-Label<-data.frame(Names,Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
-
-for (k in 1:length(Path)) { #stack rasters
-   Stack[[k]]<-terra::rast(file.path(root, Path[k])) %>% 
-        project(.,crs)  %>%
-        crop(.,e) %>%
-        mask(.,bcr.i) 
+  #ID BCR appropriate covariates --- 
+  call<-paste(bcr.i$country,bcr.i$subUnit, sep="") #match to bcr name
+  covariates<-covlist %>% dplyr::filter(bcr==call)%>%.[,.==TRUE]%>% colnames()#get co-variates
+  
+  #get Grouping raster paths ----
+  Var<-sapply(Grouping,Get_paths,YR=YR)
+  
+  # filter by "covariates" list above
+  Names<-Var[2,]%>%unlist(.)
+  Retain<-Names %in% covariates  # ID ones we want by names [2,]
+  
+  Path<-data.frame(unlist(Var[1,]),Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
+  Label<-data.frame(Names,Retain)%>%dplyr::filter(Retain==TRUE)%>%.[,1]
+  
+  for (k in 1:length(Path)) { #stack rasters
+    Stack[[k]]<-terra::rast(file.path(root, Path[k])) %>% 
+      project(.,crs)  %>%
+      crop(.,e) %>%
+      mask(.,bcr.i) 
   }
   
-DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
+if (Grouping=="Disturbance" & i==33){
+ Stack[[2]]<-crop(Stack[[2]],Stack[[4]])
+ Stack[[3]]<-crop(Stack[[3]],Stack[[4]])} #patch for AK rasters extent mismatch
+  
+  DF<-rast(Stack[1:length(Stack)]) %>% #turn into dataframe
     as.data.frame(., xy=TRUE) 
-
-names(DF)<-c("x","y",Label)
-
-return(DF)
+  
+  names(DF)<-c("x","y",Label)
+ 
+  return(DF)
 }
 
-#8. Compile raster lists for each category + early and late periods ----
+#8. Analysis ----
 
-BCR_list<-list() # for storing output by BCR
-                   
-# Analysis ----
-for(i in 1:nrow(bcr.ca)){  # select BCR
+#BCR_list<-list() # for storing output by BCR
 
-#Buffer BCR  ---  
-bcr.i <-  bcr.ca %>% 
-    dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000)%>%  # Filter & buffer shapefile
-    st_intersection(., can) #crop at Canadian border
+for(i in c(1:nrow(bcr))){  # select BCR
   
-# Extract BCR specific data frames for each group. Year=2000  ---  
-Early_Dataframes<-purrr::map(Grouping,create_df, YR=2000, bcr.i=bcr.i,.progress = T)
-#Late_Dataframes<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)
+  #Buffer BCR  ---  
+  bcr.i <-  bcr %>% 
+    dplyr::filter(row_number()==i) %>% 
+    st_buffer(100000)  # Filter & buffer shapefile
+    
+  if (bcr.i$country=="can"){
+    bcr.i<-st_intersection(bcr.i, can) }#crop at Canadian border
 
-#Get BCR reference sample - pool samples for the pooled BCRs  ---  
-call<-BCR_lookup%>%dplyr::filter(subUnit==bcr.i$subUnit)%>%.$Names #match to bcr.i to bcr name
-ids <- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,2]==TRUE)%>%.$id
-
-if(length(call)==2) {
-id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
-ids<-unique(c(ids,id2))  }
+  if (bcr.i$country=="usa"){
+    bcr.i<-st_intersection(bcr.i, us) }#crop at US border
+  
+#Get BCR reference sample - pool samples for the pooled BCRs  --- 
+call<-paste(bcr.i$country,bcr.i$subUnit, sep="") #match to bcr.i to bcr name in bcrlist
+ids <- bcrlist %>% .[, c("id",call)] %>% subset(.,.[,2]==TRUE)%>%.$id
+  
+  if(length(call)==2) {
+    id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
+    ids<-unique(c(ids,id2))  }
 
 # Get sample data for BCR ---
 sample.i<-cov_clean%>%subset(.,.$id %in% ids) 
 sample.i<-sample.i %>%.[,colSums(.,na.rm=T)!=0] # remove covariates with no data
-
+  
 #Convert sample locations to SPDF (for Leaflet plots)  ---  
-pnts<-visit%>% subset(.,.$id %in% ids)%>%.[10:11]%>% #sample lon, lat
-  st_as_sf(., coords = c("lon", "lat"),crs = 4326)%>% 
-  st_transform(crs=crs) %>%
-  as(.,"Spatial") 
+#pnts<-visit%>% subset(.,.$id %in% ids)%>%.[11:12]%>% #sample lon, lat
+#    st_as_sf(., coords = c("lon", "lat"),crs = 4326)%>% 
+#    st_transform(crs=crs) %>%
+#    as(.,"Spatial") 
 
-# Calculate extrapolation ---
-EarlyExt<-LateExt<-list()
+# Extract BCR specific data frames for each group. pick year of interest e.g Year=2020  ---  
 
-# Run through variable grouping for Early period -------
+Dataframe<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)  
 
-for (j in 1:length(Early_Dataframes)){ #run through each group
+#Calculate extrapolation ---
 
-target=Early_Dataframes[[j]]
-
-# Ensure match training-predictor variables
-sample<-sample.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target
+Ext<-Raster<-list()
+  
+ for (j in c(1:length(Grouping))){ #run through each group
+  
+target=Dataframe[[j]] #the region of interest
+  
+sample<-sample.i%>% dplyr::select(one_of(names(target))) #drop any in ref not present in target - will get an xy warning
 target<-target%>%dplyr::select(c("x","y",names(sample))) #drop any in target not present in ref
-
 
 xp = names(sample)
 
-sample[sapply(sample, is.infinite)] <- NA #covariance returns infinite...
+Ext[[j]] <- compute_extrapolation(samples = sample,
+                                  covariate.names = xp,
+                                  prediction.grid = target,
+                                  coordinate.system = crs,
+                                  verbose=F)
+  
+#9. Produce binary raster of where extrapolation areas are flagged for each grouping ----------
+#NOTE values >1= combinatorial extrapolation; <0= uni-variate; 0-1 = analogue
+  
+Raster[[j]]<-Ext[[j]]$rasters$ExDet$all
+#MIC[[j]]<-EarlyExt[[j]]$rasters$mic$all
 
-EarlyExt[[j]] <- compute_extrapolation(samples = sample,
-              covariate.names = xp,
-              prediction.grid = target,
-              coordinate.system = crs,
-              verbose=F)
+Raster[[j]][Raster[[j]]>=0 & Raster[[j]]<=1] <-0  #set analogue to 0
+Raster[[j]][Raster[[j]]<0]<-1 # univariate to 1
+Raster[[j]][Raster[[j]]>1]<-2 # combinatorial to 2
 
-#9. Plot output ---
+cat("Finished Group", j, "\n")
+} # end of groupings
 
-Map1M<-map_extrapolation(map.type="mic",sightings= pnts, 
-                         extrapolation.object=EarlyExt[[j]],
-                         verbose=F)
+BCR_list[[i]]<-Raster
+cat("Finished", i, "of", 34, "\n")
 
-saveWidget(Map1M, file=paste("BCR_", bcr.i$subUnit,
-                             "_2000_",
-                             Grouping[j],
-                             "_MIC",".html", sep=""))
+} #end of BCRS
 
-if(j!=4){ # skip issue with plotting road data: unable to find an inherited method for function ‘Which’ for signature ‘"logical"’
-Map1E<-map_extrapolation(map.type="extrapolation",sightings= pnts, 
-                         extrapolation.object=EarlyExt[[j]],
-                         verbose=F)
+save(BCR_list,file = "Extrapolation2020.RData")  
+#load("extrapolations2020.RData")
+View(bcr)
+#10. Mosaic BCRs into region-wide raster ------------------
+# Reorganize, merge, and look at available data in overlap zones
 
-saveWidget(Map1E, file=paste("BCR_", bcr.i$subUnit,
-                             "_2000_",
-                             Grouping[j],
-                             "_Ext",".html", sep=""))
+#Import the areas of BCR overlap -----
+M<-terra::rast(file.path(root,"gis","ModelOverlap.tif"))
+
+# Set up lists ------
+merge<-mergeb<-Final<-list()
+
+# Reorder nesting: j in i rather than i in j ------
+for (j in c(1:length(Grouping))) { 
+for (i in c(1:34)){
+  merge[[i]]<-rast(BCR_list[[i]][[j]]) # this is the original values
+  mergeb[[i]]<-rast(BCR_list[[i]][[j]])
+  mergeb[[i]][mergeb[[i]]==2]<-1 # this layer allows us to ID areas where data exists in overlapping BCR buffers
 }
   
-} # end of Grouping
-  
-BCR_list[[i]]<- EarlyExt
-saveRDS(BCR_list, file = "/Volumes/GoogleDrive/Shared drives/BAM_NationalModels/NationalModels5.0/GapAnalysis/Extrapolation_object.rds", overwrite=T)
+# Mosaic region for each group ----- 
+f <- sprc(merge) %>% mosaic(.,fun="sum") %>% crop(.,ext(M))
+M <- crop(M, ext(f)) # deal with any extent mismatch
+f<-f/M #get rid of the additive areas
 
-} # end of BCR
-                   
-#################### End of Code ######################
+# Find areas where overlap contributes non-extrapolated data ----
+b <- sprc(mergeb)%>% mosaic(.,fun="sum") %>% crop(.,ext(M))
+Overlay<-b/M # Divide total extrapolation layers by available prediction layers to determine if alternate exists -----
+Overlay[Overlay<1]<-0  #If all layers extrapolated == 1, otherwise == 0
+
+Final[[j]]<-f*Overlay #mask out the areas where alt data exists
+Final[[j]][Final[[j]]>2]<-NA #get rid of tiny mismatch in layers
+}
+
+# 12. Categorize for stacking Groupings ------------------
+
+Stacked<-Final
+cat<-c(1,10,100,NA,1000,10000) #Disturbance has no extrapolation so drop 
+
+for (i in c(1:3,5:6)){
+  Stacked[[i]][Stacked[[i]]>=1]<-cat[i]
+}
+
+Stacked<-sprc(Stacked)%>% mosaic(.,fun="sum") %>% as.factor()
+
+# Assign categories to stacks
+label<-c("No extrapolation","Vegetation",
+         "Climate (Annual)","Climate (Annual) + Vegetation",
+         "Climate (Normal)","Climate (Normal) + Vegetation",
+         "Climate (Annual + Normal)","Climate (Annual + Normal) + Vegetation", 
+         "Topography","Topography + Vegetation",
+         "Topography + Climate (Annual)", "Topography + Climate (Annual) + Vegetation",
+         "Topography + Climate (Normal)", "Topography + Climate (Normal) + Vegetation","Topography + Climate (Annual + Normal)",
+         "Topography + Climate (Annual + Normal) + Vegetation", "Wetland", "Wetland + Vegetation",
+         "Wetland + Climate (Annual)", "Wetland + Climate (Annual) + Vegetation", "Wetland + Climate (Normal)",
+         "Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal)",
+         "Wetland + Climate (Annual + Normal) + Vegetation","Wetland + Topography", "Wetland + Topography + Vegetation",
+         "Wetland + Topography + Climate (Annual)", "Wetland + Topography + Climate (Annual) + Vegetation",
+         "Wetland + Topography + Climate (Normal)", "Wetland _ Topography + Climate (Normal) + Vegetation",
+         "Wetland + Topography + Climate (Annual + Normal)",
+         "Wetland + Topography + Climate (Annual + Normal) + Vegetation")
+cls <- data.frame(id=c(0,1,10,11,100,101,110,111,1000,1001,1010,1011,1100,1101,1110,1111,10000,10001,
+                       10010,10011,10100,10101,10110,10111,11000,11001,11010,11011,11100,11101,11110,11111), cover=label)
+levels(Stacked) <- cls
+
+# Write out raster -----
+writeRaster(Stacked,"Potential_Extrapolation_by_Class_2020_BAM_V6.tif", overwrite=T)
+
+#13. Plotting --------------
+# Contrasting colour scheme for easier visualization
+c26 <- c("lightgrey","chartreuse4","gold1","chartreuse1","darkgoldenrod2","darkseagreen", "darkorange","darkgreen",
+  "red3","salmon2","darkorchid1","purple3","deeppink3","purple4","#633333","dodgerblue3","yellow",
+  "darkturquoise","yellow3","blue","gold3","navy","salmon4","black","#CC79A7","#FB9A99")
+
+# Point colour, water colour
+Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
+W_col <- rgb(185, 217, 245, max = 255, alpha = 180)
+
+## Survey locations:
+loc <- visit %>% 
+  dplyr::select(id, lat, lon) %>% 
+  unique() %>% 
+  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
+  st_transform(crs=5072)
+
+require(sf)
+# Ocean layer ---
+ocean<-read_sf("C:/Users/andrake/Downloads/ne_50m_ocean/ne_50m_ocean.shp")
+ocean<- ocean %>% st_transform(crs(Stacked)) %>% st_crop(Stacked)
+
+# Lakes layer ---
+water<-read_sf("G:/Shared drives/BAM_NationalModels5/Regions/Lakes_and_Rivers/hydrography_p_lakes_v2.shp")
+water<- water %>% st_transform(crs(Stacked)) %>% st_crop(Stacked) %>% dplyr::filter(TYPE==16|TYPE==18)
+
+#14. Save final plots ---------
+
+png("Extrapolation_byClassNoPnts2020.png",width =15,
+    height=5,units = "in",res = 1200)
+plot(Stacked, col=c26, cex=1)
+plot(ocean$geometry, lwd=0.1,col="#ccdce3", border = "#436175", add=T)
+plot(water$geometry,lwd=0.1,col="white",border = "#436175", add=T)
+#plot(loc$geometry,col=Pnt_col,cex=0.001, add=T) # add survey locations
+plot(bcr$geometry,lwd=0.2,add=T)
+dev.off()
