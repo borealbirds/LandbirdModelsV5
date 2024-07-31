@@ -180,7 +180,7 @@ for (z in 1:nrow(boot_group_keys)){
 
 
 boot_pts_i2 <- list()
-for (q in 1:length(gbm_objs)){
+for (q in 1:3){ #length(gbm_objs)
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
@@ -198,7 +198,9 @@ for (q in 1:length(gbm_objs)){
       
       # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
       # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
-      pts[[interaction_index]] <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")
+      # we discard the grid (too much data) and keep the mean and std. dev. of the response for covariates i,j
+      grid_ij <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")  
+      pts[[interaction_index]] <- tibble(y_mean = mean(grid_ij$y), y_sd = sd(grid_ij$y))
       names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = "_") # label the interaction
       interaction_index <- interaction_index + 1
     }
@@ -211,29 +213,29 @@ for (q in 1:length(gbm_objs)){
   Sys.sleep(0.001)
 }
 
-
+# IDEA: take the mean and SD of the response (y) across the 2-way interaction space. 
 data <- plot.gbm(x=b.i, i.var=c("SCANFIBlackSpruce_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
 data2 <- plot.gbm(x=b.i, i.var=c("WetSeason_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
 data3 <- plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
 
-# take the mean and SD of the response (y) across the 2-way interaction space. 
+
 
 
 # create an index of every bcr x common_name x 2-way interactions 
-# there are 0000 permutations of  bcr x common_name x 2-way interactions 
-unique_bcr_spp <- dplyr::distinct(bam_covariate_importance, bcr, common_name)
-
+# `RcppAlgo::comboGrid` is like `expand.grid` and `tidyr::crossing` but avoids duplicates 
+# e.g. for our purposes (var1=x, var2=y) is a duplicate of (var1=y, var2=x) 
+# so the Cartesian Product of comboGrid is smaller
 boot_group_keys_i2 <- 
-  comboGrid(unique(bam_covariate_importance$var), 
-            unique(bam_covariate_importance$var), repetition =  FALSE) |> 
-  as_tibble() |> 
-  tidyr::crossing(unique_bcr_spp) |> 
-  dplyr::rename(var1=Var1, var2=Var2)
-  
-  
+  RcppAlgos::comboGrid(unique(bam_covariate_importance$var), 
+            unique(bam_covariate_importance$var), 
+            bam_covariate_importance$bcr, 
+            bam_covariate_importance$common_name, repetition =  FALSE) |> 
+  tibble::as_tibble() |> 
+  dplyr::rename(var_1=Var1, var_2=Var2, bcr=Var3, common_name=Var4)
+
 
 # NEED TO BE CAREFUL THAT the horizontal order of var1 and var2 in boot_group_keys_i2 
-# does not affect the loop's ability to find interactions (e.g. the loop searches for var2, var1 and fails when var1, var2 exists)
+# does not affect the loop's ability to find interactions (e.g. the loop searches for var2, var1 and fails even though var1, var2 exists)
 
 # for every zth species x bcr x 2-way interaction tuple (rows in `boot_group_keys_i2`):
 # gather the relevant bootstrap predictions from `boot_pts_i2`
@@ -255,14 +257,13 @@ for (z in 1:nrow(boot_group_keys_i2)){
   # a list of bootstrap predictions for zth species x bcr permutation 
   spp_bcr_list <- boot_pts_i2[boot_pts_index]
   
-  # search for all bootstrap predictions for the zth species x bcr permutation
+  # gather all bootstrap predictions for the zth species x bcr permutation
   spp_bcr_var <- list()
   for (w in 1:length(spp_bcr_list)) {
     
     # get covariate names for the current spp x bcr permutation 
     i2_names <- 
       lapply(spp_bcr_list[[w]], colnames) |> 
-      lapply(X=_, `[[`, 1) |> # don't need the name of the y variable
       purrr::flatten_chr()
     
     # find which elements match the current covariate combination of interest
