@@ -29,8 +29,8 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- TRUE
+test <- FALSE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -75,7 +75,7 @@ tmpcl <- clusterExport(cl, c("birdlist", "crs", "cov_clean"))
 
 #12. Load the dsmextra functions----
 print("* Loading dsmextra *")
-if(cc){source("/home/ecknight/NationalModels/dsmextra_fn.R")
+if(cc){source("/project/6006982/ecknight/NationalModels/dsmextra_fn.R")
   tmpcl <- clusterExport(cl, c("addLegend_decreasing", "check_crs", "compute_extrapolation", "compute_nearby", "ExDet", "make_X", "map_extrapolation", "n_and_p", "proj_rasters", "rescale_cov", "summarise_extrapolation", "whatif", "whatif.opt"))}
 
 if(!cc){library(dsmextra)
@@ -97,30 +97,36 @@ calc_extrapolation <- function(i){
   #3. Get list of covariates used----
   Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
   
-  #4. Get the dataframe of prediction raster values----
-  stack.i <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif")))
-  Dataframes <- as.data.frame(stack.i, xy=TRUE) 
-  
-  #10. Get training data for that bootstrap----
+  #4. Get training data for that bootstrap----
   sample <- cov_clean |> 
     dplyr::filter(id %in% visit.i$id) |> 
     dplyr::select(all_of(Variables))
   
-  #11. Create target dataframes----
-  target <- Dataframes |> 
+  #tidy
+  rm(b.i, visit.i)
+  
+  #5. Create target dataframe of prediction raster values----
+  target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
+    as.data.frame(xy=TRUE) |> 
     dplyr::select(c("x", "y", all_of(Variables))) 
   
-  #12. Compute extrapolation----
+  #6. Compute extrapolation----
   Extrapol <- compute_extrapolation(samples = sample,
                                     covariate.names = names(sample),
                                     prediction.grid = target,
                                     coordinate.system = crs,
                                     verbose=F)
   
-  #13. Produce binary raster of extrapolation area----
+  #tidy
+  rm(sample, target)
+  
+  #7. Produce binary raster of extrapolation area----
   raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
   raster[raster>0] <- 1  # extrapolated locations in each boot
   raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
+  
+  #tidy
+  rm(Extrapol)
   
   #14. Write raster----
   if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
@@ -134,7 +140,6 @@ calc_extrapolation <- function(i){
 print("* Loading function on workers *")
 
 tmpcl <- clusterExport(cl, c("calc_extrapolation"))
-
 
 #RUN EXTRAPOLATION###############
 
@@ -152,9 +157,9 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years) |> 
-  arrange(spp, bcr, boot) |> 
-  dplyr::filter(spp %in% c("CAWA"),
-                !bcr %in% c("can8182", "usa41423", "usa2"))
+  arrange(bcr, spp, boot) |> 
+  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"),
+                spp %in% c("CAWA", "OSFL", "OVEN", "BTNW"))
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
