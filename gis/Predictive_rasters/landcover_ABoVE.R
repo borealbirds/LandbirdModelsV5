@@ -5,6 +5,7 @@
 #################################################
 library(terra)
 library(googledrive)
+library(tidyverse)
 
 ########################
 ### PARAMS
@@ -86,10 +87,47 @@ for (n in n_band) {
   writeRaster(rast, filename=file.path(out.folder,paste0("lccABoVE1k_", as.character(yearlist[n]),".tif")), overwrite=TRUE)
 }
   
+############################################################################
+## ECK fixing 100m resolution
+############################################################################
   
+#1. Set extent----
+EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
+
+#2. Create template----
+rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
+
+#3. Set root path for data on google drive----
+root <- "G:/Shared drives/BAM_NationalModels5"
+
+#4. List of covariate files----
+files <- list.files(file.path(root, "CovariateRasters", "LandCover", "ABoVE", "merged"))
+
+#5. Set up loop----
+for(i in 1:length(files)){
   
+  start <- Sys.time()
   
+  #6. Get the raster---
+  rast.i <- rast(file.path(root, "CovariateRasters", "LandCover", "ABoVE", "merged", files[i]))
   
+  #6. Reproject----
+  proj.i <- project(rast.i, rast1k, res = 1000, method = "near", align = TRUE)
+  
+  #7. Extend to NatMod extent---
+  ext.i <- terra::extend(proj.i, rast1k, fill = NA)
+  
+  #8. Save----
+  year.i <- str_sub(files[i], -8, -5)
+  
+  writeRaster(ext.i, filename=file.path(root, "PredictionRasters", "LandCover", "ABoVE", paste0("ABoVE_1km_", year.i, ".tif")), overwrite=TRUE)
+  
+  #9. Report----
+  duration <- difftime(Sys.time(), start, units="mins")
+  
+  cat("Finished raster", i, "of", length(files), "in", duration, "minutes\n")
+  
+}
   
   
 
