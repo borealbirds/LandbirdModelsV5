@@ -8,6 +8,8 @@
 
 #This script uses the bcr shapefile and canada/USA shapefiles to make a polygon for each subunit with a 100 km buffer. We also do this for regions that we have merged.
 
+#The output from this script is used in multiple stages of the analysis pipeline.
+
 #PREAMBLE############################
 
 #1. Load packages----
