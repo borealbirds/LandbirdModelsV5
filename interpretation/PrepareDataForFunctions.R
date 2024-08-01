@@ -31,7 +31,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
 # 129.2 GB for 10 bootstraps
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:300, 100)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:60, 10)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -180,7 +180,7 @@ for (z in 1:nrow(boot_group_keys)){
 
 
 boot_pts_i2 <- list()
-for (q in 1:3){ #length(gbm_objs)
+for (q in 1:length(gbm_objs)){ #
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
@@ -200,8 +200,12 @@ for (q in 1:3){ #length(gbm_objs)
       # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
       # we discard the grid (too much data) and keep the mean and std. dev. of the response for covariates i,j
       grid_ij <- plot.gbm(x = b.i, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")  
-      pts[[interaction_index]] <- tibble(y_mean = mean(grid_ij$y), y_sd = sd(grid_ij$y))
-      names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = "_") # label the interaction
+      
+      pts[[interaction_index]] <- matrix(data=c(mean(grid_ij$y), sd(grid_ij$y)), ncol=2, nrow=1)
+      colnames(pts[[interaction_index]]) <- c("y_mean", "y_sd")
+      
+      names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = ".") # label the interaction
+      
       interaction_index <- interaction_index + 1
     }
   }
@@ -212,12 +216,6 @@ for (q in 1:3){ #length(gbm_objs)
   cat(paste("\riteration", q))
   Sys.sleep(0.001)
 }
-
-# IDEA: take the mean and SD of the response (y) across the 2-way interaction space. 
-data <- plot.gbm(x=b.i, i.var=c("SCANFIBlackSpruce_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
-data2 <- plot.gbm(x=b.i, i.var=c("WetSeason_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
-data3 <- plot.gbm(x=b.i, i.var=c("MODISLCC_1km", "year"), type="response", continuous.resolution = 12, return.grid = TRUE)
-
 
 
 
@@ -239,9 +237,11 @@ boot_group_keys_i2 <-
 
 # for every zth species x bcr x 2-way interaction tuple (rows in `boot_group_keys_i2`):
 # gather the relevant bootstrap predictions from `boot_pts_i2`
-# and enter each wth dataframe as a sub-element of [[z]]
+# (each element of `boot_pts_i2` has many `y_means`; one for every 2-way interaction)
+# and enter each wth `y_mean` (that matches the current 2-way interaction of interest) 
+# as a sub-element of [[z]]
 # output: a list of lists where the top level elements are species x bcr x 2-way interaction permutations, 
-# and the second-level elements are dataframes of the associated bootstrapped model predictions
+# and the second-level elements are matrices of the associated average and sd of the bootstrapped prediction spaces
 
 boot_pts_sorted_i2 <- list()
 for (z in 1:nrow(boot_group_keys_i2)){
@@ -249,25 +249,29 @@ for (z in 1:nrow(boot_group_keys_i2)){
   # zth bcr x species x 2-way interaction permutation
   key_z <- boot_group_keys_i2[z,]
   
-  # `sample_id` and `boot_pts_i2` have the same length and order 
+  # problem: which entries in boot_pts_i2 match the species x bcr tuple defined in key_z?
+  # `sample_id` and `boot_pts_i2` have the same length and order (they both are derived from gbm_objs)
   # so we can annotate elements in `boot_pts_i2` using info from `sample_id`
-  # identify a unique species x bcr combo, then gather covariate interactions into it
+  # identify a unique species x bcr tuple, then gather covariate interactions into it
   boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
   
   # a list of bootstrap predictions for zth species x bcr permutation 
   spp_bcr_list <- boot_pts_i2[boot_pts_index]
   
-  # gather all bootstrap predictions for the zth species x bcr permutation
-  spp_bcr_var <- list()
+  # gather all relevant 2-way interaction bootstrap averages for the zth species x bcr permutation
+  spp_bcr_var_i2 <- list()
   for (w in 1:length(spp_bcr_list)) {
     
     # get covariate names for the current spp x bcr permutation 
+    # NOTE: this is overkill because we're only interested in the interactions within `key_z`
     i2_names <- 
-      lapply(spp_bcr_list[[w]], colnames) |> 
-      purrr::flatten_chr()
+      spp_bcr_list[[w]] |> 
+      names() 
+      #lapply(stringr::str_split_1, pattern="\\.") 
     
-    # find which elements match the current covariate combination of interest
-    matching_indices <- which((i2_names == key_z$var1) | (i2_names == key_z$var2))
+    # find which elements match the current 2-way interaction of interest
+    # STOPPED  HERE JULY 31
+    matching_indices <- which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
     spp_bcr_var[[w]] <- spp_bcr_list[[w]][matching_indices]
     names(spp_bcr_var)[w] <- paste("bootstrap replicate", w, sep="_")
   }
