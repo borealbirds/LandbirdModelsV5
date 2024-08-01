@@ -234,34 +234,6 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
   
 }
 
-"can81_Alder Flycatcher_StandardGreenup_1km"
-# single plot
-ggplot(boot_pts_sorted[[2]]$`bootstrap replicate_1`, aes(x = AHM_1km, y=y))+
-  geom_line()
-
-# faceted plot
-# Extract each bootstrap replicate from boot_pts_sorted[[1]]
-replicate_1 <- boot_pts_sorted[[1]][[1]]
-replicate_2 <- boot_pts_sorted[[1]][[2]]
-replicate_3 <- boot_pts_sorted[[1]][[3]]
-replicate_4 <- boot_pts_sorted[[1]][[4]]
-
-# Combine into one data frame with a 'replicate' identifier
-combined_data <- bind_rows(
-  mutate(replicate_1, replicate = "Replicate 1"),
-  mutate(replicate_2, replicate = "Replicate 2"),
-  mutate(replicate_3, replicate = "Replicate 3"),
-  mutate(replicate_4, replicate = "Replicate 4")
-)
-
-# Convert 'replicate' to a factor for correct faceting
-combined_data$replicate <- factor(combined_data$replicate, levels = c("Replicate 1", "Replicate 2", "Replicate 3", "Replicate 4"))
-
-# Create faceted plot
-ggplot(combined_data, aes(x = AHM_1km, y = y)) +
-  geom_line() +
-  facet_wrap(~ replicate, scales = "free") +
-  labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
 
 
 
@@ -309,8 +281,7 @@ bamexplorer_interactions <- function(data = boot_group_keys, bcr, common_name, n
   
   
   
-test <- plot.gbm(b.i, i.var = c(1,7), return.grid = TRUE)
-plot.gbm(b.i, i.var = c(1,7))
+
 
 
 
