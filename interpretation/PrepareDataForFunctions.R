@@ -211,7 +211,7 @@ for (q in 1:length(gbm_objs)){ #
   }
   
   boot_pts_i2[[q]] <- pts
-  
+
   # print progress
   cat(paste("\riteration", q))
   Sys.sleep(0.001)
@@ -232,8 +232,6 @@ boot_group_keys_i2 <-
   dplyr::rename(var_1=Var1, var_2=Var2, bcr=Var3, common_name=Var4)
 
 
-# NEED TO BE CAREFUL THAT the horizontal order of var1 and var2 in boot_group_keys_i2 
-# does not affect the loop's ability to find interactions (e.g. the loop searches for var2, var1 and fails even though var1, var2 exists)
 
 # for every zth species x bcr x 2-way interaction tuple (rows in `boot_group_keys_i2`):
 # gather the relevant bootstrap predictions from `boot_pts_i2`
@@ -249,10 +247,10 @@ for (z in 1:nrow(boot_group_keys_i2)){
   # zth bcr x species x 2-way interaction permutation
   key_z <- boot_group_keys_i2[z,]
   
-  # problem: which entries in boot_pts_i2 match the species x bcr tuple defined in key_z?
-  # `sample_id` and `boot_pts_i2` have the same length and order (they both are derived from gbm_objs)
-  # so we can annotate elements in `boot_pts_i2` using info from `sample_id`
-  # identify a unique species x bcr tuple, then gather covariate interactions into it
+  # problem: which elements in boot_pts_i2 match the species x bcr tuple defined in key_z?
+  # approach: `sample_id` and `boot_pts_i2` have the same length and order (they both are derived from gbm_objs)
+  # so we can identify elements in `boot_pts_i2` using info from `sample_id`
+  # first, identify a unique species x bcr tuple, then gather covariate interactions into it
   boot_pts_index <- which(sample_id$bcr == key_z$bcr & sample_id$common_name == key_z$common_name)
   
   # a list of bootstrap predictions for zth species x bcr permutation 
@@ -263,36 +261,35 @@ for (z in 1:nrow(boot_group_keys_i2)){
   for (w in 1:length(spp_bcr_list)) {
     
     # get covariate names for the current spp x bcr permutation 
-    # NOTE: this is overkill because we're only interested in the interactions within `key_z`
+    # NOTE: this is admittedly wasteful because we're only interested in the interactions within `key_z`
     i2_names <- 
       spp_bcr_list[[w]] |> 
       names() 
       #lapply(stringr::str_split_1, pattern="\\.") 
     
-    # find which elements match the current 2-way interaction of interest
-    # STOPPED  HERE JULY 31
-    matching_indices <- which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
-    spp_bcr_var[[w]] <- spp_bcr_list[[w]][matching_indices]
-    names(spp_bcr_var)[w] <- paste("bootstrap replicate", w, sep="_")
+    # find which sub-element of spp_bcr_list[[w]] match the current 2-way interaction of interest
+    # account for the possibility of being indexed as x*y or y*x
+    matching_index <- 
+      which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
+    
+    # assign current bcr x species x 2-way interaction x bootstrap tuple as a top-level element of `spp_bcr_var_i2[[w]]`
+    # these bootstraps will eventually be gathered under a single bcr x species x 2-way interaction element in `boot_pts_sorted_i2`
+    spp_bcr_var_i2[[w]] <- spp_bcr_list[[w]][matching_index]
+    names(spp_bcr_var_i2)[w] <- paste("bootstrap replicate", w, sep="_")
   }
   
-  interaction_name <- paste(key_z$bcr, key_z$common_name, paste(key_z$var1, key_z$var2, sep = "_"), sep = "_")
-  if (!interaction_name %in% names(boot_pts_sorted_i2)) {
-    boot_pts_sorted_i2[[interaction_name]] <- list()
-  }
   
-  boot_pts_sorted_i2[[interaction_name]][[length(boot_pts_sorted_i2[[interaction_name]]) + 1]] <- spp_bcr_var
+  boot_pts_sorted_i2[[z]] <- spp_bcr_var_i2
+  names(boot_pts_sorted_i2)[z] <- paste(key_z$bcr, key_z$common_name, key_z$var_1, key_z$var_2, sep=".")
   
   # print progress
   cat(paste("\riteration", z))
   Sys.sleep(0.001)
 }
 
-# list with 37487 elements
-# 1 species x 3 bcrs x 100 bootstraps x 66! 2-way interactions
-# 12 var_classes = 12! = 479 million
-
-
+# 13668 elements
+# 17.6 MB for 10 bootstraps
+saveRDS(boot_pts_sorted_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
 
 
 
