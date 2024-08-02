@@ -176,24 +176,19 @@ for(i in c(1:nrow(bcr))){  # select BCR
   if (bcr.i$country=="usa"){
     bcr.i<-st_intersection(bcr.i, us) }#crop at US border
   
-#Get BCR reference sample - pool samples for the pooled BCRs  --- 
+#Get BCR survey sample IDs ---- 
 call<-paste(bcr.i$country,bcr.i$subUnit, sep="") #match to bcr.i to bcr name in bcrlist
 ids <- bcrlist %>% .[, c("id",call)] %>% subset(.,.[,2]==TRUE)%>%.$id
   
-  if(length(call)==2) {
-    id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
-    ids<-unique(c(ids,id2))  }
+  # pool samples for the pooled BCRs (now pre-coded so omitt)  --- 
+  # if(length(call)==2) {
+  # id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
+  # ids<-unique(c(ids,id2))  }
 
 # Get sample data for BCR ---
 sample.i<-cov_clean%>%subset(.,.$id %in% ids) 
 sample.i<-sample.i %>%.[,colSums(.,na.rm=T)!=0] # remove covariates with no data
   
-#Convert sample locations to SPDF (for Leaflet plots)  ---  
-#pnts<-visit%>% subset(.,.$id %in% ids)%>%.[11:12]%>% #sample lon, lat
-#    st_as_sf(., coords = c("lon", "lat"),crs = 4326)%>% 
-#    st_transform(crs=crs) %>%
-#    as(.,"Spatial") 
-
 # Extract BCR specific data frames for each group. *pick year of interest* e.g Year=2020  ---  
 
 Dataframe<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)  
@@ -225,8 +220,9 @@ Raster[[j]]<-Ext[[j]]$rasters$ExDet$all
 
 Raster[[j]][Raster[[j]]>=0 & Raster[[j]]<=1] <-0  #set analogue to 0
 Raster[[j]][Raster[[j]]<0]<-1 # univariate to 1
-Raster[[j]][Raster[[j]]>1]<-2 # combinatorial to 2
-
+#Raster[[j]][Raster[[j]]>1]<-2 # combinatorial to 2 (if wishing to retain more nuance, but comb. is rare, mosaicking becomes more complex)
+Raster[[j]][Raster[[j]]>1]<-1 # combinatorial to 1
+   
 cat("Finished Group", j, "\n")
 } # end of groupings
 
@@ -236,8 +232,8 @@ cat("Finished", i, "of", 34, "\n")
 } #end of BCRS
 
 save(BCR_list,file = "Extrapolation2020.RData")  
-#load("extrapolations2020.RData")
-View(bcr)
+#load("Extrapolation2020.RData")
+
 #10. Mosaic BCRs into region-wide raster ------------------
 # Reorganize, merge, and look at available data in overlap zones
 
@@ -272,9 +268,9 @@ Final[[j]][Final[[j]]>2]<-NA #get rid of tiny mismatch in layers
 # 12. Categorize for stacking Groupings ------------------
 
 Stacked<-Final
-cat<-c(1,10,100,NA,1000,10000) #Disturbance has no extrapolation so drop 
+cat<-c(1,10,100,100000,1000,10000) 
 
-for (i in c(1:3,5:6)){
+for (i in c(1:6)){
   Stacked[[i]][Stacked[[i]]>=1]<-cat[i]
 }
 
@@ -287,17 +283,22 @@ label<-c("No extrapolation","Vegetation",
          "Climate (Annual + Normal)","Climate (Annual + Normal) + Vegetation", 
          "Topography","Topography + Vegetation",
          "Topography + Climate (Annual)", "Topography + Climate (Annual) + Vegetation",
-         "Topography + Climate (Normal)", "Topography + Climate (Normal) + Vegetation","Topography + Climate (Annual + Normal)",
-         "Topography + Climate (Annual + Normal) + Vegetation", "Wetland", "Wetland + Vegetation",
-         "Wetland + Climate (Annual)", "Wetland + Climate (Annual) + Vegetation", "Wetland + Climate (Normal)",
-         "Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal)",
+         "Topography + Climate (Normal)", "Topography + Climate (Normal) + Vegetation",
+         "Topography + Climate (Annual + Normal)", "Topography + Climate (Annual + Normal) + Vegetation", 
+         "Wetland", "Wetland + Vegetation","Wetland + Climate (Annual)", "Wetland + Climate (Annual) + Vegetation", 
+         "Wetland + Climate (Normal)","Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal)",
          "Wetland + Climate (Annual + Normal) + Vegetation","Wetland + Topography", "Wetland + Topography + Vegetation",
          "Wetland + Topography + Climate (Annual)", "Wetland + Topography + Climate (Annual) + Vegetation",
-         "Wetland + Topography + Climate (Normal)", "Wetland _ Topography + Climate (Normal) + Vegetation",
+         "Wetland + Topography + Climate (Normal)", "Wetland + Topography + Climate (Normal) + Vegetation",
          "Wetland + Topography + Climate (Annual + Normal)",
-         "Wetland + Topography + Climate (Annual + Normal) + Vegetation")
-cls <- data.frame(id=c(0,1,10,11,100,101,110,111,1000,1001,1010,1011,1100,1101,1110,1111,10000,10001,
-                       10010,10011,10100,10101,10110,10111,11000,11001,11010,11011,11100,11101,11110,11111), cover=label)
+         "Wetland + Topography + Climate (Annual + Normal) + Vegetation", 
+         "Disturbance","Disturbance + Vegetation")
+
+cls <- data.frame(id=c(0,1,10,11,100,101,110,111,
+                       1000,1001,1010,1011,1100,1101,1110,1111,
+                       10000,10001,10010,10011,10100,10101,10110,10111,
+                       11000,11001,11010,11011,11100,11101,11110,11111,
+                       1000000,100001), cover=label)
 levels(Stacked) <- cls
 
 # Write out raster -----
@@ -305,9 +306,9 @@ writeRaster(Stacked,"Potential_Extrapolation_by_Class_2020_BAM_V6.tif", overwrit
 
 #13. Plotting --------------
 # Contrasting colour scheme for easier visualization
-c26 <- c("lightgrey","chartreuse4","gold1","chartreuse1","darkgoldenrod2","darkseagreen", "darkorange","darkgreen",
-  "red3","salmon2","darkorchid1","purple3","deeppink3","purple4","#633333","dodgerblue3","yellow",
-  "darkturquoise","yellow3","blue","gold3","navy","salmon4","black","#CC79A7","#FB9A99")
+c26 <- c("lightgrey","chartreuse4","yellow","chartreuse1","darkgoldenrod2","darkseagreen", "darkorange","darkgreen",
+  "red3","salmon2","darkorchid1","purple3","deeppink3","purple4","#633333","dodgerblue3","gold1",
+  "darkturquoise","yellow3","blue","gold3","navy","salmon4","black","indianred1","#CC79A7","#FB9A99","khaki3")
 
 #Point colour, water colour ------------
 Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
@@ -329,11 +330,11 @@ ocean<- ocean %>% st_transform(crs(Stacked)) %>% st_crop(Stacked)
 water<-read_sf("G:/Shared drives/BAM_NationalModels5/Regions/Lakes_and_Rivers/hydrography_p_lakes_v2.shp")
 water<- water %>% st_transform(crs(Stacked)) %>% st_crop(Stacked) %>% dplyr::filter(TYPE==16|TYPE==18)
 
-#14. Save final plots ---------
+#14. Save final plot ---------
 
 png("Extrapolation_byClassNoPnts2020.png",width =15,
     height=5,units = "in",res = 1200)
-plot(Stacked, col=c26, cex=1)
+plot(Stacked, col=c26, cex=1, main="2020 Extrapolation")
 plot(ocean$geometry, lwd=0.1,col="#ccdce3", border = "#436175", add=T)
 plot(water$geometry,lwd=0.1,col="white",border = "#436175", add=T)
 #plot(loc$geometry,col=Pnt_col,cex=0.001, add=T) # add survey locations
