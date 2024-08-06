@@ -240,8 +240,9 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
 
 
 
-# important interactions
-#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+# 2-way interactions
+#'@param data An exported nested `list` (see: `data(boot_pts_sorted_i2)`) where the top level elements are species x bcr x 2-way interaction tuples, 
+# and the second-level elements are matrices of the associated average and SD of the bootstrapped prediction spaces
 #'
 #'@param bcr A `character` specifying the Bird Conservation Regions (BCRs) of interest.
 #'
@@ -261,22 +262,79 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
 #'
 #'
 
-# for every species x bcr x (var x var) permutation we want variable importance
-# we also want to group by bootstrap
-bamexplorer_interactions <- function(data = boot_group_keys, bcr, common_name, n_interactions, covariates="all", threshold=5)
-  
-  if (covariates=="all"){
-    covariates <- unique(bam_covariate_importance$var)
-  } 
-  
-  
-  # construct the key for accessing the desired gbm objects
-  # note that `paste()` can handle vectors so (e.g.) `bcr` or `covariates` may have length > 1.
-  keys <- paste(bcr, common_name, covariates, sep = "_")  
-  
-  boot_group_keys
+boot_pts_sorted_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
 
-  # for every zth species x bcr x covariate permutation (rows in `boot_group_keys`):
+
+bcr <- c("can10", "can11")
+common_name <- c("Alder Flycatcher", "American Pipit")
+
+
+# account for x,y y,x
+bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name){
+  
+  
+  # construct the keys for accessing the desired gbm objects
+  # note that `paste()` can handle vectors so (e.g.) `bcr` or `common_name` may have length > 1.
+  keys <- as.character(outer(bcr, common_name, FUN=paste, sep="."))
+
+  # extract bcr x spp info from boot_pts_sorted_i2
+  boot_bcr_spp <- 
+    paste(stringr::str_split_i(names(boot_pts_sorted_i2), "\\.", 1),
+          stringr::str_split_i(names(boot_pts_sorted_i2), "\\.", 2),
+          sep=".")
+  
+  # subset boot_pts_sorted_i2 to the bcr x spp queried
+  queried_bcr_spp <- boot_pts_sorted_i2[which(boot_bcr_spp %in% keys)]
+  
+  # for every element of `queried_bcr_spp` (a single 2-way interaction)
+  # 1. get mean of the mean +/- sd 2-way interaction space
+  # 2. enter as an element into a list
+  # 3. flatten list into dataframe
+  # 4. sort by highest y
+  
+  queried_means_list <- list()
+  for (v in 1:length(queried_bcr_spp)){
+    
+    if (purrr::is_empty(queried_bcr_spp[[v]]) == FALSE){
+    
+    # bring bcr, spp, var info along
+    info_v <- stringr::str_split(names(queried_bcr_spp)[v], "\\.", simplify=TRUE)
+    
+    queried_means_list[[v]] <- 
+      purrr::list_c(queried_bcr_spp[[v]]) |> 
+      tibble::as_tibble() |> 
+      dplyr::rename(y_mean = V1, y_sd = V2) |> 
+      dplyr::summarise(mean_y_mean = mean(y_mean), mean_y_sd = mean(y_sd)) |> 
+      dplyr::mutate(bcr = info_v[1], common_name = info_v[2], var_1 = info_v[3], var_2 = info_v[4])
+        
+        
+    # print progress
+    cat(paste("\rsearching", v, "of", length(queried_bcr_spp), "interactions (some are NULL)"))
+    Sys.sleep(0.000001)
+    
+    } # close if()
+  } # close loop
+  
+  # gather non-NULL entries
+  nulls <- sapply(queried_means_list, is.null)
+  
+  # gather all interaction space means into a single table and sort
+  # `round()` is used for tie-breakers where the means are functionally identical but there is large differences in SD
+  queried_means <- 
+    queried_means_list[!nulls] |> 
+    purrr::list_rbind() |> 
+    mutate(mean_y_mean = round(mean_y_mean, 3)) |> 
+    dplyr::arrange(desc(mean_y_mean), mean_y_sd)
+  
+  return(queried_means)
+} 
+  
+# SANITY CHECK BY PLOTTING!
+
+  
+  
+
+ 
   
   
   

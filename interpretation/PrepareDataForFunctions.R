@@ -262,21 +262,25 @@ for (z in 1:nrow(boot_group_keys_i2)){
     
     # get covariate names for the current spp x bcr permutation 
     # NOTE: this is admittedly wasteful because we're only interested in the interactions within `key_z`
-    i2_names <- 
-      spp_bcr_list[[w]] |> 
-      names() 
-      #lapply(stringr::str_split_1, pattern="\\.") 
+    i2_names <- names(spp_bcr_list[[w]])
     
     # find which sub-element of spp_bcr_list[[w]] match the current 2-way interaction of interest
     # account for the possibility of being indexed as x*y or y*x
-    matching_index <- 
-      which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
+    if (paste(key_z$var_1, key_z$var_2, sep=".") %in% i2_names |
+        paste(key_z$var_2, key_z$var_1, sep=".") %in% i2_names){
+      
+      matching_index <- 
+        which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | 
+              i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
     
     # assign current bcr x species x 2-way interaction x bootstrap tuple as a top-level element of `spp_bcr_var_i2[[w]]`
     # these bootstraps will eventually be gathered under a single bcr x species x 2-way interaction element in `boot_pts_sorted_i2`
-    spp_bcr_var_i2[[w]] <- spp_bcr_list[[w]][matching_index]
+    spp_bcr_var_i2[w] <- spp_bcr_list[[w]][matching_index]
     names(spp_bcr_var_i2)[w] <- paste("bootstrap replicate", w, sep="_")
-  }
+    
+    } #close if()
+    
+  } #close nested loop
   
   
   boot_pts_sorted_i2[[z]] <- spp_bcr_var_i2
@@ -287,10 +291,8 @@ for (z in 1:nrow(boot_group_keys_i2)){
   Sys.sleep(0.001)
 }
 
-# 13668 elements
-# 17.6 MB for 10 bootstraps
+#8.9MB 
 saveRDS(boot_pts_sorted_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
-
 
 
 
