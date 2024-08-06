@@ -262,14 +262,8 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
 #'
 #'
 
-boot_pts_sorted_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
 
 
-bcr <- c("can10", "can11")
-common_name <- c("Alder Flycatcher", "American Pipit")
-
-
-# account for x,y y,x
 bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name){
   
   
@@ -329,14 +323,22 @@ bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name
   return(queried_means)
 } 
   
-# SANITY CHECK BY PLOTTING!
+# sanity check by plotting
+boot_pts_sorted_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
+test <- bamexplorer_interactions(bcr = "can10", common_name = "Alder Flycatcher")
+load(file=file.path(root, "output", "bootstraps", gbm_objs[1]))
 
-  
-  
 
+# lowest y_mean (0.016 +/- 0.006)
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIclosure_1km", "CanHF_1km"), type="response")
+
+
+# highest y_mean (0.062 +/- 0.0194)
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIBlackSpruce_5x5", "Peatland_1km"), type="response")
  
-  
-  
+
+
+
   
   
 
