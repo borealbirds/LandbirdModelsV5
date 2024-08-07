@@ -325,7 +325,7 @@ bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name
   
 # sanity check by plotting
 boot_pts_sorted_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
-test <- bamexplorer_interactions(bcr = "can10", common_name = "Alder Flycatcher")
+test <- bamexplorer_interactions(bcr = c("can10", "can11"), common_name = "Alder Flycatcher")
 load(file=file.path(root, "output", "bootstraps", gbm_objs[1]))
 
 

@@ -27,40 +27,55 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # since the resolution of the raster is 1000×1000 meters, each cell represents 1,000,000 square meters (1 km2).
 aoi <- terra::rast(x=file.path(root, "output", "mosaics", "extrapolation", "OVEN_9_1985.tiff"))
-
+files <- list.files(file.path(root, "output", "extrapolation", "CAWA"))
 
 
 # raster retrieval will happen via Melina's functions (user can input BCRs, AOI, etc. and get a masked raster)
-
-
-bamexplorer_pop <- function(aoi = NULL, species="all", year="all"){
+bamexplorer_pop <- function(aoi = "continental", species="all", year="all"){
   
+  # validate users' species
   if (species == "all"){
     species <- data(species_list) #call some backend data object that lists all of the species
-  } 
-  
+  }
+
   if (all(species %in% data(species_list)) == FALSE){ #call some backend data object ("species_list") that lists all of the species
-    stop("must use valid species names, see `data(species_list)` for spellings")
+    stop("`species =` must have valid names; see `data(species_list)` for spellings")
+  }
+  
+  # validate users' time frames
+  if (year == "all"){
+    year <- as.character(seq(1985, 2020, by=5))
   } 
   
-  
+  if (all(year %in% as.character(seq(1985, 2020, by=5))) == FALSE){ 
+    stop("`year =` must be a `character` with value(s) between \"1985\" and \"2020\", in increments of 5 years")
+  } 
+  #stopifnot()
   for (s in 1:length(species)){
-  
+
   # 1. convert `species` and `year` args to a character vector
   # 2. search relevant folder for rasters with strings that match species and year (see ebirdst for how to host rasters)
   # 3. loop across species and years to make density estimations
-    
-  # get values per raster cell then sum across all cells
-  total_density <- 
-    aoi |> 
-    terra::values() |> 
-    sum(na.rm = TRUE)
-    
   
+  # CHANGE TO N=3 when averaged rasters are available, and consider downstream effects on this function
+  # split file names into 4 labels: species, bcr, bootstrap (won't be included in averaged rasters), year
+  # `files` has to be able to connect to some cloud drive (cf ebirdst) to search for relevant rasters
+  raster_labels <- stringr::str_split_fixed(files, "_", n=4)
+    
+    
+  outer(species, year, as.matrix)
+
+  # get values per raster cell then sum across all cells
+  total_density <-
+    aoi |>
+    terra::values() |>
+    sum(na.rm = TRUE)
+
+
   } # close loop
 } 
   
-  
+
   
   
   
