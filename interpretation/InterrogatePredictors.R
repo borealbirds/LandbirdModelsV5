@@ -264,7 +264,7 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
 
 
 
-bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name){
+bamexplorer_interactions <- function(data = boot_pts_reduced_i2, bcr, common_name){
   
   
   # construct the keys for accessing the desired gbm objects
@@ -273,12 +273,12 @@ bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name
 
   # extract bcr x spp info from boot_pts_sorted_i2
   boot_bcr_spp <- 
-    paste(stringr::str_split_i(names(boot_pts_sorted_i2), "\\.", 1),
-          stringr::str_split_i(names(boot_pts_sorted_i2), "\\.", 2),
+    paste(stringr::str_split_i(names(boot_pts_reduced_i2), "\\.", 1),
+          stringr::str_split_i(names(boot_pts_reduced_i2), "\\.", 2),
           sep=".")
   
   # subset boot_pts_sorted_i2 to the bcr x spp queried
-  queried_bcr_spp <- boot_pts_sorted_i2[which(boot_bcr_spp %in% keys)]
+  queried_bcr_spp <- boot_pts_reduced_i2[which(boot_bcr_spp %in% keys)]
   
   # for every element of `queried_bcr_spp` (a single 2-way interaction)
   # 1. get mean of the mean +/- sd 2-way interaction space
@@ -289,33 +289,25 @@ bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name
   queried_means_list <- list()
   for (v in 1:length(queried_bcr_spp)){
     
-    if (purrr::is_empty(queried_bcr_spp[[v]]) == FALSE){
-    
     # bring bcr, spp, var info along
     info_v <- stringr::str_split(names(queried_bcr_spp)[v], "\\.", simplify=TRUE)
     
     queried_means_list[[v]] <- 
-      purrr::list_c(queried_bcr_spp[[v]]) |> 
+      queried_bcr_spp[[v]] |> 
       tibble::as_tibble() |> 
-      dplyr::rename(y_mean = V1, y_sd = V2) |> 
-      dplyr::summarise(mean_y_mean = mean(y_mean), mean_y_sd = mean(y_sd)) |> 
       dplyr::mutate(bcr = info_v[1], common_name = info_v[2], var_1 = info_v[3], var_2 = info_v[4])
         
         
     # print progress
-    cat(paste("\rsearching", v, "of", length(queried_bcr_spp), "interactions (some are NULL)"))
+    cat(paste("\rsearching", v, "of", length(queried_bcr_spp), "2-way interactions"))
     Sys.sleep(0.000001)
     
-    } # close if()
-  } # close loop
-  
-  # gather non-NULL entries
-  nulls <- sapply(queried_means_list, is.null)
+  }
   
   # gather all interaction space means into a single table and sort
   # `round()` is used for tie-breakers where the means are functionally identical but there is large differences in SD
   queried_means <- 
-    queried_means_list[!nulls] |> 
+    queried_means_list |> 
     purrr::list_rbind() |> 
     mutate(mean_y_mean = round(mean_y_mean, 3)) |> 
     dplyr::arrange(desc(mean_y_mean), mean_y_sd)
@@ -324,8 +316,8 @@ bamexplorer_interactions <- function(data = boot_pts_sorted_i2, bcr, common_name
 } 
   
 # sanity check by plotting
-boot_pts_sorted_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
-test <- bamexplorer_interactions(bcr = c("can10", "can11"), common_name = "Alder Flycatcher")
+boot_pts_reduced_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_reduced_i2.rds")
+test <- bamexplorer_interactions(bcr = c("can12", "can11", "can10"), common_name = "Alder Flycatcher")
 load(file=file.path(root, "output", "bootstraps", gbm_objs[1]))
 
 
@@ -339,8 +331,7 @@ plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIBlackSpruce_5x5", "Peatlan
 
 
 
-  
-  
+# PROBLEM: if threshold is 0.10, what do we do when bootstraps vary between e.g. 0.08-0.011? The lower bootstraps will be lost
 
 
 

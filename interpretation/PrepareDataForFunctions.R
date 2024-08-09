@@ -31,7 +31,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
 # 129.2 GB for 10 bootstraps
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:100]#[sample(1:60, 10)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:60, 10)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -82,9 +82,7 @@ for(i in 1:length(gbm_objs)){
 
 # mergelist of dataframes
 bam_covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
-
-
-
+saveRDS(gbm_objs,  file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/gbm_objs.rds")
 
 
 #3. Create list of bcr x species x covariate permutations (with bootstraps)----
@@ -180,7 +178,7 @@ for (z in 1:nrow(boot_group_keys)){
 
 
 boot_pts_i2 <- list()
-for (q in 1:length(gbm_objs)){ #
+for (q in 1:length(gbm_objs)){ 
   
   # load a bootstrap replicate 
   load(file.path(root, "output", "bootstraps", gbm_objs[q]))
@@ -205,19 +203,20 @@ for (q in 1:length(gbm_objs)){ #
       colnames(pts[[interaction_index]]) <- c("y_mean", "y_sd")
       
       names(pts)[interaction_index] <- paste(b.i$var.names[i], b.i$var.names[j], sep = ".") # label the interaction
-      
+       
       interaction_index <- interaction_index + 1
+      
     }
   }
   
   boot_pts_i2[[q]] <- pts
-
+  
   # print progress
   cat(paste("\riteration", q))
   Sys.sleep(0.001)
 }
 
-
+saveRDS(boot_pts_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_i2.rds")
 
 # create an index of every bcr x common_name x 2-way interactions 
 # `RcppAlgo::comboGrid` is like `expand.grid` and `tidyr::crossing` but avoids duplicates 
@@ -273,26 +272,53 @@ for (z in 1:nrow(boot_group_keys_i2)){
         which(i2_names == paste(key_z$var_1, key_z$var_2, sep=".") | 
               i2_names == paste(key_z$var_2, key_z$var_1, sep="."))
     
-    # assign current bcr x species x 2-way interaction x bootstrap tuple as a top-level element of `spp_bcr_var_i2[[w]]`
-    # these bootstraps will eventually be gathered under a single bcr x species x 2-way interaction element in `boot_pts_sorted_i2`
-    spp_bcr_var_i2[w] <- spp_bcr_list[[w]][matching_index]
-    names(spp_bcr_var_i2)[w] <- paste("bootstrap replicate", w, sep="_")
+      # assign current bcr x species x 2-way interaction x bootstrap tuple as a top-level element of `spp_bcr_var_i2[[w]]`
+      # these bootstraps will eventually be gathered under a single bcr x species x 2-way interaction element in `boot_pts_sorted_i2`
+      spp_bcr_var_i2[w] <- spp_bcr_list[[w]][matching_index]
+      names(spp_bcr_var_i2)[w] <- paste("bootstrap replicate", w, sep="_")
     
     } #close if()
-    
+  
   } #close nested loop
   
+  # take mean across bootstraps of the zth bcr x spp x 2-way interaction tuple
+  if (purrr::is_empty(spp_bcr_var_i2) == FALSE){
+    mean_z <- 
+      spp_bcr_var_i2 |> 
+      purrr::list_c() |> 
+      colMeans() |> 
+      matrix(data=_, ncol=2) |> 
+      data.frame() |> 
+      setNames(c("mean_y_mean", "mean_y_sd"))
+    
+    if (mean_z$mean_y_mean >= 0.10){
+      boot_pts_sorted_i2[[z]] <- mean_z
+    } else {
+      boot_pts_sorted_i2[[z]] <- list()
+    } #close nested else
+    
+  } # close top level if()
+  else {
+    boot_pts_sorted_i2[[z]] <- list()
+  } # close top level else
   
-  boot_pts_sorted_i2[[z]] <- spp_bcr_var_i2
   names(boot_pts_sorted_i2)[z] <- paste(key_z$bcr, key_z$common_name, key_z$var_1, key_z$var_2, sep=".")
   
   # print progress
-  cat(paste("\riteration", z))
-  Sys.sleep(0.001)
-}
+  cat(paste("\riteration", z, "of", nrow(boot_group_keys_i2)))
+  Sys.sleep(0.000001)
+  
+} # close top level loop
 
-#8.9MB 
-saveRDS(boot_pts_sorted_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_sorted_i2.rds")
+
+# remove empty elements (output 1.4MB)
+boot_pts_reduced_i2 <- purrr::discard(boot_pts_sorted_i2, purrr::is_empty)
+  
+
+
+
+#905.2 kB from 8.9MB with threshold set and non-threshold elements removed
+saveRDS(boot_pts_reduced_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_reduced_i2.rds")
 
 
 
