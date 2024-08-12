@@ -311,13 +311,8 @@ for (z in 1:nrow(boot_group_keys_i2)){
 } # close top level loop
 
 
-# remove empty elements (output 1.4MB)
+# remove empty elements (output reduced from 8.9MB to 905.2kB;with threshold set and non-threshold elements removed)
 boot_pts_reduced_i2 <- purrr::discard(boot_pts_sorted_i2, purrr::is_empty)
-  
-
-
-
-#905.2 kB from 8.9MB with threshold set and non-threshold elements removed
 saveRDS(boot_pts_reduced_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_reduced_i2.rds")
 
 

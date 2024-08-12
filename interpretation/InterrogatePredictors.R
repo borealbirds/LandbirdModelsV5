@@ -266,7 +266,6 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
 
 bamexplorer_interactions <- function(data = boot_pts_reduced_i2, bcr, common_name){
   
-  
   # construct the keys for accessing the desired gbm objects
   # note that `paste()` can handle vectors so (e.g.) `bcr` or `common_name` may have length > 1.
   keys <- as.character(outer(bcr, common_name, FUN=paste, sep="."))
@@ -317,16 +316,16 @@ bamexplorer_interactions <- function(data = boot_pts_reduced_i2, bcr, common_nam
   
 # sanity check by plotting
 boot_pts_reduced_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_reduced_i2.rds")
-test <- bamexplorer_interactions(bcr = c("can12", "can11", "can10"), common_name = "Alder Flycatcher")
+test <- bamexplorer_interactions(bcr = c("can12", "can11"), common_name = "Alder Flycatcher")
 load(file=file.path(root, "output", "bootstraps", gbm_objs[1]))
 
 
 # lowest y_mean (0.016 +/- 0.006)
-plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIclosure_1km", "CanHF_1km"), type="response")
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFITamarack_5x5", "year"), type="response")
 
 
 # highest y_mean (0.062 +/- 0.0194)
-plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIBlackSpruce_5x5", "Peatland_1km"), type="response")
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIJackPine_5x5", "SCANFITamarack_1km"), type="response")
  
 
 
