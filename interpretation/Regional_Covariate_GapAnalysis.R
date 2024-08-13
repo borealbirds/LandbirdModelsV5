@@ -22,8 +22,10 @@
 #if (!require("remotes")) install.packages("remotes")
 #remotes::install_github("densitymodelling/dsmextra")
 
-pacman::p_load(dsmextra, sp, tidyverse, sf, rlang, leaflet, dplyr, 
-               terra, smoothr, stringi, readr, ecospat)
+
+pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, 
+               rlang, leaflet, dplyr, terra, smoothr, stringi,
+               readr, ecospat, mapview)
 
 # extra function
 `%notin%` <- Negate(`%in%`)
@@ -50,19 +52,38 @@ can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>%
 us <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
   st_transform(crs=crs) # US boundary
 
+### Formatting and water layers for plots ------
+
+# Ocean layer ---
+ocean<-read_sf("C:/Users/andrake/Downloads/ne_50m_ocean/ne_50m_ocean.shp")
+ocean<- ocean %>% st_transform(crs(bcr)) %>% st_crop(bcr)
+
+# Lakes layer ---
+water<-read_sf("G:/Shared drives/BAM_NationalModels5/Regions/Lakes_and_Rivers/hydrography_p_lakes_v2.shp")
+water<- water %>% st_transform(crs(bcr)) %>% st_crop(bcr) %>% dplyr::filter(TYPE==16|TYPE==18)
+
+# Contrasting colour scheme for easier visualization--------------
+c26 <- c("lightgrey","gold1","limegreen","chartreuse1","darkgoldenrod2","tomato2","darkseagreen","darkgreen",
+         "red3","darkorchid1","salmon2","deeppink3","purple2","purple4","saddlebrown","#633333","dodgerblue3","darkturquoise",
+         "yellow","yellow3","blue","navy","gold3","rosybrown1","black","magenta","tan","hotpink","#FB9A99","yellow4")
+
+# Point colour, water colour---------
+Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
+W_col <- rgb(185, 217, 245, max = 255, alpha = 180)
+
 #6. Load prediction raster categories -----
 Lookup <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")%>% 
   dplyr::select(Category,Label,YearMatch, TemporalResolution, PredictPath)
 
-#Modify t-1 notation for ERA -----
+#Modify t-1 notation for ERA
 Lookup$Raster<-Lookup$Label
 Lookup$Raster[Lookup$Raster=="ERAPPTsmt_1km"]<-"ERAPPTsm_1km" # remove the "t" label for pulling raster (t vs t-1)
 Lookup$Raster[Lookup$Raster=="ERATavesmt_1km"]<-"ERATavesm_1km" # remove the "t" label for pulling raster (t vs t-1)
 
-#Remove hli3cl and SCANFI_1km - categorical, not continuous -------
+#Remove hli3cl and SCANFI_1km - categorical, not continuous 
 Lookup<-subset(Lookup, Lookup$Label %notin% c("hli3cl_1km","SCANFI_1km"))
 
-#Get grouping categories and remove LCC ------
+#Get grouping categories and remove LCC
 Lookup$Category<-ifelse(Lookup$Category=="Road","Disturbance",ifelse(Lookup$Category=="Greenup","Annual Climate", Lookup$Category)) ### need to finish aligning categories
 Grouping<-unique(Lookup$Category) #Groupings
 Grouping<- Grouping[! Grouping %in% c('Landcover','LCC_MODIS')] #LCC is NA for this
@@ -92,7 +113,7 @@ Get_paths<- function(Grouping, YR){
     
     if(Group.k$YearMatch[k]==0){
     
-      Match<- which(abs(years - YR) == min(abs(years - YR),na.rm=T)) %>%
+      Match<- which(abs(years - YR) == min(abs(years - YR),na.rm=T)) %>% min(.) %>% #where equidistant years occur use the lower
       years[.]    #ID closest year 
       
       Matched<-paste(Group.k$PredictPath[k],"/",Group.k$Raster[k],"_",Match,".tif",sep="")
@@ -100,7 +121,7 @@ Get_paths<- function(Grouping, YR){
       
       else if (Group.k$YearMatch[k]==(-1)){
         
-      Lag<-min(which(abs(years- (YR-1)) == min(abs(years- (YR-1)),na.rm=T))) %>%
+      Lag<-min(which(abs(years- (YR-1)) == min(abs(years- (YR-1)),na.rm=T))) %>% min(.) %>% # as above
       years[.]  # ID lagged closest year
         
       Matched<-paste(Group.k$PredictPath[k],"/",Group.k$Raster[k],"_",Lag,".tif",sep="")
@@ -117,6 +138,7 @@ Get_paths<- function(Grouping, YR){
   
   return(list(Path_list,Name_list))
 }
+
 
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
 # this uses the above "Get_paths" function to extract appropriate rasters for stacking
@@ -159,9 +181,10 @@ if (Grouping=="Disturbance" & i==33){
   return(DF)
 }
 
-#8. Analysis ----
 
-#BCR_list<-list() # for storing output by BCR
+#8. Analysis ----
+for (b in c(1985,1990,1995,2000,2005,2010,2015,2020)){ #open year 
+BCR_list<-list() # for storing output by BCR
 
 for(i in c(1:nrow(bcr))){  # select BCR
   
@@ -176,22 +199,27 @@ for(i in c(1:nrow(bcr))){  # select BCR
   if (bcr.i$country=="usa"){
     bcr.i<-st_intersection(bcr.i, us) }#crop at US border
   
-#Get BCR survey sample IDs ---- 
+#Get BCR reference sample - pool samples for the pooled BCRs  --- 
 call<-paste(bcr.i$country,bcr.i$subUnit, sep="") #match to bcr.i to bcr name in bcrlist
 ids <- bcrlist %>% .[, c("id",call)] %>% subset(.,.[,2]==TRUE)%>%.$id
   
-  # pool samples for the pooled BCRs (now pre-coded so omitt)  --- 
-  # if(length(call)==2) {
-  # id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
-  # ids<-unique(c(ids,id2))  }
+  if(length(call)==2) {
+    id2<- bcrlist %>%.[, c("id",call)]%>%subset(.,.[,3]==TRUE)%>%.$id  
+    ids<-unique(c(ids,id2))  }
 
 # Get sample data for BCR ---
 sample.i<-cov_clean%>%subset(.,.$id %in% ids) 
 sample.i<-sample.i %>%.[,colSums(.,na.rm=T)!=0] # remove covariates with no data
   
-# Extract BCR specific data frames for each group. *pick year of interest* e.g Year=2020  ---  
+#Convert sample locations to SPDF (for Leaflet plots)  ---  
+#pnts<-visit%>% subset(.,.$id %in% ids)%>%.[11:12]%>% #sample lon, lat
+#    st_as_sf(., coords = c("lon", "lat"),crs = 4326)%>% 
+#    st_transform(crs=crs) %>%
+#    as(.,"Spatial") 
 
-Dataframe<-purrr::map(Grouping,create_df, YR=2020, bcr.i=bcr.i,.progress = T)  
+# Extract BCR specific data frames for each group. pick year of interest e.g Year=2020  ---  
+
+Dataframe<-purrr::map(Grouping,create_df, YR=b, bcr.i=bcr.i,.progress = T)  
 
 #Calculate extrapolation ---
 
@@ -220,9 +248,8 @@ Raster[[j]]<-Ext[[j]]$rasters$ExDet$all
 
 Raster[[j]][Raster[[j]]>=0 & Raster[[j]]<=1] <-0  #set analogue to 0
 Raster[[j]][Raster[[j]]<0]<-1 # univariate to 1
-#Raster[[j]][Raster[[j]]>1]<-2 # combinatorial to 2 (if wishing to retain more nuance, but comb. is rare, mosaicking becomes more complex)
-Raster[[j]][Raster[[j]]>1]<-1 # combinatorial to 1
-   
+Raster[[j]][Raster[[j]]>1]<-1 # combinatorial to 1 # could code to 2 for other applications
+
 cat("Finished Group", j, "\n")
 } # end of groupings
 
@@ -231,8 +258,8 @@ cat("Finished", i, "of", 34, "\n")
 
 } #end of BCRS
 
-save(BCR_list,file = "Extrapolation2020.RData")  
-#load("Extrapolation2020.RData")
+save(BCR_list,file = paste("Extrapolation", b,".RData",sep=""))  
+#load("Extrapolation2000.RData")
 
 #10. Mosaic BCRs into region-wide raster ------------------
 # Reorganize, merge, and look at available data in overlap zones
@@ -244,6 +271,7 @@ M<-terra::rast(file.path(root,"gis","ModelOverlap.tif"))
 merge<-mergeb<-Final<-list()
 
 # Reorder nesting: j in i rather than i in j ------
+
 for (j in c(1:length(Grouping))) { 
 for (i in c(1:34)){
   merge[[i]]<-rast(BCR_list[[i]][[j]]) # this is the original values
@@ -257,8 +285,8 @@ M <- crop(M, ext(f)) # deal with any extent mismatch
 f<-f/M #get rid of the additive areas
 
 # Find areas where overlap contributes non-extrapolated data ----
-b <- sprc(mergeb)%>% mosaic(.,fun="sum") %>% crop(.,ext(M))
-Overlay<-b/M # Divide total extrapolation layers by available prediction layers to determine if alternate exists -----
+b.spat <- sprc(mergeb)%>% mosaic(.,fun="sum") %>% crop(.,ext(M))
+Overlay<-b.spat/M # Divide total extrapolation layers by available prediction layers to determine if alternate exists -----
 Overlay[Overlay<1]<-0  #If all layers extrapolated == 1, otherwise == 0
 
 Final[[j]]<-f*Overlay #mask out the areas where alt data exists
@@ -268,77 +296,70 @@ Final[[j]][Final[[j]]>2]<-NA #get rid of tiny mismatch in layers
 # 12. Categorize for stacking Groupings ------------------
 
 Stacked<-Final
-cat<-c(1,10,100,100000,1000,10000) 
+cat<-c(1,10,100,NA,1000,10000) #Disturbance has no extrapolation so drop 
 
-for (i in c(1:6)){
+for (i in c(1:3,5:6)){
   Stacked[[i]][Stacked[[i]]>=1]<-cat[i]
 }
 
 Stacked<-sprc(Stacked)%>% mosaic(.,fun="sum") %>% as.factor()
 
-# Assign categories to stacks
-label<-c("No extrapolation","Vegetation",
-         "Climate (Annual)","Climate (Annual) + Vegetation",
-         "Climate (Normal)","Climate (Normal) + Vegetation",
-         "Climate (Annual + Normal)","Climate (Annual + Normal) + Vegetation", 
-         "Topography","Topography + Vegetation",
-         "Topography + Climate (Annual)", "Topography + Climate (Annual) + Vegetation",
-         "Topography + Climate (Normal)", "Topography + Climate (Normal) + Vegetation",
-         "Topography + Climate (Annual + Normal)", "Topography + Climate (Annual + Normal) + Vegetation", 
-         "Wetland", "Wetland + Vegetation","Wetland + Climate (Annual)", "Wetland + Climate (Annual) + Vegetation", 
-         "Wetland + Climate (Normal)","Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal)",
-         "Wetland + Climate (Annual + Normal) + Vegetation","Wetland + Topography", "Wetland + Topography + Vegetation",
-         "Wetland + Topography + Climate (Annual)", "Wetland + Topography + Climate (Annual) + Vegetation",
-         "Wetland + Topography + Climate (Normal)", "Wetland + Topography + Climate (Normal) + Vegetation",
-         "Wetland + Topography + Climate (Annual + Normal)",
-         "Wetland + Topography + Climate (Annual + Normal) + Vegetation", 
-         "Disturbance","Disturbance + Vegetation")
+# Assign categories to stacks ----
 
-cls <- data.frame(id=c(0,1,10,11,100,101,110,111,
-                       1000,1001,1010,1011,1100,1101,1110,1111,
-                       10000,10001,10010,10011,10100,10101,10110,10111,
-                       11000,11001,11010,11011,11100,11101,11110,11111,
-                       1000000,100001), cover=label)
+label<-c("No extrapolation","Climate (Annual)", #0,1
+         "Vegetation", "Climate (Annual) + Vegetation", #10,11
+         "Climate (Normal)","Climate (Annual + Normal)", #100,101
+         "Climate (Normal) + Vegetation", "Climate (Annual + Normal) + Vegetation",#110,111
+         "Topography","Topography + Climate (Annual)", #1000,1001
+         "Topography + Vegetation","Topography + Climate (Annual) + Vegetation",#1010,1011
+         "Topography + Climate (Normal)","Topography + Climate (Annual + Normal)",#1100,1101
+         "Topography + Climate (Normal) + Vegetation", "Topography + Climate (Annual + Normal) + Vegetation", #1110,1111
+         "Wetland", "Wetland + Climate (Annual)", #10000,10001
+         "Wetland + Vegetation",  "Wetland + Climate (Annual) + Vegetation", #10010,10011
+         "Wetland + Climate (Normal)","Wetland + Climate (Annual + Normal)", #10100, 10101
+         "Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal) + Vegetation", #10110,10111,
+         "Wetland + Topography", "Wetland + Topography + Climate (Annual)",#11000,11001
+         "Wetland + Topography + Vegetation","Wetland + Topography + Climate (Annual) + Vegetation",#11010,11011,
+         "Wetland + Topography + Climate (Normal)", "Wetland + Topography + Climate (Annual + Normal)", # 11100,11101,
+         "Wetland + Topography + Climate (Normal) + Vegetation",
+         "Wetland + Topography + Climate (Annual + Normal) + Vegetation")#11110,11111
+cls <- data.frame(id=c(0,1,10,11,
+                       100,101,
+                       110,111,
+                       1000,1001,
+                       1010,1011,
+                       1100,1101,
+                       1110,1111,
+                       10000,10001,
+                       10010,10011,
+                       10100,10101,
+                       10110,10111,
+                       11000,11001,
+                       11010,11011,
+                       11100,11101,
+                       11110,11111), cover=label)
 levels(Stacked) <- cls
 
 # Write out raster -----
-writeRaster(Stacked,"Potential_Extrapolation_by_Class_2020_BAM_V6.tif", overwrite=T)
+writeRaster(Stacked,paste("Potential_Extrapolation_by_Class_",b,"_BAM_V6.tif", sep=""), overwrite=T)
 
-#13. Plotting --------------
-# Contrasting colour scheme for easier visualization
-c26 <- c("lightgrey","chartreuse4","yellow","chartreuse1","darkgoldenrod2","darkseagreen", "darkorange","darkgreen",
-  "red3","salmon2","darkorchid1","purple3","deeppink3","purple4","#633333","dodgerblue3","gold1",
-  "darkturquoise","yellow3","blue","gold3","navy","salmon4","black","indianred1","#CC79A7","#FB9A99","khaki3")
-
-#Point colour, water colour ------------
-Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
-W_col <- rgb(185, 217, 245, max = 255, alpha = 180)
-
-## Survey locations: if including points ------------
+## Survey locations:
 loc <- visit %>% 
   dplyr::select(id, lat, lon) %>% 
   unique() %>% 
   st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
   st_transform(crs=5072)
 
-require(sf)
-# Ocean layer ---
-ocean<-read_sf("C:/Users/andrake/Downloads/ne_50m_ocean/ne_50m_ocean.shp")
-ocean<- ocean %>% st_transform(crs(Stacked)) %>% st_crop(Stacked)
+#14. Save final plots ---------
 
-# Lakes layer ---
-water<-read_sf("G:/Shared drives/BAM_NationalModels5/Regions/Lakes_and_Rivers/hydrography_p_lakes_v2.shp")
-water<- water %>% st_transform(crs(Stacked)) %>% st_crop(Stacked) %>% dplyr::filter(TYPE==16|TYPE==18)
-
-#14. Save final plot ---------
-
-png("Extrapolation_byClassNoPnts2020.png",width =15,
+png(paste("ExtrapolationClass",b,".png", sep=""),width =15,
     height=5,units = "in",res = 1200)
-plot(Stacked, col=c26, cex=1, main="2020 Extrapolation")
+plot(Stacked, col=c26, cex=1, main=paste("Extrapolation: all classes",b, sep=" "))
 plot(ocean$geometry, lwd=0.1,col="#ccdce3", border = "#436175", add=T)
-plot(water$geometry,lwd=0.1,col="white",border = "#436175", add=T)
-#plot(loc$geometry,col=Pnt_col,cex=0.001, add=T) # add survey locations
+plot(water$geometry,lwd=0.05,col="white",border = "#436175", add=T)
+#plot(loc$geometry,col=Pnt_col,cex=0.001, add=T)
 plot(bcr$geometry,lwd=0.2,add=T)
 dev.off()
+cat("Finished", b)} #end of year
 
-################################ END OF CODE ############################
+################## End of Code ######################
