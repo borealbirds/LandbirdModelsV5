@@ -8,12 +8,7 @@
 # This code uses dsextra to quantify extrapolation
 # This package calls the "ExDet" function which needs it's
 # tolerances adjusted to avoid singular matrices (rounding low values down)
-#-----------------------------
-#Tweak ExDet function in dsmextra by increasing the tolerance (tol) 
-#of the Mahalanobis function for mah.ref + mah.pro: 
-#getAnywhere(ExDet) - then change:
-#mah.ref <- stats::mahalanobis(x = ref, center = aa, cov = bb, tol=1e-20) 
-#------------------------------
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -21,13 +16,16 @@
 # Import dsmextra
 #if (!require("remotes")) install.packages("remotes")
 #remotes::install_github("densitymodelling/dsmextra")
-
+#-----------------------------
+#Tweak ExDet function in dsmextra by increasing 
+#the tolerance of the Mahalanobis function: 
+#getAnywhere(ExDet)
 
 pacman::p_load(dsmextra, sp, tidyverse, sf, ggplot2, 
                rlang, leaflet, dplyr, terra, smoothr, stringi,
                readr, ecospat, mapview)
 
-# extra function
+# extra function -----
 `%notin%` <- Negate(`%in%`)
 
 #2. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
@@ -52,7 +50,7 @@ can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>%
 us <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) %>% 
   st_transform(crs=crs) # US boundary
 
-### Formatting and water layers for plots ------
+#6. Set up a bunch of formatting and bring in water layers for plots ------
 
 # Ocean layer ---
 ocean<-read_sf("C:/Users/andrake/Downloads/ne_50m_ocean/ne_50m_ocean.shp")
@@ -62,16 +60,58 @@ ocean<- ocean %>% st_transform(crs(bcr)) %>% st_crop(bcr)
 water<-read_sf("G:/Shared drives/BAM_NationalModels5/Regions/Lakes_and_Rivers/hydrography_p_lakes_v2.shp")
 water<- water %>% st_transform(crs(bcr)) %>% st_crop(bcr) %>% dplyr::filter(TYPE==16|TYPE==18)
 
-# Contrasting colour scheme for easier visualization--------------
-c26 <- c("lightgrey","gold1","limegreen","chartreuse1","darkgoldenrod2","tomato2","darkseagreen","darkgreen",
-         "red3","darkorchid1","salmon2","deeppink3","purple2","purple4","saddlebrown","#633333","dodgerblue3","darkturquoise",
-         "yellow","yellow3","blue","navy","gold3","rosybrown1","black","magenta","tan","hotpink","#FB9A99","yellow4")
+# Create labeling system for categories (using codes introduced below) -------
 
-# Point colour, water colour---------
-Pnt_col <- rgb(117, 25, 25, max = 255, alpha = 80)
-W_col <- rgb(185, 217, 245, max = 255, alpha = 180)
+label<-c("No extrapolation","Climate (Annual)", #0,1
+         "Vegetation","Vegetation + Climate (Annual)", #10,11
+         "Climate (Normal)","Climate (Annual + Normal)", #100,101
+         "Vegetation + Climate (Normal)", "Vegetation + Climate (Annual + Normal)",#110,111
+         "Topography","Topography + Climate (Annual)", #1000,1001
+         "Topography + Vegetation","Topography + Climate (Annual) + Vegetation",#1010,1011
+         "Topography + Climate (Normal)","Topography + Climate (Annual + Normal)",#1100,1101
+         "Topography + Climate (Normal) + Vegetation", "Topography + Climate (Annual + Normal) + Vegetation", #1110,1111
+         "Wetland", "Wetland + Climate (Annual)", #10000,10001
+         "Wetland + Vegetation",  "Wetland + Climate (Annual) + Vegetation", #10010,10011
+         "Wetland + Climate (Normal)","Wetland + Climate (Annual + Normal)", #10100, 10101
+         "Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal) + Vegetation", #10110,10111,
+         "Wetland + Topography", "Wetland + Topography + Climate (Annual)",#11000,11001
+         "Wetland + Topography + Vegetation","Wetland + Topography + Climate (Annual) + Vegetation",#11010,11011,
+         "Wetland + Topography + Climate (Normal)", "Wetland + Topography + Climate (Annual + Normal)", # 11100,11101,
+         "Wetland + Topography + Climate (Normal) + Vegetation",
+         "Wetland + Topography + Climate (Annual + Normal) + Vegetation")#11110,11111
 
-#6. Load prediction raster categories -----
+cls <- data.frame(id=c(0,1,10,11,100,101,110,111,
+                       1000,1001, 1010,1011, 1100,1101, 1110,1111,
+                       10000,10001, 10010,10011, 10100,10101, 10110,10111,
+                       11000,11001, 11010,11011, 11100,11101,11110,11111), cover=label)
+
+# Create contrasting colour scheme for easier visualization ----------
+
+c32<-c("lightgrey","gold1","limegreen","chartreuse1","darkgoldenrod2", #climate normal
+          "darkgoldenrod4","darkseagreen","darkgreen","darkred","darkorchid1",#topography+climate(annual)
+          "salmon2","pink","purple2","purple4","hotpink",#topography + normal + vegetation
+          "deeppink3","dodgerblue4","dodgerblue","yellow","tan",#wetland+ annual + vegetation
+          "blue","navy","grey30","black","turquoise1",#wetland + topography
+          "yellow3","turquoise","magenta","yellow4","#633", # Wetland + Topography + Climate (Annual + Normal)
+          "magenta3","magenta4")
+
+#Improve order of variables in cls
+levels <- label[c(1,2,5,6,3,4,7,8,9,11,10,13,14,12,15,16,17,19,
+                  18,21,22,20,23,24,25,27,26,29,30,28,31,32)] #rearrange classes
+levels(cls$cover)<-levels #apply
+
+# Reorder cls
+cls<-cls[c(1,2,5,6,3,4,7,8,9,11,10,13,14,12,15,16,17,19,
+      18,21,22,20,23,24,25,27,26,29,30,28,31,32),] 
+
+# Do the same to colour coding
+c32<-c32[c(1,2,5,6,3,4,7,8,9,11,10,13,14,12,15,16,17,19,
+           18,21,22,20,23,24,25,27,26,29,30,28,31,32)]
+
+### Simplify BCR for plots-----------------
+bcr_s<-st_simplify(bcr, preserveTopology = FALSE, dTolerance = 100)
+
+#7. Load prediction raster categories -----
 Lookup <- readxl::read_excel(file.path(root,"NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup")%>% 
   dplyr::select(Category,Label,YearMatch, TemporalResolution, PredictPath)
 
@@ -88,9 +128,9 @@ Lookup$Category<-ifelse(Lookup$Category=="Road","Disturbance",ifelse(Lookup$Cate
 Grouping<-unique(Lookup$Category) #Groupings
 Grouping<- Grouping[! Grouping %in% c('Landcover','LCC_MODIS')] #LCC is NA for this
 
-# MAIN ##########################################################
+#MAIN ###################
 
-#7. Run functions to retrieve and prep data for analysis -----
+#8. Run functions to retrieve and prep data for analysis -----
 
 #(1) Function to extract raster list - returns matrix of raster pathways [1,] + variable names [2,]
 
@@ -139,7 +179,6 @@ Get_paths<- function(Grouping, YR){
   return(list(Path_list,Name_list))
 }
 
-
 #(2) Function to stack rasters, crop by BCR, and convert to data frame 
 # this uses the above "Get_paths" function to extract appropriate rasters for stacking
 
@@ -181,8 +220,7 @@ if (Grouping=="Disturbance" & i==33){
   return(DF)
 }
 
-
-#8. Analysis ----
+#9. Analysis ----
 for (b in c(1985,1990,1995,2000,2005,2010,2015,2020)){ #open year 
 BCR_list<-list() # for storing output by BCR
 
@@ -240,7 +278,7 @@ Ext[[j]] <- compute_extrapolation(samples = sample,
                                   coordinate.system = crs,
                                   verbose=F)
   
-#9. Produce binary raster of where extrapolation areas are flagged for each grouping ----------
+#10. Produce binary raster of where extrapolation areas are flagged for each grouping ----------
 #NOTE values >1= combinatorial extrapolation; <0= uni-variate; 0-1 = analogue
   
 Raster[[j]]<-Ext[[j]]$rasters$ExDet$all
@@ -259,9 +297,12 @@ cat("Finished", i, "of", 34, "\n")
 } #end of BCRS
 
 save(BCR_list,file = paste("Extrapolation", b,".RData",sep=""))  
-#load("Extrapolation2000.RData")
 
-#10. Mosaic BCRs into region-wide raster ------------------
+#If starting here to rework plot appearance -------
+#for(b in c(1985,1990,1995,2000,2005,2010,2015,2020)){
+#load(paste("Extrapolation", b,".RData",sep=""))
+
+#11. Mosaic BCRs into region-wide raster ------------------
 # Reorganize, merge, and look at available data in overlap zones
 
 #Import the areas of BCR overlap -----
@@ -293,7 +334,7 @@ Final[[j]]<-f*Overlay #mask out the areas where alt data exists
 Final[[j]][Final[[j]]>2]<-NA #get rid of tiny mismatch in layers
 }
 
-# 12. Categorize for stacking Groupings ------------------
+#12. Categorize for stacking Groupings ------------------
 
 Stacked<-Final
 cat<-c(1,10,100,NA,1000,10000) #Disturbance has no extrapolation so drop 
@@ -305,61 +346,29 @@ for (i in c(1:3,5:6)){
 Stacked<-sprc(Stacked)%>% mosaic(.,fun="sum") %>% as.factor()
 
 # Assign categories to stacks ----
-
-label<-c("No extrapolation","Climate (Annual)", #0,1
-         "Vegetation", "Climate (Annual) + Vegetation", #10,11
-         "Climate (Normal)","Climate (Annual + Normal)", #100,101
-         "Climate (Normal) + Vegetation", "Climate (Annual + Normal) + Vegetation",#110,111
-         "Topography","Topography + Climate (Annual)", #1000,1001
-         "Topography + Vegetation","Topography + Climate (Annual) + Vegetation",#1010,1011
-         "Topography + Climate (Normal)","Topography + Climate (Annual + Normal)",#1100,1101
-         "Topography + Climate (Normal) + Vegetation", "Topography + Climate (Annual + Normal) + Vegetation", #1110,1111
-         "Wetland", "Wetland + Climate (Annual)", #10000,10001
-         "Wetland + Vegetation",  "Wetland + Climate (Annual) + Vegetation", #10010,10011
-         "Wetland + Climate (Normal)","Wetland + Climate (Annual + Normal)", #10100, 10101
-         "Wetland + Climate (Normal) + Vegetation","Wetland + Climate (Annual + Normal) + Vegetation", #10110,10111,
-         "Wetland + Topography", "Wetland + Topography + Climate (Annual)",#11000,11001
-         "Wetland + Topography + Vegetation","Wetland + Topography + Climate (Annual) + Vegetation",#11010,11011,
-         "Wetland + Topography + Climate (Normal)", "Wetland + Topography + Climate (Annual + Normal)", # 11100,11101,
-         "Wetland + Topography + Climate (Normal) + Vegetation",
-         "Wetland + Topography + Climate (Annual + Normal) + Vegetation")#11110,11111
-cls <- data.frame(id=c(0,1,10,11,
-                       100,101,
-                       110,111,
-                       1000,1001,
-                       1010,1011,
-                       1100,1101,
-                       1110,1111,
-                       10000,10001,
-                       10010,10011,
-                       10100,10101,
-                       10110,10111,
-                       11000,11001,
-                       11010,11011,
-                       11100,11101,
-                       11110,11111), cover=label)
-levels(Stacked) <- cls
+levels(Stacked) <- cls #set factors in stacked
 
 # Write out raster -----
 writeRaster(Stacked,paste("Potential_Extrapolation_by_Class_",b,"_BAM_V6.tif", sep=""), overwrite=T)
 
 ## Survey locations:
-loc <- visit %>% 
-  dplyr::select(id, lat, lon) %>% 
-  unique() %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
-  st_transform(crs=5072)
+#loc <- visit %>% 
+#  dplyr::select(id, lat, lon) %>% 
+#  unique() %>% 
+#  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) %>% 
+#  st_transform(crs=5072)
 
 #14. Save final plots ---------
 
 png(paste("ExtrapolationClass",b,".png", sep=""),width =15,
     height=5,units = "in",res = 1200)
-plot(Stacked, col=c26, cex=1, main=paste("Extrapolation: all classes",b, sep=" "))
+plot(Stacked, col=c32, all_levels=T, cex=1, main=paste("Extrapolation: all classes",b, sep=" "))
 plot(ocean$geometry, lwd=0.1,col="#ccdce3", border = "#436175", add=T)
 plot(water$geometry,lwd=0.05,col="white",border = "#436175", add=T)
 #plot(loc$geometry,col=Pnt_col,cex=0.001, add=T)
-plot(bcr$geometry,lwd=0.2,add=T)
+plot(bcr_s$geometry,lwd=0.2, border="#434162",add=T)
 dev.off()
+gc()  
 cat("Finished", b)} #end of year
 
 ################## End of Code ######################
