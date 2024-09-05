@@ -263,7 +263,7 @@ for(i in 1:length(bcrs)){
     
     #10. Remove covariates with only 1 option and are in Canada----
     if(nrow(use.j)==1){
-      cov.prior[20:34, use.j$Label[1]] <- FALSE
+      cov.prior[20:length(bcrs), use.j$Label[1]] <- FALSE
     }
     
   }
