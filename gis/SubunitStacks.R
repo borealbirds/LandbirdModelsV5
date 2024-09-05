@@ -137,8 +137,7 @@ units <- bcr.out |>
   st_drop_geometry() |> 
   mutate(bcr = paste0(country, subUnit)) |> 
   unique() |> 
-  expand_grid(year = seq(1985, 2020, 5)) |> 
-  dplyr::filter(bcr %in% c("usa40", "usa43", "usa2", "usa41423", "usa414232", "usa5"))
+  expand_grid(year = seq(1985, 2020, 5))
 
 for(i in 1:nrow(units)){
   
