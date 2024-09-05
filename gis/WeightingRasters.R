@@ -1,9 +1,11 @@
 #-----------------------------------
 #  Produce weighting rasters for
 #  Prediction Mosaicking function
-#  Author: Anna Drake
+#  Author: Anna Drake, edited by Elly Knight
 #  Created: April 2024
 #-----------------------------------
+
+#NOTES###########
 
 # This code produces 3 outputs: 
 # 1 & 2. A scored raster of BCR overlap for US and Canada + a shapefile of overlap zones 
@@ -12,6 +14,7 @@
 # Distance weighting uses approach by Dominic Roye (dominicroye.github.io)
 # All outputs go into "MosaicWeighting" folder
 # Note: use latest version of Terra. terra::mosaic function has bug between 7-29 & 7-39 (https://github.com/rspatial/terra/issues/1262)
+
 #PREAMBLE##########
 
 #1. Load packages ----
@@ -23,160 +26,51 @@ library(terra)
 crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
 #3. Set file paths ----
-root <- "G:/Shared drives/BAM_NationalModels5" #PC link
-setwd(file.path(root,"MosaicWeighting"))
+root <- "G:/Shared drives/BAM_NationalModels5"
 
-#4. Read in country shapefiles----
-can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) |> 
-  st_transform(crs=5072) 
-usa <- read_sf(file.path(root, "Regions", "USA_adm", "USA_adm0.shp")) |> 
-  st_transform(crs=5072) 
-
-#5. Read in BCR shapefile----
-#Remove subunit 1
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
-  dplyr::filter(subUnit!=1) |> 
-  st_transform(crs=5072)
-
-#6. Identify BCRs for each country----
-bcr.ca <- bcr |> 
-  st_intersection(can) |> 
-  mutate(country="can") |> 
-  dplyr::select(subUnit, country)
-
-bcr.usa <- bcr |> 
-  st_intersection(usa) |> 
-  mutate(country="usa") |> 
-  dplyr::select(subUnit, country)
+#4. Read in buffered and merged region shapefile----
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #OVERLAP#######
 
-#1. Determine overlap zones for Canada and US  -----
-
-Baselayer<-terra::rast(file.path(root, "PredictionRasters/ClimateNormal/AHM_1km.tif")) #any prediction raster
+#1. Get extent -----
+#can use any prediction raster
+Baselayer<-terra::rast(file.path(root, "PredictionRasters/ClimateNormal/AHM_1km.tif"))
 Baselayer[!is.na(Baselayer)] <- 1
-e<-ext(Baselayer)
+e <- ext(Baselayer) 
 
-#2. Canada----
-OverlapCan <- c()
-
-for (i in (1:nrow(bcr.ca))) {
-  bcr.i <-  bcr.ca %>% 
-    dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000)%>%  # Filter & buffer shapefile
-    st_intersection(., can) #crop at USA border
+#2. Set up BCR loop----
+overlap <- c()
+for (i in (1:nrow(bcr))) {
   
-  OverlapCan[[i]]<-Baselayer %>% 
-    project(.,crs)  %>%
-    crop(.,e) %>%
-    mask(.,bcr.i) 
-}
-
-#2, Mosaic----
-c.mosaic <- sprc(OverlapCan) %>% mosaic(., fun="sum")  # == amount of prediction layer overlap
-writeRaster(c.mosaic,paste(root,"MosaicWeighting/","ModelOverlap_Can.tif"))
-
-#3. Reduce to shapefile of overlap areas----
-c.mosaic[c.mosaic==1]<-0
-c.mosaic[c.mosaic>1]<-1 
-OverlapCan <- as.polygons(c.mosaic) %>% .[2]
-writeVector(OverlapCan,paste(root,"MosaicWeighting/","BCR_Overlap_Can",sep=""))
-
-#4. Now USA----
-OverlapUS<-c()
-
-for (i in (1:nrow(bcr.usa))) {
-  bcr.i <-  bcr.usa %>% 
-    dplyr::filter(row_number()==i) %>% 
-    st_buffer(100000)%>%  # Filter & buffer shapefile
-    st_intersection(., usa) #crop at USA border
+  #3. Get the BCR shapefile----
+  bcr.i <- bcr[i,]
   
-  OverlapUS[[i]]<-Baselayer %>% 
-    project(.,crs)  %>%
-    crop(.,e) %>%
-    mask(.,bcr.i) 
+  #4. Make it a raster----
+  overlap[[i]] <- Baselayer |>
+    project(crs)  |>
+    crop(e) |>
+    mask(bcr.i) 
+  
 }
 
 #5. Mosaic----
-u.mosaic <- sprc(OverlapUS)%>%mosaic(., fun="sum")
-writeRaster(u.mosaic,paste(root,"MosaicWeighting/","ModelOverlap_US.tif", sep=""))
+# == amount of prediction layer overlap
+overlap_sum <- sprc(overlap) |> 
+  mosaic(fun="sum")  
 
-#6. Reduce to a shapefile of overlap areas----
-u.mosaic[u.mosaic==1]<-0
-u.mosaic[u.mosaic>1]<-1 
-
-OverlapUS <- as.polygons(u.mosaic) %>% .[2]
-writeVector(OverlapUS,paste(root,"MosaicWeighting/","BCR_Overlap_US", sep=""))
-
-#7. Combine the two----
-MosaicOverlap <- merge(MosaicOverlap1, MosaicOverlap2)
-writeRaster(MosaicOverlap, file.path(root, "gis","ModelOverlap.tif", sep=""), overwrite=TRUE)
+#6. Combine the two----
+writeRaster(overlap_sum, file.path(root, "gis","ModelOverlap.tif"), overwrite=TRUE)
 
 #DISTANCE TO EDGE######
 
-#For model weighting when mosaicing
-
-#1. Make merged subunits----
-
-#See "gis/BufferedSubunits.R" for rationale
-
-bcr.can4142 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(41, 42)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 4142)
-st_geometry(bcr.can4142) <- "geometry"
-
-bcr.usa41423 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="usa",
-         subUnit = 41423)
-st_geometry(bcr.usa41423) <- "geometry"
-
-bcr.usa414232 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3, 2)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="usa",
-         subUnit = 414232)
-st_geometry(bcr.usa414232) <- "geometry"
-
-bcr.can8182 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(81, 82)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 8182)
-st_geometry(bcr.can8182) <- "geometry"
-
-#polygons to remove
-bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
-                         subUnit=c(41, 42, 3, 42, 41))
-
-#2. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) |> 
-  anti_join(bcr.remove) |> 
-  mutate(bcr = paste0(country, subUnit))
-
-ggplot(bcr.country |> 
-         dplyr::filter(!bcr %in% c("can8182", "usa414232"))) +
-  geom_sf(aes(fill=bcr), show.legend=FALSE)
-
-#3. Set up loop for BCR buffering----
-for(i in 1:nrow(bcr.country)){
+#1. Set up loop for BCR buffering----
+for(i in 1:nrow(bcr)){
   
-  #4. Filter & buffer shapefile----
-  bcr.i <- bcr.country[i,] |> 
-    st_buffer(100000)
+  #2. Get the BCR shapefile----
+  bcr.i <- bcr[i,]
   
-  #5. Make fishnet----
+  #3. Make fishnet----
   #(10km2 to speed processing - could make this finer)
   grid <- st_make_grid(bcr.i, cellsize = 10000, what = "centers") |> 
     st_intersection(bcr.i)
