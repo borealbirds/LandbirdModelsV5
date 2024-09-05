@@ -81,11 +81,11 @@ bcr.usa41423 <- bcr.usa |>
 st_geometry(bcr.usa41423) <- "geometry"
 
 #polygons to remove
-bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
+bcr.remove <- data.frame(country=c("can", "can", "usa", "usa", "usa"),
                          subUnit=c(41, 42, 3, 42, 41))
 
 #5. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423, bcr.usa414232, bcr.can8182) |> 
+bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423) |> 
   anti_join(bcr.remove)
 
 write_sf(bcr.country, file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
@@ -96,7 +96,7 @@ for(i in 1:nrow(bcr.country)){
 
   #7. Filter & buffer shapefile----
   bcr.buff <- bcr.country |>
-    dplyr::filter(row_number()==i) |>
+    dplyr::filter(row_number() == i) |>
     st_buffer(100000)
 
   #8. Crop to international boundary----
@@ -113,3 +113,7 @@ for(i in 1:nrow(bcr.country)){
 
 #10. Save----
 write_sf(bcr.out, file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+
+#11. Plot----
+ggplot(bcr.out)  +
+  geom_sf(aes(fill=factor(subUnit)), alpha = 0.5)
