@@ -10,6 +10,10 @@
 
 #The output from this script is used in multiple stages of the analysis pipeline.
 
+#Note the original version of this script also created a couple alternative subunits that were evaluated after models were run and removed from the script:
+#merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
+#merging 2 (coastal AK) with 41423 and comparing to only 2 with small sample size
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -58,10 +62,6 @@ bcr.usa <- bcr |>
 
 #Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
 
-#Also try:
-#merging 82 (Newfoundland) with mainland 81 and comparing to only 82 with small sample size
-#merging 2 (coastal AK) with 41 and comparing to only 41 with small sample size
-
 bcr.can4142 <- bcr.ca |> 
   dplyr::filter(subUnit %in% c(41, 42)) |> 
   st_union() |> 
@@ -79,24 +79,6 @@ bcr.usa41423 <- bcr.usa |>
   mutate(country="usa",
          subUnit = 41423)
 st_geometry(bcr.usa41423) <- "geometry"
-
-bcr.usa414232 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3, 2)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="usa",
-         subUnit = 414232)
-st_geometry(bcr.usa414232) <- "geometry"
-
-bcr.can8182 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(81, 82)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 8182)
-st_geometry(bcr.can8182) <- "geometry"
 
 #polygons to remove
 bcr.remove <- data.frame(country=c("can", "usa", "usa", "can", "usa"),
