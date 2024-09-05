@@ -234,42 +234,15 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
   
 }
 
-"can81_Alder Flycatcher_StandardGreenup_1km"
-# single plot
-ggplot(boot_pts_sorted[[2]]$`bootstrap replicate_1`, aes(x = AHM_1km, y=y))+
-  geom_line()
-
-# faceted plot
-# Extract each bootstrap replicate from boot_pts_sorted[[1]]
-replicate_1 <- boot_pts_sorted[[1]][[1]]
-replicate_2 <- boot_pts_sorted[[1]][[2]]
-replicate_3 <- boot_pts_sorted[[1]][[3]]
-replicate_4 <- boot_pts_sorted[[1]][[4]]
-
-# Combine into one data frame with a 'replicate' identifier
-combined_data <- bind_rows(
-  mutate(replicate_1, replicate = "Replicate 1"),
-  mutate(replicate_2, replicate = "Replicate 2"),
-  mutate(replicate_3, replicate = "Replicate 3"),
-  mutate(replicate_4, replicate = "Replicate 4")
-)
-
-# Convert 'replicate' to a factor for correct faceting
-combined_data$replicate <- factor(combined_data$replicate, levels = c("Replicate 1", "Replicate 2", "Replicate 3", "Replicate 4"))
-
-# Create faceted plot
-ggplot(combined_data, aes(x = AHM_1km, y = y)) +
-  geom_line() +
-  facet_wrap(~ replicate, scales = "free") +
-  labs(title = "Faceted Plot of Bootstrap Replicates", x = "AHM_1km", y = "y")
 
 
 
 
 
 
-# important interactions
-#'@param covariate_data An exported `data.frame` (see: `data(bam_covariate_importance)` where rows are covariates and columns denote the relative influence of for a given bootstrap replicate by species by BCR permutation. 
+# 2-way interactions
+#'@param data An exported nested `list` (see: `data(boot_pts_sorted_i2)`) where the top level elements are species x bcr x 2-way interaction tuples, 
+# and the second-level elements are matrices of the associated average and SD of the bootstrapped prediction spaces
 #'
 #'@param bcr A `character` specifying the Bird Conservation Regions (BCRs) of interest.
 #'
@@ -289,28 +262,76 @@ ggplot(combined_data, aes(x = AHM_1km, y = y)) +
 #'
 #'
 
-# for every species x bcr x (var x var) permutation we want variable importance
-# we also want to group by bootstrap
-bamexplorer_interactions <- function(data = boot_group_keys, bcr, common_name, n_interactions, covariates="all", threshold=5)
-  
-  if (covariates=="all"){
-    covariates <- unique(bam_covariate_importance$var)
-  } 
-  
-  
-  # construct the key for accessing the desired gbm objects
-  # note that `paste()` can handle vectors so (e.g.) `bcr` or `covariates` may have length > 1.
-  keys <- paste(bcr, common_name, covariates, sep = "_")  
-  
-  boot_group_keys
 
-  # for every zth species x bcr x covariate permutation (rows in `boot_group_keys`):
+
+bamexplorer_interactions <- function(data = boot_pts_reduced_i2, bcr, common_name){
   
+  # construct the keys for accessing the desired gbm objects
+  # note that `paste()` can handle vectors so (e.g.) `bcr` or `common_name` may have length > 1.
+  keys <- as.character(outer(bcr, common_name, FUN=paste, sep="."))
+
+  # extract bcr x spp info from boot_pts_sorted_i2
+  boot_bcr_spp <- 
+    paste(stringr::str_split_i(names(boot_pts_reduced_i2), "\\.", 1),
+          stringr::str_split_i(names(boot_pts_reduced_i2), "\\.", 2),
+          sep=".")
   
+  # subset boot_pts_sorted_i2 to the bcr x spp queried
+  queried_bcr_spp <- boot_pts_reduced_i2[which(boot_bcr_spp %in% keys)]
   
+  # for every element of `queried_bcr_spp` (a single 2-way interaction)
+  # 1. get mean of the mean +/- sd 2-way interaction space
+  # 2. enter as an element into a list
+  # 3. flatten list into dataframe
+  # 4. sort by highest y
   
-test <- plot.gbm(b.i, i.var = c(1,7), return.grid = TRUE)
-plot.gbm(b.i, i.var = c(1,7))
+  queried_means_list <- list()
+  for (v in 1:length(queried_bcr_spp)){
+    
+    # bring bcr, spp, var info along
+    info_v <- stringr::str_split(names(queried_bcr_spp)[v], "\\.", simplify=TRUE)
+    
+    queried_means_list[[v]] <- 
+      queried_bcr_spp[[v]] |> 
+      tibble::as_tibble() |> 
+      dplyr::mutate(bcr = info_v[1], common_name = info_v[2], var_1 = info_v[3], var_2 = info_v[4])
+        
+        
+    # print progress
+    cat(paste("\rsearching", v, "of", length(queried_bcr_spp), "2-way interactions"))
+    Sys.sleep(0.000001)
+    
+  }
+  
+  # gather all interaction space means into a single table and sort
+  # `round()` is used for tie-breakers where the means are functionally identical but there is large differences in SD
+  queried_means <- 
+    queried_means_list |> 
+    purrr::list_rbind() |> 
+    mutate(mean_y_mean = round(mean_y_mean, 3)) |> 
+    dplyr::arrange(desc(mean_y_mean), mean_y_sd)
+  
+  return(queried_means)
+} 
+  
+# sanity check by plotting
+boot_pts_reduced_i2 <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_reduced_i2.rds")
+test <- bamexplorer_interactions(bcr = c("can12", "can11"), common_name = "Alder Flycatcher")
+load(file=file.path(root, "output", "bootstraps", gbm_objs[1]))
+
+
+# lowest y_mean (0.016 +/- 0.006)
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFITamarack_5x5", "year"), type="response")
+
+
+# highest y_mean (0.062 +/- 0.0194)
+plot.gbm(x=b.i, return.grid = FALSE, i.var = c("SCANFIJackPine_5x5", "SCANFITamarack_1km"), type="response")
+ 
+
+
+
+# PROBLEM: if threshold is 0.10, what do we do when bootstraps vary between e.g. 0.08-0.011? The lower bootstraps will be lost
+
 
 
 
