@@ -26,6 +26,8 @@
 # 3) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
 
+#TO DO: FILL IN REST OF BCRS WITH ZERO PREDICTIONS##########
+
 #PREAMBLE####
 
 #1. Load packages -------- 
@@ -72,24 +74,28 @@ extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "e
   dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
 
 #3. Get list of mosaics completed----
-mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics"), pattern="*.tiff", full.names=TRUE),
-                        file.mosaic = list.files(file.path(root, "output", "mosaics"), pattern="*.tiff")) |> 
-  separate(file.mosaic, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
-  mutate(boot = str_sub(boot, -100, -3))
+mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE),
+                        file.mosaic = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff")) |> 
+  separate(file.mosaic, into=c("spp", "boot", "year"), sep="_", remove=FALSE) |> 
+  mutate(year = as.numeric(str_sub(year, -100, -5)),
+         boot = as.numeric(boot))
 
 #4. Make the to-do list----
-all <- inner_join(predicted, extrapolated) |> 
-  anti_join(mosaicked)
+all <- inner_join(predicted, extrapolated)
 
 todo <- all |> 
   dplyr::select(spp, boot, year) |> 
-  unique()
+  unique() |> 
+  anti_join(mosaicked)
   
 #5. Check against bcr list per species----
 spp <- birdlist |> 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE)  
 
+#Might need to compare this to the fullmodels list because some spp*bcr combinations never hit a satisfactory learning rate in model tuning
+
+#This takes a couple minutes to run
 loop <- data.frame()
 for(i in 1:nrow(todo)){
   
@@ -101,11 +107,14 @@ for(i in 1:nrow(todo)){
   spp.i <- spp |> 
     dplyr::filter(spp==todo$spp[i])
   
-  if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i])}
+  if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i,])}
   
 }
 
 #MOSAIC####
+
+#1. Make an object to catch corrupt file errors----
+corrupt <- data.frame()
 
 #1. Set up the loop----
 for(i in 1:nrow(loop)){
@@ -150,15 +159,16 @@ for(i in 1:nrow(loop)){
   Correction[Correction>0] <- 1 #flag areas where non-extrapolated predictions exist in any layer
   
   #7. Set up bcr loop to correct rasters----
-  
   MosaicStack<-list() # hold the weighting rasters
   SppStack<-list() #hold the species prediction rasters
   
   for(j in c(1:nrow(predicted.i))){
     
     #8. Read in masking raster----
-    mask.j <- rast(loop.i$path.extrap[j])|>
-      crop(Correction) #correct edges (Newfoundland is off)
+    mask.j <- try(rast(loop.i$path.extrap[j])|>
+      crop(Correction)) #correct edges (Newfoundland is off)
+    
+    if(inherits(mask.j, "try-error")){break}
     
     #9. Crop correction raster to bcr----
     cor <- Correction |> 
@@ -179,9 +189,11 @@ for(i in 1:nrow(loop)){
     MosaicStack[[j]] <- w*cori
     
     #13. Read in the prediction----
-    p <- rast(loop.i$path.pred[j]) |> 
+    p <- try(rast(loop.i$path.pred[j]) |> 
       terra::project(crs(w)) |> 
-      crop(w)
+      crop(w))
+    
+    if(inherits(p, "try-error")){break}
     
     #14. Weight the prediction----
     SppStack[[j]] <- p*w  #apply weighting to the predictions
@@ -189,19 +201,31 @@ for(i in 1:nrow(loop)){
     cat("Finished BCR", j, "of", nrow(loop.i), "\n")
   }
   
-  # !sapply... deals with missing layers, can remove ultimately
-  CANwideW <- MosaicStack[!sapply(MosaicStack,is.null)]|>
+  #15. Skip to next if there were corrupt files----
+  if(inherits(p, "try-error") | inherits(mask.j, "try-error")){
+    
+    print("INPUT RASTER ERROR")
+    
+    corrupt <- rbind(corrupt, loop[i,])
+    
+    next
+    
+  }
+  
+  #16. Sum the two stacks----
+  CANwideW <- MosaicStack |> 
     sprc()|>
     mosaic(fun="sum") #sum weighting (divisor)
   
-  CANwideSp <- SppStack[!sapply(SppStack,is.null)]|>
+  CANwideSp <- SppStack |> 
     sprc()|>
     mosaic(fun="sum") # sum weighted predictions
   
-  # correct the weighting -------------
-  FinalOut <- CANwideSp/CANwideW |> 
+  #17. Correct the weighting ----
+  FinalOut <- CANwideSp/(CANwideW) |> 
     mask(st_transform(bcr, crs(CANwideSp)))
   
+  #18. Save-----
   writeRaster(FinalOut, file.path(root, "output", "mosaics", "predictions", paste0(spp.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
   duration <- Sys.time() - start
@@ -209,3 +233,6 @@ for(i in 1:nrow(loop)){
   cat("Finished loop", i, "of", nrow(loop), "in", duration, attr(duration, "units"))
   
 }
+
+#19. Delete the corrupt files----
+
