@@ -164,8 +164,9 @@ brt_tune <- function(i){
                                gbm.y=1,
                                offset=off.i,
                                tree.complexity = id.i,
-                               learning.rate = lr.i,
-                               family="poisson"))
+                               learning.rate = 1e-10,
+                               family="poisson",
+                               step.size = 10))
     
     trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
     
@@ -238,14 +239,10 @@ print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-#Make sure to check done saving both the csv and the model object
 files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
                     file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5))) |> 
-  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
-               separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=TRUE) |> 
-               mutate(lr = as.numeric(str_sub(lr, -100, -3))))
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.stop <- 1e-06
@@ -294,6 +291,18 @@ if(nrow(files)==0){
     mutate(lr = 0.001) %>% 
     arrange(spp, bcr)
 }
+
+#10. Get list of species*bcr that don't meet criteria----
+#Have a csv but no model object
+mods <- data.frame(path = list.files(file.path(root, "output", "fullmodels"), pattern="*.R", full.names=TRUE),
+                   file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) %>% 
+  separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
+  dplyr::select(spp, bcr) |> 
+  unique()
+
+norun <- anti_join(bcr.spp, mods)
+
+write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
