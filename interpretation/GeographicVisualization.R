@@ -8,6 +8,7 @@
 # Predictions are averaged and then masked to the range extent. 
 # Areas where we could infer absence from P/A data are coded 0 outside the range extent. 
 # Where insufficient data available (<450 records within 250km), areas are coded NA
+# Testing Canada Lambert projection for visualization
 
 # Preamble -----
 require(terra)
@@ -23,7 +24,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # Custom pixel-level trend function -----
 reg <-  function(val) { 
-  if(length(subset(val,val>=0))>1) { # at least 2 predictions in stack
+  if(length(subset(val,val>=0))>2) { # at least 3 predictions in stack
     reg<-lm(x~y, data = data.frame(x = val, y = 1:nlyr(val)))
     if(base::summary(reg)$coefficients[2,4]<=0.05) { # and slope is significant
       base::summary(reg)$coefficients[2,1] # return slope
@@ -31,10 +32,10 @@ reg <-  function(val) {
   else {NA} # otherwise NA
 }
 
-# Formatting --- 
+# Colour formatting --- 
 colfunc<-colorRampPalette(c("lightyellow","darkgreen","navy")) # range colours
-Low<-colorRampPalette(c("darkred","white")) #trend colours
-High<-colorRampPalette(c("white","navy"))
+Low<-colorRampPalette(c("darkred","pink")) #negative trend colours
+High<-colorRampPalette(c("lightblue","navy")) #positive trend colours
 
 # BCR  ---
 bcr<- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>%
@@ -70,14 +71,14 @@ for(j in c(5:length(spp))) {
 range<-st_read(paste0("G:/Shared drives/BAM_NationalModels5/MosaicWeighting/Range/ShapeFile/",spp[j],"_rangelimit.shp"))
 range<-range%>%dplyr::filter(Limit=='0.2% limit')%>% st_transform(crs)
 
-# Alternate projection for plotting ---
+# Create alternate projection for plotting ---
 plotlimit<-st_transform(range,crs(bcr))
 
-#2. First import all years to standardize colour range ---
+#2. Import all years to standardize colour range ---
 mean<-sd<-list()
 upper<-c()
 
-for (i in c(1:length(yr))){ #need to write in bootstrap flag for <10
+for (i in c(1:length(yr))){ #need to write in bootstrap flag for <10 layers
 lyr<-list%>%.[. %like% spp[j]]%>%.[.%like% yr[i]]  
 
 if (length(lyr)<10){
@@ -92,19 +93,22 @@ sd[[i]]<-app(stk, fun = "sd", na.rm=TRUE)
 upper[i]<-global(mean[[i]], quantile, probs=.95, na.rm=TRUE) #95% ile
 }
 #}
-
-#3. Use the highest 95% in the time series to standardize range ---
+  
+#3. Set up un-modified raster stack for trend analysis, below----
+trend<-rast(mean)
+  
+#4. Use the highest 95% value in the time series to standardize range ---
 top<-as.numeric(max(unlist(upper)))
-width<-(top+0.01)/14
-breaks <- c(-0.01,seq(0,top,width),1) #creates 16 categories
+width<-(top+0.01)/14 #chop up range into 14 segments
+breaks <- c(-0.01,seq(0,top,width),1) #16 categories incl. NA and >top category
 
 # Set species-specific colour scale ----
-colours<-colfunc(14) 
+colours<-colfunc(15) 
 cpal <- c('grey80',colours)
 
-#4. Process and run off each year -----
+#5. Post-process and run off each year -----
 for (i in c(1:length(yr))){
-mean[[i]][mean[[i]]<0.0001]<-0 #<<1 bird km2 = 0
+mean[[i]][mean[[i]]<0.0001]<-0 #<0.01 bird km2 = 0; could modify this threshold
 mean[[i]][mean[[i]]>=top]<-top
 
 #temporary fix as some predictions don't reach the range limit - this will be corrected at mosaic stage ---
@@ -134,15 +138,15 @@ dev.off()
 #}
 
 #6. Calculate pixel-level trends ----
-trend<-rast(mean)
+
 slope <- app(trend, fun=reg)
 
 # Center range on 0 for visualization -----
 range<-global(slope, quantile, probs=c(0.01,0.99), na.rm=TRUE)%>%unlist()%>%as.vector()
-lower<-seq(range[1],0,0.0005)
-upper<-seq(0,range[2],0.0005)
-breakd<-c(-0.5,lower,upper,0.5)
-diverge<-c(Low(length(lower)+1),High(length(upper)+1))
+lower<-seq(range[1],(-0.0005),0.0005)
+upper<-seq(0.0005,range[2],0.0005)
+breakd<-c(-0.5,lower,0,upper,0.5)
+diverge<-c(Low(length(lower)+1),"white",High(length(upper)+1))
 
 # Plot output ------
 plot(bcr$geometry, col="grey")
