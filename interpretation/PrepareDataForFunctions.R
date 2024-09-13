@@ -31,7 +31,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
 # 129.2 GB for 10 bootstraps
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:60, 10)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:60, 3)]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)
@@ -47,7 +47,7 @@ varclass_lookup <- readxl::read_xlsx(file.path(root, "NationalModels_V5_Variable
 ibp <- read_csv(file.path(root, "data", "Extras", "sandbox_data", "trait_data_for_summarising_covariates", "institute_for_bird_populations_species_codes.csv")) 
 
 
-# create an index containing the species (FLBC), BCR, and bootstrap replicate
+# create an index from `gbm_objs` containing the species (FLBC), BCR, and bootstrap replicate
 # append binomial names to FLBC
 sample_id <- 
   gbm_objs |> 
@@ -189,10 +189,10 @@ for (q in 1:length(gbm_objs)){
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
-  for (i in 1:(n-1)) {  
+  for (i in 1:(n-1)) {
     
     # start at i+1 to avoid finding the interaction of variable 1 x variable 1
-    for (j in (i+1):n) { 
+    for (j in (i+1):n) {
       
       # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
       # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
