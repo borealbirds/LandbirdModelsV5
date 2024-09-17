@@ -13,20 +13,26 @@
 
 
 #1. Attach packages----
+print("* Loading packages on master *")
 library(gbm)
 library(RcppAlgos)
 library(tidyverse)
-
 
 
 #2. Create a list of dataframes containing relative influence per covariate----
 #   Every list element represents a bootstrap sample 
 
 # connect to BAM Drive and find bootstrap files 
-root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0"
+print("* Setting root file path *")
+
+cc <- TRUE
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0"}
+if(cc){root <- "/scratch/mannfred"}
 
 # gbm objects for CAWA and CONWA stored on the BAM drive
 # 16 folders x 32 bootstraps = 512 gbm models
+print("* indexing gbm objects for CONW and CAWA *")
+
 gbm_conw <- list.files(file.path(root, "Feb2020", "out", "boot", "CONW"), 
                             pattern = "^gnmboot-CONW-BCR_([0-9]|[1-9][0-9])-[0-9]", 
                             recursive=TRUE, full.names = TRUE)
@@ -60,7 +66,7 @@ sample_id <-
 # NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant plot will differ compared to interactions between two continuous variables (heatmap).
 # `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
 
-
+print("* computing 2-way interaction strength *")
 boot_pts_i2 <- list()
 for (q in 1:length(gbm_objs)){ 
   
@@ -100,5 +106,5 @@ for (q in 1:length(gbm_objs)){
   Sys.sleep(0.001)
 }
 
-saveRDS(boot_pts_i2, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boot_pts_i2.rds")
+saveRDS(boot_pts_i2, file=file.path("root", "boot_pts_i2.rds"))
 
