@@ -6,76 +6,82 @@
 
 #NOTES################################
 
-# This script extracts covariate contributions to model predictions, and also synthesizes various trait databases.
-
-# The outputs will be analysed for identifying covariates of importance across BCRs
-
+# This script creates a list of dataframes containing relative influence per covariate
+# Every list element represents a bootstrap sample 
 
 
-#1. Attach packages----
-print("* Loading packages on master *")
+
+
+#1. attach packages----
+print("* attaching packages on master *")
 library(gbm)
-library(RcppAlgos)
+library(parallel)
 library(tidyverse)
 
 
-#2. Create a list of dataframes containing relative influence per covariate----
-#   Every list element represents a bootstrap sample 
-
-# connect to BAM Drive and find bootstrap files 
-print("* Setting root file path *")
-
+#2. define local or cluster
+test <- FALSE
 cc <- TRUE
-if(!cc){root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0"}
-if(cc){root <- "/scratch/mannfred"}
 
-# gbm objects for CAWA and CONWA stored on the BAM drive
-# 16 folders x 32 bootstraps = 512 gbm models
+
+#3. set nodes for local vs cluster----
+if(cc){ nodes <- 16}
+if(!cc | test){ nodes <- 4}
+
+
+#4. create and register clusters----
+# `makePSOCKcluster` creates a set of copies of R running in parallel that communicate over "sockets". 
+print("* creating clusters *")
+cl <- makePSOCKcluster(nodes, type="PSOCK")
+
+
+#5. set root path----
+print("* setting root file path *")
+
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0"}
+if(cc){root <- "/home/mannfred/scratch"}
+
+tmpcl <- clusterExport(cl, c("root"))
+
+
+
+#6. attach packages on clusters----
+print("* Loading packages on workers *")
+tmpcl <- clusterEvalQ(cl, library(gbm))
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
+
+
+
+#7. index gbm objects for CONW and CAWA----
 print("* indexing gbm objects for CONW and CAWA *")
 
-gbm_conw <- list.files(file.path(root, "Feb2020", "out", "boot", "CONW"), 
+# gbm objects for CAWA and CONWA have been transfered to the symbolic link file "scratch"
+# 16 folders x 32 bootstraps = 512 gbm models per species
+gbm_conw <- list.files(file.path(root, "CONW"), 
                             pattern = "^gnmboot-CONW-BCR_([0-9]|[1-9][0-9])-[0-9]", 
                             recursive=TRUE, full.names = TRUE)
 
-gbm_cawa <- list.files(file.path(root, "Feb2020", "out", "boot", "CAWA"), 
+gbm_cawa <- list.files(file.path(root, "CAWA"), 
                        pattern = "^gnmboot-CAWA-BCR_([0-9]|[1-9][0-9])-[0-9]", 
                        recursive=TRUE, full.names=TRUE)
 
 gbm_objs <- c(gbm_conw, gbm_cawa)
 
 
+#8. export the necessary variables and functions to the cluster----
+print("* exporting gbm_objs and functions to cluster *")
+clusterExport(cl, c("gbm_objs", "plot.gbm"))
 
 
-#3 create an index from `gbm_objs` containing the species (FLBC), BCR, and bootstrap replicate----
-# append binomial names to FLBC
-sample_id <- 
-  gbm_objs |> 
-  stringr::str_split_fixed(pattern="-", n=4) |> 
-  gsub("\\.RData", "", x = _) |>
-  tibble::as_tibble() |> 
-  dplyr::select(2:4) |> 
-  magrittr::set_colnames(c("spp", "bcr", "boot"))
-
-
-
-#4. Create a list of two-way covariate interactions by bcr x species x bootstrap replicate----
-
-# this loop creates a list of lists of `data.frame`s. 
-# each top level element is a bootstrap replicate, each second-level element represents a 2-way covariate interaction for that bootstrap.
-# each covariate interaction has a corresponding `data.frame`, with columns 1 and 2 being the covariate domains and column 3 being the response (density)
-# NOTE: In computing interactions involving discrete variables (e.g. `MODISLCC_1km`) the resultant plot will differ compared to interactions between two continuous variables (heatmap).
-# `plot.gbm()` produces faceted line plots instead of a heatmap. Each line plot corresponds to one of the 17 levels of `MODISLCC_1km`, showing how `MODISLCC_1km` affects the response variable at each level.
-
-print("* computing 2-way interaction strength *")
-boot_pts_i2 <- list()
-for (q in 1:length(gbm_objs)){ 
+#9. create function to process each gbm object (parallelized)----
+process_gbm <- function(obj_path) {
   
-  # load a bootstrap replicate 
-  load(file.path(gbm_objs[q]))
+  # load a bootstrap replicate (gbm object)
+  load(file.path(obj_path))  
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
-  n <- length(out$var.names) # get the number of variables
+  n <- length(out$var.names)  # retrieve the number of variables
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
@@ -87,24 +93,33 @@ for (q in 1:length(gbm_objs)){
       # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
       # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
       # we then discard the grid (too much data) and keep the mean and std. dev. of the response for covariates i,j
-      grid_ij <- plot.gbm(x = out, return.grid = TRUE, i.var = c(i, j), continuous.resolution=25, type="response")  
+      grid_ij <- plot.gbm(x = out, return.grid = TRUE, i.var = c(i, j), continuous.resolution = 25, type = "response")
       
-      pts[[interaction_index]] <- matrix(data=c(mean(grid_ij$y), sd(grid_ij$y)), ncol=2, nrow=1)
+      # calculate mean and sd of response
+      pts[[interaction_index]] <- matrix(data = c(mean(grid_ij$y), sd(grid_ij$y)), ncol = 2, nrow = 1)
       colnames(pts[[interaction_index]]) <- c("y_mean", "y_sd")
       
-      names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".") # label the interaction
-      
+      # label the interaction
+      names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")  # Label the interaction
       interaction_index <- interaction_index + 1
-      
     }
   }
   
-  boot_pts_i2[[q]] <- pts
-  
-  # print progress
-  cat(paste("\riteration", q))
-  Sys.sleep(0.001)
+  return(pts)  # return the list of interaction points
 }
 
-saveRDS(boot_pts_i2, file=file.path("root", "boot_pts_i2.rds"))
+#10. run the function in parallel----
+print("* running `process_gbm` in parallel *")
+boot_pts_i2 <- parLapply(cl, gbm_objs, process_gbm)
 
+
+#11. stop the cluster----
+print("* stopping cluster *")
+stopCluster(cl)
+
+
+#12. 
+print("* saving RDS file *")
+saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2.rds"))
+
+print("* completed :-) *")
