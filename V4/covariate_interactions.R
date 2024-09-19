@@ -16,12 +16,13 @@
 print("* attaching packages on master *")
 library(gbm)
 library(parallel)
+library(pryr)
 library(tidyverse)
 
 
 #2. define local or cluster
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 
 #3. set nodes for local vs cluster----
@@ -38,7 +39,7 @@ cl <- makePSOCKcluster(nodes, type="PSOCK")
 #5. set root path----
 print("* setting root file path *")
 
-if(!cc){root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0"}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0/Feb2020/out/boot"}
 if(cc){root <- "/home/mannfred/scratch"}
 
 tmpcl <- clusterExport(cl, c("root"))
@@ -49,7 +50,7 @@ tmpcl <- clusterExport(cl, c("root"))
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
-
+tmpcl <- clusterEvalQ(cl, library(pryr))
 
 
 #7. index gbm objects for CONW and CAWA----
@@ -69,14 +70,16 @@ gbm_objs <- c(gbm_conw, gbm_cawa)
 
 
 #8. export the necessary variables and functions to the cluster----
+# note `process_gbm` is a custom function (see below)
 print("* exporting gbm_objs and functions to cluster *")
-clusterExport(cl, c("gbm_objs", "plot.gbm"))
+clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
 
 
 #9. create function to process each gbm object (parallelized)----
-process_gbm <- function(obj_path) {
+process_gbm <- function(obj_path, iter) {
   
   # load a bootstrap replicate (gbm object)
+  print(paste("processing iteration:", iter, "with object:", obj_path))
   load(file.path(obj_path))  
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
@@ -104,13 +107,19 @@ process_gbm <- function(obj_path) {
       interaction_index <- interaction_index + 1
     }
   }
+  # memory proile after computing mean of interaction space 
+  print(paste("memory used after processing `gbm` object", iter, "of", length(gbm_objs), pryr::mem_used()))  
   
   return(pts)  # return the list of interaction points
 }
 
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-boot_pts_i2 <- parLapply(cl, gbm_objs, process_gbm)
+
+# create a list of inputs containing both the object path and index
+gbm_inputs <- mapply(list, gbm_objs, seq_along(gbm_objs), SIMPLIFY = FALSE)
+
+boot_pts_i2 <- parLapply(cl, gbm_inputs, function(x) process_gbm(x[[1]], x[[2]]))
 
 
 #11. stop the cluster----
