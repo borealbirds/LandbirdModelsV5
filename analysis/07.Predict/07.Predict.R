@@ -27,8 +27,8 @@ library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- TRUE
+test <- FALSE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -64,11 +64,11 @@ brt_predict <- function(i){
   
   #2. Load model----
   load.i <- try(load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
-  if(inherits(load.i, "try-error")){ next }
+  if(inherits(load.i, "try-error")){ return(NULL) }
   
   #3. Load raster stack----
   stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
-  if(inherits(stack.i, "try-error")){ next }
+  if(inherits(stack.i, "try-error")){ return(NULL) }
   stack.i$meth.i <- stack.i$method
 
   #4. Predict----
@@ -105,9 +105,7 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years) |> 
-  arrange(spp, boot, year, bcr) |> 
-  dplyr::filter(spp %in% c("CAWA"),
-                !bcr %in% c("can8182", "usa41423", "usa2"))
+  arrange(spp, boot, year, bcr)
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
