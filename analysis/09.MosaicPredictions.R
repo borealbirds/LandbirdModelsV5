@@ -24,6 +24,7 @@
 # 2) USA/CAN BCR overlap rasters and individual BCR weighting rasters produced 
 # in "gis/WeightingRasters.R"
 # 3) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
+# 4) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
 # -------------------
 
 #TO DO: FILL IN REST OF BCRS WITH ZERO PREDICTIONS##########
@@ -61,8 +62,7 @@ predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predic
   separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          boot = as.numeric(boot)) |> 
-  dplyr::select(-folder, -file) |> 
-  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
+  dplyr::select(-folder, -file)
 
 #2. Get list of extrapolations----
 extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
@@ -89,11 +89,25 @@ todo <- all |>
   anti_join(mosaicked)
   
 #5. Check against bcr list per species----
+
+# #remove spp*bcr combinations never hit a satisfactory learning rate in model tuning
+# norun <- read.csv(file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"))
+# 
+# #remove spp that had more than 4 bcr combiantions that never hit a satisfactory learning rate in model tuning
+# norun_spp <- norun |> 
+#   group_by(spp) |> 
+#   summarize(n = n()) |> 
+#   dplyr::filter(n > 4)
+# 
+# spp <- birdlist |> 
+#   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+#   dplyr::filter(use==TRUE) |> 
+#   anti_join(norun) |> 
+#   anti_join(norun_spp)
+
 spp <- birdlist |> 
   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE)  
-
-#Might need to compare this to the fullmodels list because some spp*bcr combinations never hit a satisfactory learning rate in model tuning
+  dplyr::filter(use==TRUE)
 
 #This takes a couple minutes to run
 loop <- data.frame()
@@ -113,37 +127,46 @@ for(i in 1:nrow(todo)){
 
 #MOSAIC####
 
-#1. Make an object to catch corrupt file errors----
+#1. Get the full list of zeroed bcr raster----
+zeros <- data.frame(path = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
+                    file = list.files(file.path(root, "gis", "zeros"))) |> 
+  separate(file, into=c("bcr", "tif"))
+
+#2. Make an object to catch corrupt file errors----
 corrupt <- data.frame()
 
-#1. Set up the loop----
+#3. Set up the loop----
 for(i in 1:nrow(loop)){
   
   start <- Sys.time()
   
-  #2. Loop settings----
+  #4. Loop settings----
   spp.i <- loop$spp[i]
   boot.i <- loop$boot[i]
   year.i <- loop$year[i]
   
-  #3. Loop file lists----
+  #5. Loop file lists----
   predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
   extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
   
   #Skip loop if rows don't match
   if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } else { loop.i <- full_join(predicted.i, extrapolated.i)}
   
-  #2. Import, mosaic, and sum extrapolation rasters-------
+  #6. Determine required blank predictions for unmodelled BCRs----
+  zeros.i <- zeros |> 
+    anti_join(predicted.i)
+  
+  #7. Import, mosaic, and sum extrapolation rasters-------
   f.mosaic <- lapply(extrapolated.i$path.extrap, rast) |> 
     sprc() |> 
     mosaic(fun="sum") |> 
     crop(ext(MosaicOverlap))
   
-  #3. Fix extent of overlap raster----
+  #8. Fix extent of overlap raster----
   overlap.i <- crop(MosaicOverlap, ext(f.mosaic))
   
-  #4. Divide extrapolation layers by available prediction layers to determine if alternate exists-----
-  # If ==1 there is no suitable raster, if ==0.25-0.75 then a suitable raster exists
+  #9. Divide extrapolation layers by available layers to determine if alternate exists-----
+  # If == 1 there is no potential raster, if == 0.25-0.75 then a potential raster exists
   Overlay <- f.mosaic/overlap.i
   
   #5. Produce region-wide extrapolation raster----
