@@ -16,13 +16,12 @@
 print("* attaching packages on master *")
 library(gbm)
 library(parallel)
-library(pryr)
 library(tidyverse)
 
 
 #2. define local or cluster
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 
 #3. set nodes for local vs cluster----
@@ -50,7 +49,7 @@ tmpcl <- clusterExport(cl, c("root"))
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
-tmpcl <- clusterEvalQ(cl, library(pryr))
+
 
 
 #7. index gbm objects for CONW and CAWA----
@@ -66,20 +65,13 @@ gbm_cawa <- list.files(file.path(root, "CAWA"),
                        pattern = "^gnmboot-CAWA-BCR_([0-9]|[1-9][0-9])-[0-9]", 
                        recursive=TRUE, full.names=TRUE)
 
-gbm_objs <- c(gbm_conw, gbm_cawa)
+gbm_objs <- c(gbm_conw, gbm_cawa)[1:512]
 
 
-#8. export the necessary variables and functions to the cluster----
-# note `process_gbm` is a custom function (see below)
-print("* exporting gbm_objs and functions to cluster *")
-clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
-
-
-#9. create function to process each gbm object (parallelized)----
-process_gbm <- function(obj_path, iter) {
+#8. create function to process each gbm object (parallelized)----
+process_gbm <- function(obj_path) {
   
   # load a bootstrap replicate (gbm object)
-  print(paste("processing iteration:", iter, "with object:", obj_path))
   load(file.path(obj_path))  
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
@@ -107,19 +99,20 @@ process_gbm <- function(obj_path, iter) {
       interaction_index <- interaction_index + 1
     }
   }
-  # memory proile after computing mean of interaction space 
-  print(paste("memory used after processing `gbm` object", iter, "of", length(gbm_objs), pryr::mem_used()))  
-  
+
   return(pts)  # return the list of interaction points
 }
 
+
+#9. export the necessary variables and functions to the cluster----
+# note `process_gbm` is a custom function (see below)
+print("* exporting gbm_objs and functions to cluster *")
+clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
+
+
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-
-# create a list of inputs containing both the object path and index
-gbm_inputs <- mapply(list, gbm_objs, seq_along(gbm_objs), SIMPLIFY = FALSE)
-
-boot_pts_i2 <- parLapply(cl, gbm_inputs, function(x) process_gbm(x[[1]], x[[2]]))
+boot_pts_i2 <- parLapply(cl, gbm_objs, process_gbm)
 
 
 #11. stop the cluster----
@@ -129,6 +122,6 @@ stopCluster(cl)
 
 #12. 
 print("* saving RDS file *")
-saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2.rds"))
+saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_1.rds"))
 
 print("* completed :-) *")
