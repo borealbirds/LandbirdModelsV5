@@ -298,23 +298,24 @@ write.csv(loc.gd2, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 meth.scanfi <- dplyr::filter(meth, Source=="SCANFI", Running==1)
 
 #2. Get & wrangle list of SCANFI layers----
+#Note: landcover layer has a different name in 1985 (VegTypeClass vs nfiLandCover)
 files.scanfi <- data.frame(Link=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", full.names = TRUE,recursive=TRUE, pattern="*.tif"),
                            file=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", recursive=TRUE, pattern="*.tif")) |> 
   dplyr::filter(str_sub(file, -3, -1)=="tif") |> 
   mutate(file = str_sub(file, 13, 100)) |> 
   separate(file, into=c("scanfi", "covtype", "variable", "S", "year", "v0", "filetype")) |> 
   mutate(year = as.numeric(ifelse(filetype=="v0", v0, year)),
-         Name = case_when(variable=="VegTypeClass" ~ "landcover",
+         RasterName = case_when(variable=="VegTypeClass" ~ "scanfilcc",
                           variable=="prcC" ~ "conifer",
                           variable=="prcD" ~ "deciduous",
                           variable=="prcB" ~ "deciduous",
                           variable=="LodepolePine" ~ "lodgepolepine",
-                          variable=="nfiLandCover" ~ "landcover",
+                          variable=="nfiLandCover" ~ "scanfilcc",
                           !is.na(variable) ~ tolower(variable))) |> 
   dplyr::filter(scanfi%in%c("SCANFI", "CaNFIR"),
-                Name %in% meth.scanfi$RasterName) |> 
-  dplyr::select(Link, Name, year) |> 
-  arrange(year, Name)
+                RasterName %in% meth.scanfi$RasterName) |> 
+  dplyr::select(Link, RasterName, year) |> 
+  arrange(year, RasterName)
 #Check everything is there
 table(files.scanfi$RasterName, files.scanfi$year)
 
@@ -350,8 +351,8 @@ loc.scanfi.buff$year.rd <- dt[J(loc.scanfi.buff$year), roll = "nearest"]$val
 loc.scanfi.buff2$year.rd <- dt[J(loc.scanfi.buff2$year), roll = "nearest"]$val
 
 #6. Read in/create dataframe----
-#loc.scanfi <- data.frame()
-loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
+loc.scanfi <- data.frame()
+#loc.scanfi <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_SCANFI.csv"))
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
