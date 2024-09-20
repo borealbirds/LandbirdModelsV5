@@ -45,7 +45,7 @@ for(i in 1:nrow(stacks)){
   zero.i[!is.na(zero.i)] <- 0
   
   #5. Save----
-  terra::writeRaster(zero.i, file.path(root, "gis", "zeros", paste0(bcr, ".tif")), overwrite=TRUE)
+  terra::writeRaster(zero.i, file.path(root, "gis", "zeros", paste0(stacks$bcr[i], ".tif")), overwrite=TRUE)
   
   cat("Finished", i, "\n")
   
