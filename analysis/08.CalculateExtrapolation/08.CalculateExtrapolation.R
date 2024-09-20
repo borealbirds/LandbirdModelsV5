@@ -97,42 +97,46 @@ calc_extrapolation <- function(i){
   #3. Get list of covariates used----
   Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
   
-  #4. Get training data for that bootstrap----
-  sample <- cov_clean |> 
-    dplyr::filter(id %in% visit.i$id) |> 
-    dplyr::select(all_of(Variables))
-  
-  #tidy
-  rm(b.i, visit.i)
-  
-  #5. Create target dataframe of prediction raster values----
-  target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
-    as.data.frame(xy=TRUE) |> 
-    dplyr::select(c("x", "y", all_of(Variables))) 
-  
-  #6. Compute extrapolation----
-  Extrapol <- compute_extrapolation(samples = sample,
-                                    covariate.names = names(sample),
-                                    prediction.grid = target,
-                                    coordinate.system = crs,
-                                    verbose=F)
-  
-  #tidy
-  rm(sample, target)
-  
-  #7. Produce binary raster of extrapolation area----
-  raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
-  raster[raster>0] <- 1  # extrapolated locations in each boot
-  raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
-  
-  #tidy
-  rm(Extrapol)
-  
-  #14. Write raster----
-  if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
-    dir.create(file.path(root, "output", "extrapolation", spp.i))
+  if(!inherits(b.i, "try-error")){
+    
+    #4. Get training data for that bootstrap----
+    sample <- cov_clean |> 
+      dplyr::filter(id %in% visit.i$id) |> 
+      dplyr::select(all_of(Variables))
+    
+    #tidy
+    rm(b.i, visit.i)
+    
+    #5. Create target dataframe of prediction raster values----
+    target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
+      as.data.frame(xy=TRUE) |> 
+      dplyr::select(c("x", "y", all_of(Variables))) 
+    
+    #6. Compute extrapolation----
+    Extrapol <- compute_extrapolation(samples = sample,
+                                      covariate.names = names(sample),
+                                      prediction.grid = target,
+                                      coordinate.system = crs,
+                                      verbose=F)
+    
+    #tidy
+    rm(sample, target)
+    
+    #7. Produce binary raster of extrapolation area----
+    raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
+    raster[raster>0] <- 1  # extrapolated locations in each boot
+    raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
+    
+    #tidy
+    rm(Extrapol)
+    
+    #14. Write raster----
+    if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
+      dir.create(file.path(root, "output", "extrapolation", spp.i))
+    }
+    writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+    
   }
-  writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
 }
 
@@ -157,9 +161,7 @@ booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), 
 todo <- booted |> 
   dplyr::select(bcr, spp, boot) |> 
   expand_grid(year=years) |> 
-  arrange(bcr, spp, boot) |> 
-  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"),
-                spp %in% c("CAWA", "OSFL", "OVEN", "BTNW"))
+  arrange(bcr, spp, boot)
 
 #4. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
