@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=def-bayne
-#SBATCH --nodes=2
-#SBATCH --ntasks=32
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
 #SBATCH --mem=92G
 #SBATCH --time=01:00:00
 #SBATCH --job-name=covariate_interactions_take1
