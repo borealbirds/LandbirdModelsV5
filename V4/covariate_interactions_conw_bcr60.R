@@ -20,9 +20,8 @@ library(tidyverse)
 
 
 #2. define local or cluster
-test <- TRUE
-cc <- FALSE
-
+test <- FALSE
+cc <- TRUE
 
 #3. set nodes for local vs cluster----
 if(cc){ nodes <- 32}
