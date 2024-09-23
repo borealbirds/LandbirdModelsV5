@@ -20,19 +20,23 @@ library(tidyverse)
 
 
 #2. define local or cluster
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 
 #3. set nodes for local vs cluster----
-if(cc){ nodes <- 16}
+if(cc){ nodes <- 32}
 if(!cc | test){ nodes <- 4}
 
 
 #4. create and register clusters----
-# `makePSOCKcluster` creates a set of copies of R running in parallel that communicate over "sockets". 
+# creates 16 copies of R running in parallel via 16 nodes, on one if the cluster's sockets (processors). 
+# Belgua has ~965 nodes
 print("* creating clusters *")
 cl <- makePSOCKcluster(nodes, type="PSOCK")
+
+# print number of nodes and host name for confirmation
+cl
 
 
 #5. set root path----
@@ -46,6 +50,7 @@ tmpcl <- clusterExport(cl, c("root"))
 
 
 #6. attach packages on clusters----
+# `clusterEvalQ` evaluates a literal expression on each cluster node. 
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
@@ -67,14 +72,15 @@ print("* indexing gbm objects for CONW and CAWA *")
 
 gbm_conw_bcr6 <- list.files(file.path(root, "CONW", "BCR_60"), full.names = TRUE)
 
-gbm_objs <- gbm_conw_bcr6 
+gbm_objs <- gbm_conw_bcr6[1:3] 
 
 
 #8. create function to process each gbm object (parallelized)----
 process_gbm <- function(obj_path) {
   
   # load a bootstrap replicate (gbm object)
-  load(file.path(obj_path))  
+  try(load(file.path(obj_path)))
+  if(inherits(load, "try-error")){ return(NULL) }
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
@@ -107,23 +113,22 @@ process_gbm <- function(obj_path) {
 
 
 #9. export the necessary variables and functions to the cluster----
-# note `process_gbm` is a custom function (see below)
 print("* exporting gbm_objs and functions to cluster *")
 clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
 
 
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-boot_pts_i2 <- parLapply(cl, gbm_objs, process_gbm)
+boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs, fun = process_gbm)
 
 
 #11. stop the cluster----
-print("* stopping cluster *")
+print("* stopping cluster :-)*")
 stopCluster(cl)
 
 
-#12. 
+#12. save list of 2-way interactions per bootstrap----
 print("* saving RDS file *")
 saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_conw60.rds"))
 
-print("* completed :-) *")
+if(cc){ q() }
