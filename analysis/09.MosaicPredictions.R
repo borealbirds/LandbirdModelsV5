@@ -129,8 +129,9 @@ for(i in 1:nrow(todo)){
 
 #1. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
-                    file = list.files(file.path(root, "gis", "zeros"))) |> 
-  separate(file, into=c("bcr", "tif"))
+                    file = list.files(file.path(root, "gis", "zeros"))) |>
+  separate(file, into=c("bcr", "tif")) |> 
+  dplyr::select(path, bcr)
 
 #2. Make an object to catch corrupt file errors----
 corrupt <- data.frame()
@@ -149,82 +150,92 @@ for(i in 1:nrow(loop)){
   predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
   extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
   
-  #Skip loop if rows don't match
-  if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } else { loop.i <- full_join(predicted.i, extrapolated.i)}
-  
   #6. Determine required blank predictions for unmodelled BCRs----
   zeros.i <- zeros |> 
     anti_join(predicted.i)
   
-  #7. Import, mosaic, and sum extrapolation rasters-------
-  f.mosaic <- lapply(extrapolated.i$path.extrap, rast) |> 
+  #7. Skip loop if rows don't match-----
+  if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
+  
+  #8. Otherwise add zero files to available files----
+  loop.i <- full_join(predicted.i, extrapolated.i) |> 
+    dplyr::select(-file.pred, -file.extrap) |> 
+    rbind(zeros.i |> 
+            rename(path.pred = path) |> 
+            mutate(path.extrap = path.pred,
+                   spp = spp.i,
+                   boot = boot.i,
+                   year = year.i))
+    
+  #9. Import, mosaic, and sum extrapolation rasters-------
+  f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
     sprc() |> 
     mosaic(fun="sum") |> 
     crop(ext(MosaicOverlap))
   
-  #8. Fix extent of overlap raster----
+  #10. Fix extent of overlap raster----
   overlap.i <- crop(MosaicOverlap, ext(f.mosaic))
   
-  #9. Divide extrapolation layers by available layers to determine if alternate exists-----
+  #11. Divide extrapolation layers by available layers to determine if alternate exists-----
   # If == 1 there is no potential raster, if == 0.25-0.75 then a potential raster exists
   Overlay <- f.mosaic/overlap.i
   
-  #5. Produce region-wide extrapolation raster----
+  #12. Produce region-wide extrapolation raster----
   #Areas we retain extrapolation because we have no alternative == 1
   Extrapolation <- Overlay
   Extrapolation[Extrapolation < 1] <- 0
   Extrapolation[Extrapolation > 0] <- 1
   writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
-  #6. Produce correction raster----
+  #13. Produce correction raster----
   Correction <- Overlay
   Correction[Correction==1] <- 0 #ignore areas where nothing *or* everything is missing 
   Correction[Correction>0] <- 1 #flag areas where non-extrapolated predictions exist in any layer
   
-  #7. Set up bcr loop to correct rasters----
+  #14. Set up bcr loop to correct rasters----
   MosaicStack<-list() # hold the weighting rasters
   SppStack<-list() #hold the species prediction rasters
   
-  for(j in c(1:nrow(predicted.i))){
+  for(j in c(1:nrow(loop.i))){
     
-    #8. Read in masking raster----
+    #15. Read in masking raster----
     mask.j <- try(rast(loop.i$path.extrap[j])|>
       crop(Correction)) #correct edges (Newfoundland is off)
     
     if(inherits(mask.j, "try-error")){break}
     
-    #9. Crop correction raster to bcr----
+    #16. Crop correction raster to bcr----
     cor <- Correction |> 
       crop(mask.j, mask=TRUE)
     
-    #10. Multiply by masking raster----
+    #17. Multiply by masking raster----
     #if missing and substitute exists (1*1=1), if not missing or no substitute (0*1/1*0=0)
     cor2 <- cor*mask.j
     #invert values to give regions with substitute values no weight
     cori <- classify(cor2, cbind(1,0), others=1)
     
-    #11. Get the edge weighting raster----
+    #18. Get the edge weighting raster----
     w <- rast(file.path(root, "gis", "edgeweights", paste0(loop.i$bcr[j], ".tif"))) |>
       resample(cori)
     
-    #12. Modify edge weighting raster to account for removed sections----
+    #19. Modify edge weighting raster to account for removed sections----
     # 0-out areas of extrapolated values where alternate predictions exist
     MosaicStack[[j]] <- w*cori
     
-    #13. Read in the prediction----
+    #20. Read in the prediction----
     p <- try(rast(loop.i$path.pred[j]) |> 
       terra::project(crs(w)) |> 
       crop(w))
     
     if(inherits(p, "try-error")){break}
     
-    #14. Weight the prediction----
+    #21. Weight the prediction----
     SppStack[[j]] <- p*w  #apply weighting to the predictions
     
     cat("Finished BCR", j, "of", nrow(loop.i), "\n")
   }
   
-  #15. Skip to next if there were corrupt files----
+  #22. Skip to next if there were corrupt files----
   if(inherits(p, "try-error") | inherits(mask.j, "try-error")){
     
     print("INPUT RASTER ERROR")
@@ -235,7 +246,7 @@ for(i in 1:nrow(loop)){
     
   }
   
-  #16. Sum the two stacks----
+  #23. Sum the two stacks----
   CANwideW <- MosaicStack |> 
     sprc()|>
     mosaic(fun="sum") #sum weighting (divisor)
@@ -244,11 +255,11 @@ for(i in 1:nrow(loop)){
     sprc()|>
     mosaic(fun="sum") # sum weighted predictions
   
-  #17. Correct the weighting ----
+  #24. Correct the weighting ----
   FinalOut <- CANwideSp/(CANwideW) |> 
     mask(st_transform(bcr, crs(CANwideSp)))
   
-  #18. Save-----
+  #25. Save-----
   writeRaster(FinalOut, file.path(root, "output", "mosaics", "predictions", paste0(spp.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
   
   duration <- Sys.time() - start
