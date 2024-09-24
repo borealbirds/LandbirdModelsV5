@@ -30,7 +30,7 @@
 
 #4. Figure out why ALAN has negative values in extraction
 
-#5. Add sanity check: covariate distribution against prediction layers
+#5. Add sanity check: covariate distribution against prediction layers. BEtter sanity checks for categorical analyses that don't rely on extrapolation.
 
 #PREAMBLE############################
 
@@ -356,7 +356,7 @@ loc.scanfi <- data.frame()
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
-for(i in 1:length(years.scanfi)){
+for(i in 2:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) |> 
     arrange(lat, lon) |> 
@@ -374,7 +374,7 @@ for(i in 1:length(years.scanfi)){
     dplyr::filter(year==years.scanfi[i])
   rast.i <- rast(files.i$Link)
   names(rast.i) <- files.i$Label
-  
+
   #8. Read in rasters for 200m cv extraction----
   filesd.i <- meth.scanfi |>
     dplyr::select(-Link) |>
@@ -390,23 +390,23 @@ for(i in 1:length(years.scanfi)){
     dplyr::filter(RadiusFunction=="mode", RadiusExtent==200) |>
     left_join(files.scanfi, multiple="all") |>
     dplyr::filter(year==years.scanfi[i])
-  rastmd.i <- rast(filesd.i$Link)
+  rastmd.i <- rast(filesmd.i$Link)
   names(rastmd.i) <- filesmd.i$Label
   
   #7. Read in rasters for 1.4km mean extraction----
-  files2.i <- meth.scanfi |> 
-    dplyr::select(-Link) |> 
-    dplyr::filter(RadiusFunction=="mean", RadiusExtent==2000) |> 
-    left_join(files.scanfi, multiple="all") |> 
+  files2.i <- meth.scanfi |>
+    dplyr::select(-Link) |>
+    dplyr::filter(RadiusFunction=="mean", RadiusExtent==2000) |>
+    left_join(files.scanfi, multiple="all") |>
     dplyr::filter(year==years.scanfi[i])
   rast2.i <- rast(files2.i$Link)
   names(rast2.i) <- files2.i$Label
-  
+
   #8. Read in rasters for 1.4km cv extraction----
-  filesd2.i <- meth.scanfi |> 
-    dplyr::select(-Link) |> 
-    dplyr::filter(RadiusFunction=="cv", RadiusExtent==2000) |> 
-    left_join(files.scanfi, multiple="all") |> 
+  filesd2.i <- meth.scanfi |>
+    dplyr::select(-Link) |>
+    dplyr::filter(RadiusFunction=="cv", RadiusExtent==2000) |>
+    left_join(files.scanfi, multiple="all") |>
     dplyr::filter(year==years.scanfi[i])
   rastsd2.i <- rast(filesd2.i$Link)
   names(rastsd2.i) <- filesd2.i$Label
@@ -427,8 +427,10 @@ for(i in 1:length(years.scanfi)){
     colnames(loc.scanfi.sd2.i) <- "coefficient_of_variation_ls"
     
     #10. Save output if extraction works----
-    if(class(loc.scanfi.i)=="data.frame"){
-      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.i, loc.scanfi.sd.i, loc.scanfi.md.i, loc.scanfi2.i, loc.scanfi.sd2.i) |> 
+    if(class(loc.scanfi.md.i)=="data.frame"){
+      loc.scanfi.list[[j]] <- cbind(loc.i, loc.scanfi.md.i
+#                                    loc.scanfi.sd.i, loc.scanfi.md.i, loc.scanfi2.i, loc.scanfi.sd2.i
+                                    ) |> 
         data.frame() |> 
         dplyr::select(-geometry, -year.rd, -loop, -scanfi)
     }
