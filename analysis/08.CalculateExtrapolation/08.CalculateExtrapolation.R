@@ -30,7 +30,7 @@ library(parallel)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -42,7 +42,7 @@ cl <- makePSOCKcluster(nodes, type="PSOCK")
 
 #5. Set root path----
 print("* Setting root file path *")
-if(cc){root <- "/scratch/ecknight"}
+if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))

@@ -66,7 +66,7 @@ cl <- makePSOCKcluster(nodes, type="PSOCK")
 
 #5. Set root path----
 print("* Setting root file path *")
-if(cc){root <- "/scratch/ecknight"}
+if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
