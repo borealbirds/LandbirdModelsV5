@@ -147,7 +147,7 @@ for(i in 1:length(loop)){
     #9. Get list of individual files----
     
     #For Landfire file structure
-    if(loop[i] %in% c(17:24)){
+    if(any(str_detect(meth.gd.i$Link,"LandFire"))){
       files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, recursive=TRUE, pattern="*.tif"),
                             file=list.files(meth.gd.i$Link, recursive=TRUE, pattern="*.tif")) |> 
         separate(file, into=c("year", "region", "name", "tif"), remove=FALSE) |> 
@@ -159,7 +159,7 @@ for(i in 1:length(loop)){
         unique()
       
       #Just height for CV extraction
-      if(loop[i] %in% c(21:24)){
+      if(any(str_detect(meth.gd.i$Label,"cv"))){
         files.i <- files.i |> 
           dplyr::filter(name=="height")
       }
@@ -167,20 +167,20 @@ for(i in 1:length(loop)){
     }
     
     #For NLCD file structure
-    if(loop[i]==25){
+    else if(str_detect(meth.gd.i$Link[1],"NLCD")){
       files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*.img"),
                             file=list.files(meth.gd.i$Link, pattern="*.img")) |> 
-        mutate(year = as.numeric(str_sub(file, -32, -29))) |> 
+        mutate(year = as.numeric(str_match(file, "cd_\\s*(.*?)\\s*_lan")[,2])) |> 
         arrange(year) |> 
         unique() |> 
         dplyr::filter(!is.na(year))
     }
     
     #Everything else
-    if(!loop[i] %in% c(17:25)){
+    else {
       files.i <- data.frame(Link=list.files(meth.gd.i$Link, full.names = TRUE, pattern="*tif", recursive=TRUE),
                             file=list.files(meth.gd.i$Link, pattern="*tif", recursive=TRUE)) |> 
-        mutate(year = as.numeric(str_sub(file, -8, -5))) |> 
+        mutate(year = as.numeric(str_extract(file, "[^_]+(?=\\.tif$)"))) |> 
         arrange(year) |> 
         unique() |> 
         dplyr::filter(!is.na(year))
@@ -213,7 +213,7 @@ for(i in 1:length(loop)){
       names(rast.i) <- meth.gd.i$Label
       
       #13. NA out -9999s for Landfire----
-      if(loop[i] %in% c(17:24)){ rast.i <- subst(x=rast.i, from=-9999, to=NA)}
+      if(str_detect(files.j$Link[1],"LandFire")){ rast.i <- subst(x=rast.i, from=-9999, to=NA)}
       
       #14. Extract - determine point or buffer extraction and buffer extent---
       if(meth.gd.i$Extraction[1]=="point"){
@@ -256,9 +256,9 @@ for(i in 1:length(loop)){
   }
   
   #15. Fix column names----
-  if(loop[i] %in% c(19, 20, 23, 24)){
-    colnames(loc.cov) <- c(paste0(str_sub(meth.gd.i$Label, -100, -2), "_conus"), "id")
-    nms <- c(colnames(loc.gd), paste(str_sub(meth.gd.i$Label, -100, -2), "_conus"))
+  if(any(str_detect(meth.gd.i$Link,"CONUS"))){
+    colnames(loc.cov) <- c(paste0(meth.gd.i$Label, "_conus"), "id")
+    nms <- c(colnames(loc.gd), paste0(meth.gd.i$Label, "_conus"))
   } else {nms <- c(colnames(loc.gd), meth.gd.i$Label) }
   
   #16. Add output to main file----
@@ -275,7 +275,7 @@ for(i in 1:length(loop)){
 
 #19. Merge AK & CONUS columns for landfire----
 
-if("LFheigthcv_1k._conus" %in% colnames(loc.gd)){
+if("LFheigthcv_1km_conus" %in% colnames(loc.gd)){
   loc.gd2 <- loc.gd  |>
     mutate(LFbiomass_1km = ifelse(!is.na(LFbiomass_1km), LFbiomass_1km, LFbiomass_1k_conus),
            LFcrownclosure_1km = ifelse(!is.na(LFcrownclosure_1km), LFcrownclosure_1km, LFcrownclosure_1km_conus),
@@ -301,7 +301,7 @@ meth.scanfi <- dplyr::filter(meth, Source=="SCANFI", Running==1)
 #Note: landcover layer has a different name in 1985 (VegTypeClass vs nfiLandCover)
 files.scanfi <- data.frame(Link=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", full.names = TRUE,recursive=TRUE, pattern="*.tif"),
                            file=list.files("G:/.shortcut-targets-by-id/11nj6IZyUe3EqrOEVEmDfrnkDCEQyinSi/SCANFI_share", recursive=TRUE, pattern="*.tif")) |> 
-  dplyr::filter(str_sub(file, -3, -1)=="tif") |> 
+  dplyr::filter(str_detect(file, "tif")) |> 
   mutate(file = str_sub(file, 13, 100)) |> 
   separate(file, into=c("scanfi", "covtype", "variable", "S", "year", "v0", "filetype")) |> 
   mutate(year = as.numeric(ifelse(filetype=="v0", v0, year)),
