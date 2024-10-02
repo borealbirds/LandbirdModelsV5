@@ -1,5 +1,5 @@
 # ---
-# title: National Models 4.0 - estimating and ranking 2-way covariate interactions for CONWA and CAWA
+# title: National Models 4.0 - estimating and ranking 2-way covariate interactions for CONW and CAWA
 # author: Mannfred Boehm
 # created: September 13, 2024
 # ---
@@ -15,6 +15,7 @@
 #1. attach packages----
 print("* attaching packages on master *")
 library(gbm)
+library(Matrix)
 library(parallel)
 library(tidyverse)
 
@@ -23,16 +24,19 @@ library(tidyverse)
 test <- FALSE
 cc <- TRUE
 
-
-#3. set nodes for local vs cluster----
-if(cc){ nodes <- 16}
-if(!cc | test){ nodes <- 4}
+#3. set number of tasks for local vs cluster----
+if(cc){ n_tasks <- 32}
+if(!cc | test){ n_tasks <- 4}
 
 
 #4. create and register clusters----
-# `makePSOCKcluster` creates a set of copies of R running in parallel that communicate over "sockets". 
+# creates 16 copies of R running in parallel via 16 tasks, on one of the cluster's sockets (processors). 
+# Belgua has ~965 nodes
 print("* creating clusters *")
-cl <- makePSOCKcluster(nodes, type="PSOCK")
+cl <- makePSOCKcluster(n_tasks, type="PSOCK")
+
+# print number of tasks and host name for confirmation
+cl
 
 
 #5. set root path----
@@ -46,33 +50,34 @@ tmpcl <- clusterExport(cl, c("root"))
 
 
 #6. attach packages on clusters----
+# `clusterEvalQ` evaluates a literal expression on each cluster node. 
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
+tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 
 
 
 #7. index gbm objects for CONW and CAWA----
-print("* indexing gbm objects for CONW and CAWA *")
+print("* indexing gbm objects for CAWA BCR12 *")
 
-# gbm objects for CAWA and CONWA have been transfered to the symbolic link file "scratch"
-# 16 folders x 32 bootstraps = 512 gbm models per species
-gbm_conw <- list.files(file.path(root, "CONW"), 
-                            pattern = "^gnmboot-CONW-BCR_([0-9]|[1-9][0-9])-[0-9]", 
-                            recursive=TRUE, full.names = TRUE)
-
-gbm_cawa <- list.files(file.path(root, "CAWA"), 
-                       pattern = "^gnmboot-CAWA-BCR_([0-9]|[1-9][0-9])-[0-9]", 
-                       recursive=TRUE, full.names=TRUE)
-
-gbm_objs <- c(gbm_conw, gbm_cawa)[1:512]
+# gbm objects for CAWA and CONW have been transfered to the symbolic link file "scratch"
+gbm_objs <- list.files(file.path(root, "CAWA", "BCR_12"), full.names = TRUE)
 
 
 #8. create function to process each gbm object (parallelized)----
 process_gbm <- function(obj_path) {
   
+  
   # load a bootstrap replicate (gbm object)
-  load(file.path(obj_path))  
+  try_load <- suppressWarnings(try(load(file.path(obj_path)), silent = TRUE))
+  
+  # check if `load` was successful and `out` exists
+  if (inherits(try_load, "try-error") || !exists("out")) {
+    message("could not load gbm_obj from: ", obj_path)
+  } else {
+    message("successfully loaded gbm_obj from: ", obj_path)
+  }
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
@@ -80,7 +85,7 @@ process_gbm <- function(obj_path) {
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
-  for (i in 1:(n-1)) {
+  for (i in 1:2){ #1:(n-1)) {
     
     # start at i+1 to avoid finding the interaction of variable 1 x variable 1
     for (j in (i+1):n) {
@@ -90,38 +95,60 @@ process_gbm <- function(obj_path) {
       # we then discard the grid (too much data) and keep the mean and std. dev. of the response for covariates i,j
       grid_ij <- plot.gbm(x = out, return.grid = TRUE, i.var = c(i, j), continuous.resolution = 25, type = "response")
       
-      # calculate mean and sd of response
-      pts[[interaction_index]] <- matrix(data = c(mean(grid_ij$y), sd(grid_ij$y)), ncol = 2, nrow = 1)
-      colnames(pts[[interaction_index]]) <- c("y_mean", "y_sd")
+      # treat covariates as factors, following `dismo::gbm.interactions`
+      colnames(grid_ij)[1:2] <- c("var_1", "var_2")
+      
+      grid_ij$var_1 <- as.factor(grid_ij$var_1)
+      grid_ij$var_2 <- as.factor(grid_ij$var_2)
+      
+      # check the number levels for each factor
+      if (length(unique(grid_ij$var_1)) <= 1 | length(unique(grid_ij$var_2)) <= 1) {
+        
+        pts[[interaction_index]] <- NA
+        names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")
+        
+      } else {
+      
+      # fit a linear model to the predicted responses (additive model: no interaction)
+      additive_model <- lm(y ~ var_1 + var_2, data = grid_ij)
+      
+      # quantify the contribution of 2-way interaction via variance not explained by additive effects
+      #pts[[interaction_index]] <- mean(abs(residuals(additive_model)))
+      pts[[interaction_index]] <- mean(resid(additive_model)^2)
       
       # label the interaction
       names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")  # Label the interaction
       interaction_index <- interaction_index + 1
-    }
-  }
-
+      } # close else
+    } # close nested loop
+  } # close top loop
+  
   return(pts)  # return the list of interaction points
-}
+} # close function
 
 
 #9. export the necessary variables and functions to the cluster----
-# note `process_gbm` is a custom function (see below)
 print("* exporting gbm_objs and functions to cluster *")
 clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
 
 
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-boot_pts_i2 <- parLapply(cl, gbm_objs, process_gbm)
+boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs, fun = process_gbm)
 
 
 #11. stop the cluster----
-print("* stopping cluster *")
+print("* stopping cluster :-)*")
 stopCluster(cl)
 
 
-#12. 
+#12. save list of 2-way interactions per bootstrap----
 print("* saving RDS file *")
-saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_1.rds"))
+saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_cawa12.rds"))
 
-print("* completed :-) *")
+if(cc){ q() }
+
+
+for (i in 1:length(gbm_objs)){
+  process_gbm(gbm_objs[i])
+}
