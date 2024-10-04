@@ -838,6 +838,11 @@ meth.use <- meth |>
 #format landcover classes as factors
 #create eBird method and make method a factor
 #zero out heights < 0.1 and NA the height cv values for those
+#convert SCANFI species variables to biomass and remove biomass
+
+scanfi_1km <- c("SCANFIBalsamFir_1km", "SCANFIBlackSpruce_1km", "SCANFIprcC_1km", "SCANFIprcD_1km", "SCANFIDouglasFir_1km", "SCANFIJackPine_1km", "SCANFILodgepolePine_1km", "SCANFIPonderosaPine_1km", "SCANFITamarack_1km", "SCANFIWhiteRedPine_1km")
+
+scanfi_5x5 <- c("SCANFIBalsamFir_5x5", "SCANFIBlackSpruce_5x5", "SCANFIprcC_5x5", "SCANFIprcD_5x5", "SCANFIDouglasFir_5x5", "SCANFIJackPine_5x5", "SCANFILodgepolePine_5x5", "SCANFIPonderosaPine_5x5", "SCANFITamarack_5x5", "SCANFIWhiteRedPine_5x5")
 
 visit.covs <- visit.country |> 
   rename(row = id) |> 
@@ -869,15 +874,18 @@ visit.covs <- visit.country |>
   mutate(SCANFIheight_1km = ifelse(SCANFIheight_1km < 0.1, 0, SCANFIheight_1km),
          SCANFIheight_5x5 = ifelse(SCANFIheight_5x5 < 0.1, 0, SCANFIheight_5x5),
          SCANFIheightcv_1km = ifelse(SCANFIheight_1km < 0.1, NA, SCANFIheightcv_1km),
-         SCANFIheightcv_5x5 = ifelse(SCANFIheight_1km < 0.1, NA, SCANFIheightcv_5x5),
+         SCANFIheightcv_5x5 = ifelse(SCANFIheight_5x5 < 0.1, NA, SCANFIheightcv_5x5),
          ETHheight_1km = ifelse(ETHheight_1km < 0.1, 0, ETHheight_1km),
          ETHheight_5x5 = ifelse(ETHheight_5x5 < 0.1, 0, ETHheight_5x5),
          ETHheightcv_1km = ifelse(ETHheight_1km < 0.1, NA, ETHheightcv_1km),
-         ETHheightcv_5x5 = ifelse(ETHheight_1km < 0.1, NA, ETHheightcv_5x5),
+         ETHheightcv_5x5 = ifelse(ETHheight_5x5 < 0.1, NA, ETHheightcv_5x5),
          LFheigth_1km = ifelse(LFheigth_1km < 0.1, 0, LFheigth_1km),
          LFheigth_5x5 = ifelse(LFheigth_5x5 < 0.1, 0, LFheigth_5x5),
          LFheigthcv_1km = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_1km),
-         LFheigthcv_5x5 = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_5x5))
+         LFheigthcv_5x5 = ifelse(LFheigth_5x5 < 0.1, NA, LFheigthcv_5x5)) |>
+  mutate_at(all_of(scanfi_1km), ~(. * SCANFIbiomass_1km),
+            all_of(scanfi_5x5), ~(. & SCANFIbiomass_5x5)) |> 
+  dplyr::select(-SCANFIbiomass_1km, -SCANFIbiomass_5x5)
 
 #5. Sanity checks----
 
@@ -886,25 +894,29 @@ set.seed(1234)
 visit.sample <- visit.covs |> 
   sample_n(10000)
 
+#Remove biomass vars
+meth.plot <- meth.use |> 
+  dplyr::filter(!Label %in% c("SCANFIbiomass_1km", "SCANFIbiomass_5x5"))
+
 #Plot to a folder
-for(i in 1:nrow(meth.use)){
+for(i in 1:nrow(meth.plot)){
   
   visit.i <- visit.sample |> 
-    dplyr::select(lat, lon, meth.use$Label[i]) |> 
+    dplyr::select(lat, lon, meth.plot$Label[i]) |> 
     data.table::setnames(c("lat", "lon", "cov")) |> 
     mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
   
   plot.na.i <- ggplot(visit.i) +
     geom_point(aes(x=lon, y=lat, colour=na))
   
-  ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
+  ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
   
   plot.i <- ggplot(visit.i) +
     geom_point(aes(x=lon, y=lat, colour=cov))
   
-  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.use$Label[i], ".jpeg")), width=10, height=8)
+  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
   
-  print(paste0("Finished plot ", i, " of ", nrow(meth.use)))
+  print(paste0("Finished plot ", i, " of ", nrow(meth.plot)))
   
 }
 
