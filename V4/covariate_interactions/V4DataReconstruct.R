@@ -39,7 +39,8 @@ DAT <- DAT[sample.int(nrow(DAT)),]
 DAT <- DAT[!duplicated(DAT$cyid),]
 
 
-# subsample to speed up `interact.gbm`
+# using `slice_sample` to subsample and speed up `interact.gbm`
+# testing on variables #50 and #51
 set.seed(1)
 if (sum(DAT$count) < 1) {
   pts[[interaction_index]] <- NA
