@@ -21,8 +21,8 @@ library(tidyverse)
 
 
 #2. define local or cluster
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. set number of tasks for local vs cluster----
 if(cc){ n_tasks <- 32}
@@ -77,7 +77,7 @@ process_gbm <- function(obj_path) {
     message("could not load gbm_obj from: ", obj_path)
   } else {
     message("successfully loaded gbm_obj from: ", obj_path)
-  }
+  } #close else()
   
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
@@ -85,51 +85,39 @@ process_gbm <- function(obj_path) {
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
-  for (i in 1:2){ #1:(n-1)) {
+  for (i in 1:(n-1)) {
     
     # start at i+1 to avoid finding the interaction of variable 1 x variable 1
     for (j in (i+1):n) {
       
-      # `continuous.resolution` is defaulted at 100: with two covariates this produces a dataframe of length=100*100 (10000 rows)
-      # by lowering to 25, we get 625 rows, which should still be enough resolution to find local maximums
-      # we then discard the grid (too much data) and keep the mean and std. dev. of the response for covariates i,j
-      grid_ij <- plot.gbm(x = out, return.grid = TRUE, i.var = c(i, j), continuous.resolution = 25, type = "response")
+      # set seed for reproducibility of the data subsampling procedure
+      set.seed(interaction_index)
       
-      # treat covariates as factors, following `dismo::gbm.interactions`
-      colnames(grid_ij)[1:2] <- c("var_1", "var_2")
-      
-      grid_ij$var_1 <- as.factor(grid_ij$var_1)
-      grid_ij$var_2 <- as.factor(grid_ij$var_2)
-      
-      # check the number levels for each factor
-      if (length(unique(grid_ij$var_1)) <= 1 | length(unique(grid_ij$var_2)) <= 1) {
-        
-        pts[[interaction_index]] <- NA
-        names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")
-        
+      # check if the response data is non-empty
+      if (sum(DAT$count) < 1) {
+        pts[[interaction_index]] <- NA  # assign NA if there are no occurrence records
       } else {
-      
-      # fit a linear model to the predicted responses (additive model: no interaction)
-      additive_model <- lm(y ~ var_1 + var_2, data = grid_ij)
-      
-      # quantify the contribution of 2-way interaction via variance not explained by additive effects
-      #pts[[interaction_index]] <- mean(abs(residuals(additive_model)))
-      pts[[interaction_index]] <- mean(resid(additive_model)^2)
+        # subsample the data using `slice_sample` to speed up `interact.gbm`
+        pts[[interaction_index]] <- 
+          interact.gbm(x = out, 
+                       data = dplyr::slice_sample(DAT[,-(1:3)], prop = 0.10),  # subsample 10% of the data
+                       i.var = c(i, j))  # test the interaction between variable i and j
+      } # close else()
       
       # label the interaction
       names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")  # Label the interaction
       interaction_index <- interaction_index + 1
-      } # close else
     } # close nested loop
   } # close top loop
   
   return(pts)  # return the list of interaction points
+  
 } # close function
 
 
 #9. export the necessary variables and functions to the cluster----
 print("* exporting gbm_objs and functions to cluster *")
-clusterExport(cl, c("gbm_objs", "plot.gbm", "process_gbm"))
+clusterExport(cl, c("gbm_objs", "interact.gbm", "process_gbm"))
 
 
 #10. run the function in parallel----
@@ -149,6 +137,4 @@ saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_cawa12.rds"))
 if(cc){ q() }
 
 
-for (i in 1:length(gbm_objs)){
-  process_gbm(gbm_objs[i])
-}
+
