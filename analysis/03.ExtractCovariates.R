@@ -883,8 +883,8 @@ visit.covs <- visit.country |>
          LFheigth_5x5 = ifelse(LFheigth_5x5 < 0.1, 0, LFheigth_5x5),
          LFheigthcv_1km = ifelse(LFheigth_1km < 0.1, NA, LFheigthcv_1km),
          LFheigthcv_5x5 = ifelse(LFheigth_5x5 < 0.1, NA, LFheigthcv_5x5)) |>
-  mutate_at(all_of(scanfi_1km), ~(. * SCANFIbiomass_1km),
-            all_of(scanfi_5x5), ~(. & SCANFIbiomass_5x5)) |> 
+  mutate_at(all_of(scanfi_1km), ~(. * SCANFIbiomass_1km / 100),
+            all_of(scanfi_5x5), ~(. & SCANFIbiomass_5x5 / 100)) |> 
   dplyr::select(-SCANFIbiomass_1km, -SCANFIbiomass_5x5)
 
 #5. Sanity checks----
