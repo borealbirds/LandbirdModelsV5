@@ -1,3 +1,7 @@
+# this function is called `bamexplorer_interactions` in BAMexploreR
+# as of Oct 7, 2024 
+
+
 summarise_interactions <- function(data = boot_pts_reduced_i2, bcr, common_name){
   
   # construct the keys for accessing the desired gbm objects

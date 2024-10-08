@@ -389,7 +389,11 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, com
   } # close for()
 
   # merge all data frames of predictions 
-  merged_df <- dplyr::bind_rows(specified_covariates_dfs)
+  # treat `covariate_name` as a factor to prevent alphabetizing by `ggplot`
+  merged_df <- 
+    specified_covariates_dfs |> 
+    dplyr::bind_rows() |> 
+    mutate(covariate_name = factor(covariate_name, levels = specified_covariates)) 
   
   
   # generate a faceted plot based on the specified variable type
