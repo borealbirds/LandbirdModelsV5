@@ -11,7 +11,7 @@ varclass_lookup <- read_csv(file.path(root1, "BAM_VariableListClasses.csv"))
 # import covariate importance data from "01_prepare_data.R"
 root2 <- "C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsV5/"
 bam_covariate_importance <- 
-  readRDS(file.path(root2, "v4", "covariate_interactions", "covariate_importance.rds")) |>  
+  readRDS(file.path(root2, "v4", "covariate_interactions", "rds_files", "02_covariate_importance.rds")) |>  
   dplyr::mutate(boot = as.integer(boot)) |> 
   tidyr::complete(spp, bcr, var, boot=1:32, fill=list(rel.inf=0)) |>  # ensure all bootstraps are present, fill missing with 0
   dplyr::group_by(spp, bcr, var) |>  # Group once by spp, bcr, and var

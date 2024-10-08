@@ -63,13 +63,27 @@ covariate_importance <- suppressMessages(purrr::reduce(covs, full_join))
 #saveRDS(covariate_importance,  file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsv5/v4/covariate_interactions/02_covariate_importance.rds")
 
 
+# check for missing bootstraps and fill in zeros where covariates are missing from a bootstrap
+covariate_importance_zeroed <- 
+  covariate_importance |>  
+  dplyr::mutate(boot = as.integer(boot)) |> # change `chr` to `int`
+  tidyr::complete(spp, bcr, var, boot = 1:32, fill = list(rel.inf = 0)) |>  # create rows for every spp x bcr x var x bootstrap combo; fill missing rows with 0
+  dplyr::group_by(spp, bcr, var) |>  
+  dplyr::summarise(mean_rel_inf = mean(rel.inf, na.rm = TRUE),  # calculate mean across all bootstraps (including 0s)
+                   sd_rel_inf = sd(rel.inf, na.rm = TRUE),      # calculate standard deviation across all bootstraps (including 0s)
+                   n_boots = sum(rel.inf > 0)) |>    # count the number of bootstraps where the variable had non-zero rel.inf
+  dplyr::filter(mean_rel_inf > 0) |> # filter out spp x bcr x var tuples that don't have rel.inf data
+  dplyr::arrange(spp, bcr, desc(mean_rel_inf)) 
+
+saveRDS(covariate_importance_zeroed, file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsv5/v4/covariate_interactions/02_covariate_importance_zeroed.rds")
+
 
 
 # create an index of every bcr x common_name x 2-way interactions 
 # `RcppAlgo::comboGrid` is like `expand.grid` and `tidyr::crossing` but avoids duplicates 
 # e.g. for our purposes (var1=x, var2=y) is a duplicate of (var1=y, var2=x) 
 # so the Cartesian Product of comboGrid is smaller
-covariate_importance <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsv5/v4/covariate_interactions/02_covariate_importance.rds")
+covariate_importance <- readRDS(file="C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsv5/v4/covariate_interactions/rds_files/02_covariate_importance.rds")
 
 
 

@@ -9,14 +9,12 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
   }
   
   # filter the top `n` covariates based on relative importance
-  # `covariate_importance` needs to be called from backend
+  # `covariate_importance_zeroed` needs to be called from backend
   # NOTE: data not yet filtered for `var_type`
   ranked_covariates <- 
-    covariate_importance |> 
-    dplyr::filter(spp == spp & bcr == bcr) |> 
-    dplyr::group_by(var) |>  # group by variable name
-    dplyr::summarise(mean_rel_inf = mean(rel.inf, na.rm = TRUE)) |>  # calculate the mean relative importance
-    dplyr::arrange(desc(mean_rel_inf))  # sort by mean relative importance
+    covariate_importance_zeroed |> 
+    filter(spp == !!spp & bcr == !!bcr) # in case `spp` or `bcr` are objects in the local env.
+    # dplyr::slice_max(mean_rel_inf, n = n, with_ties = FALSE)
   
   
   # iterate over each row in covariate_importance to filter for variable type
@@ -122,18 +120,19 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
   
   
   # extract the order of covariates from ranked_covariates
-  # this helps `ggplot` to create facets from most influencial to least
+  # this helps `ggplot` to create facets from most influential to least
   covariate_order <- 
     ranked_covariates |> 
     dplyr::filter(var %in% specified_covariates)  |> 
-    dplyr::pull(var)
+    dplyr::pull(var) |> 
+    unique()
   
   # merge all data frames of predictions 
   # treat `covariate_name` as a factor to prevent alphabetizing by `ggplot`
-  merged_df <- 
-    specified_covariates_dfs |> 
-    dplyr::bind_rows() |> 
-    mutate(covariate_name = factor(covariate_name, levels = covariate_order)) 
+   merged_df <- 
+     specified_covariates_dfs |> 
+     dplyr::bind_rows() |> 
+     dplyr::mutate(covariate_name = factor(covariate_name, levels = covariate_order)) 
   
   
   # generate a faceted plot based on the specified variable type

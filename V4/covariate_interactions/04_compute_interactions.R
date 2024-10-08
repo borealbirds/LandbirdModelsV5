@@ -62,7 +62,21 @@ tmpcl <- clusterEvalQ(cl, library(tidyverse))
 print("* indexing gbm objects for CAWA BCR12 *")
 
 # gbm objects for CAWA and CONW have been transfered to the symbolic link file "scratch"
-gbm_objs <- list.files(file.path(root, "CAWA", "BCR_12"), full.names = TRUE)
+# dirs <- c("CAWA/BCR_60", "CAWA/BCR_12", "CONW/BCR_60", "CONW/BCR_81")
+# gbm_objs <- unlist(lapply(file.path(root, dirs), list.files, full.names = TRUE))
+dirs <- "CAWA/BCR_60"
+gbm_objs <- list.files(file.path(root, dirs), full.names = TRUE)
+
+# load in V4 count data
+try_load <- suppressWarnings(try(load(file.path(root, "BAMdb-GNMsubset-2020-01-08.RData")), silent=TRUE))
+
+# check if `load` was successful and V4 data exists
+if (inherits(try_load, "try-error") || !exists("dd")){
+  message("could not V4 data from: ", root)
+} else {
+  message("successfully loaded V4 data from: ", root)
+} #close else()
+
 
 
 #8. create function to process each gbm object (parallelized)----
@@ -79,9 +93,44 @@ process_gbm <- function(obj_path) {
     message("successfully loaded gbm_obj from: ", obj_path)
   } #close else()
   
+  
+  
+  # build `DAT` for the target species x bcr
+  # define species and region
+  spp <- attr(out, "__settings__")$species
+  bcr <- attr(out, "__settings__")$region
+  
+  # create an index indicating where in `dd` we will find the current BCR's data
+  # ss = subset
+  ss <- dd[, bcr] == 1L
+  
+  # reconstruct DAT object (see: https://github.com/borealbirds/GNM/blob/master/R/04-boot.R)
+  # `yy` contains the counts data, and is subset using `ss` and `spp` 
+  DAT <- 
+    data.frame(
+      count = as.numeric(yy[ss, spp]),  
+      offset = off[ss, spp],
+      cyid = dd$cyid[ss],
+      YEAR = dd$YEAR[ss],
+      ARU = dd$ARU[ss],   
+      dd2[ss, out$var.names[-c(1:2)]]  #-c(1:2) because we already have `YEAR` and `ARU` from `dd`
+    )
+  
+  # keep just one observation (row) for each unique "cell x year" combination
+  DAT <- DAT[sample.int(nrow(DAT)),]
+  DAT <- DAT[!duplicated(DAT$cyid),]
+  
+  # ensure `DAT` has the covariates found in `out`
+  required_vars <- out$var.names
+  if (!all(required_vars %in% colnames(DAT))) {
+    stop("one or more covariates in `out` are missing from `DAT`")
+  } else {
+    message("check: all covariates in `out` are in `DAT`")
+  } 
+  
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
-  n <- length(out$var.names)  # retrieve the number of variables
+  n <- length(out$var.names); message("check: `out` has ", n, " covariates")
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
   
   # end at n-1 to avoid finding the interaction of variable n x variable n
@@ -96,18 +145,36 @@ process_gbm <- function(obj_path) {
       # check if the response data is non-empty
       if (sum(DAT$count) < 1) {
         pts[[interaction_index]] <- NA  # assign NA if there are no occurrence records
-      } else {
+      
+        } else {
+        
         # subsample the data using `slice_sample` to speed up `interact.gbm`
-        pts[[interaction_index]] <- 
-          interact.gbm(x = out, 
-                       data = dplyr::slice_sample(DAT[,-(1:3)], prop = 0.10),  # subsample 10% of the data
-                       i.var = c(i, j))  # test the interaction between variable i and j
-      } # close else()
+        DAT_sample <- 
+          dplyr::slice_sample(DAT, prop = 0.25) |> 
+          dplyr::select(all_of(required_vars)) # select only the necessary covariates (i.e those in `out`)
+        
+        # check for variability in the selected covariates
+        var_i_unique <- length(unique(DAT_sample[[out$var.names[i]]]))
+        var_j_unique <- length(unique(DAT_sample[[out$var.names[j]]]))
+        
+        if (var_i_unique < 2 || var_j_unique < 2) {
+          message("skipping interaction for ", out$var.names[i], " and ", out$var.names[j], " due to insufficient variability.")
+          pts[[interaction_index]] <- NA
+          
+        } else {
+          
+        message("calculating interactions for ", out$var.names[i], " and ", out$var.names[j])
+        pts[[interaction_index]] <- gbm::interact.gbm(x = out, data = DAT_sample, i.var = c(i, j))  # test the interaction between variable i and j
+        
+        } # close nested else()
+        
+      } # close top else ()
       
       # label the interaction
       names(pts)[interaction_index] <- paste(out$var.names[i], out$var.names[j], sep = ".")  # Label the interaction
       interaction_index <- interaction_index + 1
     } # close nested loop
+    
   } # close top loop
   
   return(pts)  # return the list of interaction points
@@ -117,12 +184,13 @@ process_gbm <- function(obj_path) {
 
 #9. export the necessary variables and functions to the cluster----
 print("* exporting gbm_objs and functions to cluster *")
-clusterExport(cl, c("gbm_objs", "interact.gbm", "process_gbm"))
+clusterExport(cl, c("gbm_objs", "interact.gbm", "process_gbm", "dd", "dd2", "yy", "off"))
 
 
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs, fun = process_gbm)
+boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs[1], fun = process_gbm)
+boot_pts_i2 <- lapply(X = gbm_objs[1], FUN = process_gbm)
 
 
 #11. stop the cluster----
@@ -137,4 +205,4 @@ saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_cawa12.rds"))
 if(cc){ q() }
 
 
-
+ARU and Landsc750_Popu_Gra_v1
