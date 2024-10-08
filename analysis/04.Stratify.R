@@ -1,7 +1,7 @@
 # ---
 # title: National Models 5.0 - stratify by BCR*country
 # author: Elly Knight
-# created: September 29, 2022
+# created: September 29, 2023
 # ---
 
 #NOTES################################
@@ -175,7 +175,7 @@ for(i in 1:length(bcrs)){
     dplyr::filter(id %in% bcr.i$id)
   
   #5. Determine whether exceeds threshold----
-  birdlist[i,c(2:ncol(bird.use))] <- colSums(bird.i[2:ncol(bird.use)]) > nmin
+  birdlist[i,c(2:ncol(bird.use))] <- sapply(bird.i[2:ncol(bird.use)], function(x) sum(x > 0, na.rm=TRUE)) > nmin
   
 }
 
@@ -185,8 +185,10 @@ colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
 #F. COVARIATE LOOKUP TABLE###############
 
 #1. Get extraction methods lookup table----
+#remove biomass
 meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup") |> 
-  dplyr::filter(Use==1)
+  dplyr::filter(Use==1,
+                !Label %in% c("SCANFIbiomass_1km", "SCANFIbiomass_5x5"))
 
 #2. Set up dataframe for variables that are global---
 meth.global <- meth |> 
@@ -196,86 +198,78 @@ cov.global <- expand.grid(bcr=bcrs, cov = meth.global$Label) |>
   mutate(val = TRUE) |> 
   pivot_wider(names_from=cov, values_from=val)
 
-#3. Set up dataframe for variables that need prioritization----
-#collapse AK & CONUS priority fields - only needed for extraction
-meth.prior <- meth |> 
-  dplyr::filter(Global==0) |> 
-  mutate(Priority = as.numeric(str_sub(Priority, 1, 1))) |> 
-  dplyr::select(Category, Name, Label, Priority) |> 
-  unique() |> 
-  arrange(Category, Name, Priority)
+#3. Set up dataframe for variables that are in Canada----
+meth.can <- meth |> 
+  dplyr::filter(Canada==1)
 
-cov.prior <- matrix(ncol=nrow(meth.prior), nrow=length(bcrs),
-                    dimnames=list(bcrs, meth.prior$Label)) |> 
-  data.frame()
+cov.can <- expand.grid(bcr=bcrs, cov = meth.can$Label) |> 
+  mutate(val = TRUE) |> 
+  pivot_wider(names_from=cov, values_from=val)
+cov.can[str_detect(bcrs, "usa"), -1] <- FALSE
 
-#4. Loop for subcateogries of variables that need prioritization----
-subcat <- unique(meth.prior$Name)
+#4. Set up dataframe for variables that are in US----
+meth.us <- meth |> 
+  dplyr::filter(US==1)
 
-#4. Set up bcr loop----
+cov.us <- expand.grid(bcr=bcrs, cov = unique(meth.us$Label)) |> 
+  mutate(val = TRUE) |> 
+  pivot_wider(names_from=cov, values_from=val)
+cov.us[str_detect(bcrs, "can"), -1] <- FALSE
+
+#5. Set up dataframe for variables that are in Alaska----
+meth.ak <- meth |> 
+  dplyr::filter(US_AK==1)
+
+cov.ak <- expand.grid(bcr=bcrs, cov = meth.ak$Label) |> 
+  mutate(val = TRUE) |> 
+  pivot_wider(names_from=cov, values_from=val)
+cov.ak[str_detect(bcrs, "can"), -1] <- FALSE
+cov.ak[!(bcrs %in% c("usa2", "usa41423", "usa5", "usa43")),-1] <- FALSE
+
+#6. Set up dataframe for variables that are in CONUS----
+meth.conus <- meth |> 
+  dplyr::filter(US_CONUS==1)
+
+cov.conus <- expand.grid(bcr=bcrs, cov = meth.conus$Label) |> 
+  mutate(val = TRUE) |> 
+  pivot_wider(names_from=cov, values_from=val)
+cov.conus[str_detect(bcrs, "can"), -1] <- FALSE
+cov.conus[bcrs %in% c("usa2", "usa41423", "usa5", "usa43"),-1] <- FALSE
+
+#7. Set up VLCE dataframe----
+meth.vlce <- meth |> 
+  dplyr::filter(Label=="VLCE_1km")
+
+cov.vlce <- expand.grid(bcr=bcrs, cov = meth.vlce$Label) |> 
+  mutate(val = TRUE) |> 
+  pivot_wider(names_from=cov, values_from=val)
+cov.conus[str_detect(bcrs, "usa"), -1] <- FALSE
+cov.conus[bcrs %in% c("can11"), -1] <- FALSE
+
+#8. Put all together----
+covlist.in <- cbind(cov.global, cov.can[,-1], cov.us[,-1], cov.ak[,-1], cov.conus[,-1], cov.vlce[,-1])
+
+#9. Set up bcr loop----
+covlist.out <- covlist.in
 covlist <- data.frame()
+vif <- list()
 for(i in 1:length(bcrs)){
   
-  #5. Filter data to BCR----
+  #10. Filter data to BCR----
   visit.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
     dplyr::filter(use==TRUE) |> 
     dplyr::select(-use) |> 
     left_join(visit.use, by="id")
   
-  #6. Set up Name loop----
-  for(j in 1:length(subcat)){
-    
-    #7. Select covs to compare----
-    meth.j <- dplyr::filter(meth.prior, Name %in% subcat[j])
-    
-    cov.j <- visit.i |> 
-      dplyr::select(all_of(meth.j$Label))
-    
-    #8. Determine which cov to use----
-    #Count non-na and non-zero values per cov, calculate as a percent of total surveys, remove those with < 50% and then pick highest priority
-    na.j <- cov.j |> 
-      mutate(id = row_number()) |> 
-      pivot_longer(cols=all_of(meth.j$Label), names_to="Label", values_to="Value") |> 
-      dplyr::filter(!is.na(Value) & as.numeric(Value) > 0) |> 
-      group_by(Label) |> 
-      summarize(n = round(n(), -2),
-                percent = n()/nrow(cov.j)) |> 
-      ungroup() |> 
-      left_join(meth.prior, by="Label")
-    
-    use.j <- na.j |> 
-      dplyr::filter(percent > 0.5) |> 
-      dplyr::filter(Priority==min(Priority, na.rm=TRUE)) |> 
-      mutate(use = 1) |> 
-      right_join(meth.j, by = join_by(Label, Category, Name, Priority)) |> 
-      mutate(use = ifelse(is.na(use), 0, use))
-    
-    #9. Update lookup dataframe----
-    for(k in 1:nrow(use.j)){
-      
-      if(use.j$use[k]==1){
-        cov.prior[bcrs[i],use.j$Label[k]] <- TRUE
-      } else {
-        cov.prior[bcrs[i],use.j$Label[k]] <- FALSE
-      }
-    }
-    
-    #10. Remove covariates with only 1 option and are in Canada----
-    if(nrow(use.j)==1){
-      cov.prior[str_detect(bcrs, "usa"), use.j$Label[1]] <- FALSE
-    }
-    
-  }
-  
   #11. Get covariate list for this BCR-----
-  covlist.i <- cbind(cov.global, cov.prior) |> 
+  covlist.i <- covlist.in |> 
     dplyr::filter(bcr==bcrs[i]) |> 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
+    pivot_longer(-bcr, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   
   #12. Thin visits to be realistic of a model run----
-  set.seed(i)
+  set.seed(1234)
   visit.i.sub <- visit.grid |> 
     dplyr::select(id, year, cell) |> 
     group_by(year, cell) |> 
@@ -294,14 +288,18 @@ for(i in 1:length(bcrs)){
     data.frame()
   
   #14. Run VIF----
-  vif.i <- vifstep(cov.i, th=10)
+  #Keep height,road, and alan variables for all BCRs as well as % deciduous and % coniferous for Canada (SCANFI) to allow consistent interpretation of models across BCRs
+  vif.i <- vifstep(cov.i, th=10, keep=c("SCANFIheight_1km", "SCANFIheight_5x5", "SCANFIprcC_1km", "SCANFIprcC_5x5", "SCANFIprcD_1km", "SCANFIprcD_5x5", "LFheigth_1km", "LFheigth_5x5", "ETHheight_1km", "ETHheight_5x5", "canroad_1km", "canroad_5x5", "usaroad_1km", "usaroad_5x5", "CCNL_1km"))
   
   #15. Update covariate list----
-  covlist.out <- cbind(cov.global, cov.prior)
   covlist.out[bcrs[i], vif.i@excluded] <- FALSE
   
   #16. Keep the row for this bcr----
   covlist <- rbind(covlist, covlist.out[bcrs[i],])
+  
+  #17. Save the vif info to look at later----
+  vif[[i]] <- vif.i
+  save(vif, file=file.path(root, "data", "Covariates", "VIF.Rdata"))
   
   print(paste0("Finished BCR ", i, " of ", length(bcrs)))
   
