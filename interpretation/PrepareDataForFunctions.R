@@ -31,7 +31,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 
 # gbm objects stored on the BAM drive
 # 129.2 GB for 10 bootstraps
-gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[sample(1:60, 3)]
+gbm_objs <- list.files(file.path(root, "output", "bootstraps"))[1:5]
 
 
 # import extraction lookup table to obtain covariate classes (`var_class`)

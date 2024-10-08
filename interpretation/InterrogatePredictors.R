@@ -175,7 +175,6 @@ bamexplorer_boxplots(group="common_name")
 #'
 #'@examples ...tbd
 
-# now, for every species x bcr x var permutation, i want to find the average and s.d. x and y grid
 library(splines)
 
 bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_name, covariate) {
@@ -194,47 +193,230 @@ bamexplorer_partial_dependence <- function(data = boot_pts_sorted, bcr, common_n
   # convert the covariate to a symbol for dynamic grouping
   covariate_sym <- rlang::sym(covariate)
   
-  # create a vector of x values (covering the domain of the combined bootstraps) for prediction using `smooth.spline()`
-  x_grid <- seq(min(combined_df[[covariate]]), max(combined_df[[covariate]]), length.out = 1000)
+  # determine if the variable is a factor or continuous
+  if (is.factor(combined_df[[covariate]])) {
+    # For factors, use the levels as the x_grid
+    x_grid <- levels(combined_df[[covariate]])
+    
+    # calculate the mean response for each level of the factor
+    summary_df <- combined_df %>%
+      group_by(!!rlang::sym(covariate)) %>%
+      summarise(
+        mean_response = mean(y, na.rm = TRUE),
+        lower_bound = quantile(y, 0.025, na.rm = TRUE),
+        upper_bound = quantile(y, 0.975, na.rm = TRUE)
+      )
+    
+    # create the partial dependence plot for factor variables
+    ggplot(summary_df, aes_string(x = covariate, y = "mean_response")) +
+      geom_point(size = 3, color = "blue") +
+      geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2, color = "blue") +
+      labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate, "across 10 bootstraps"),
+           x = covariate, y = "Singing Males per Ha") +
+      theme_minimal()
+    
+  } else {
+    
+    # for continuous variables, create a vector of x values (covering the domain of the combined bootstraps) for 
+    # generating predictions via `smooth.spline()`
+    x_grid <- seq(min(combined_df[[covariate]], na.rm = TRUE), 
+                  max(combined_df[[covariate]], na.rm = TRUE), 
+                  length.out = 1000)
+    
+    # fit a smoothing function to each bootstrap replicate and predict over the domain of x values
+    predictions <- lapply(data[[key]], function(df) {
+      fit <- smooth.spline(df[[covariate]], df$y)
+      predict(fit, x_grid)$y
+    })
+    
+    # combine predictions into a data frame
+    prediction_df <- as_tibble(do.call(cbind, predictions))
+    colnames(prediction_df) <- paste0("replicate_", seq_along(predictions))
+    prediction_df[[covariate]] <- x_grid
+    
+    # Calculate summary statistics (mean and error bounds) for each x value
+    summary_df <- prediction_df %>%
+      pivot_longer(cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") %>%
+      group_by(!!rlang::sym(covariate)) %>%
+      summarise(
+        mean_response = mean(predicted_response, na.rm = TRUE),
+        lower_bound = quantile(predicted_response, 0.025, na.rm = TRUE),
+        upper_bound = quantile(predicted_response, 0.975, na.rm = TRUE)
+      )
+    
+    # Create the partial dependence plot for continuous variables
+    ggplot(summary_df, aes(x = !!rlang::sym(covariate), y = mean_response)) +
+      geom_line(color = "blue") +
+      geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2, fill = "blue") +
+      labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate, "across 10 bootstraps"),
+           x = covariate, y = "Singing Males per Ha") +
+      theme_minimal()
+  }# close ifelse
+} # close function
   
-  # fit a smoothing function to each bootstrap replicate and predict over the domain of x values
-  predictions <- 
-    lapply(data[[key]], function(df) {
-    fit <- smooth.spline(df[[covariate]], df$y)
-    predict(fit, x_grid)$y 
-  })
   
-  # combine predictions into a data frame
-  prediction_df <- do.call(cbind, predictions)
+
+
+
+
+# faceted partial dependence plot
+#'@param data An exported `list` of `data.frame`s (see: `data(boot_pts_sorted)` where list elements are xy coordinates of covariates and predicted responses for a given species x bcr x bootstrap permutation.
+#'
+#'@param ... This allows users to pass additional arguments to `gbm::plot.gbm()`
+#'
+#'@return ...tbd
+#'
+#'@examples ...tbd
+
+
+bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, common_name, n = 9) {
   
-  # simplify column names
-  colnames(prediction_df) <- paste0("replicate_", seq_along(predictions))
-  prediction_df <- as_tibble(prediction_df)
-  prediction_df[[covariate]] <- x_grid
+  # ensure the user specifies the variable type
+  if (is.null(var_type) || !var_type %in% c("continuous", "factor")) {
+    stop("`var_type` must be 'continuous' or 'factor'.")
+  }
   
-  # calculate summary statistics (mean and error bounds) for each x value
-  summary_df <- 
-    prediction_df |>
-    pivot_longer(data = _, cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") |>
-    group_by(.data = _, !!covariate_sym) |>
-    summarise(
-      mean_response = mean(predicted_response),
-      lower_bound = quantile(predicted_response, 0.025),
-      upper_bound = quantile(predicted_response, 0.975)
-    )
+  # filter the top `n` covariates based on relative importance
+  # `bam_covariate_importance` needs to be called from backend
+  # NOTE: data not yet filtered for `var_type`
+  ranked_covariates <- 
+    bam_covariate_importance |> 
+    dplyr::filter(common_name == common_name & bcr == bcr) |> 
+    dplyr::group_by(var) |>  # group by variable name
+    dplyr::summarise(mean_rel_inf = mean(rel.inf, na.rm = TRUE)) |>  # calculate the mean relative importance
+    dplyr::arrange(desc(mean_rel_inf))  # sort by mean relative importance
   
-  # create a partial dependence plot with error envelope
-  ggplot(summary_df, aes(x = !!covariate_sym, y = mean_response)) +
-    geom_line(color = "blue") +
-    geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound), alpha = 0.2, fill = "blue") +
-    labs(title = paste("Partial Dependence Plot for", common_name, "in BCR", bcr, "and Covariate", covariate, "across 10 bootstraps"),
-         x = covariate, y = "singing males per Ha") +
+  
+  # iterate over each row in covariate_importance to filter for variable type
+  specified_covariates <- c()
+  for (k in seq_len(nrow(ranked_covariates))) {
+    var <- ranked_covariates$var[k]
+    key <- paste(bcr, common_name, var, sep = "_")
+    
+    # check if the key exists in the data
+    if (!key %in% names(data)) {
+      next  # skip if the key does not exist
+    } #close if()
+    
+    # combine all bootstrap replicates into one data frame
+    combined_df <- bind_rows(data[[key]], .id = "replicate")
+    
+    # if var[i] matches the user-specified type, add it to the top `n` list
+    if (var_type == "factor" && is.factor(combined_df[[var]]) || 
+         (var_type == "continuous" && !is.factor(combined_df[[var]]))) {
+    
+        specified_covariates <- c(specified_covariates, var)
+    } #close if()
+    
+    # stop when we have `n` covariates
+    if (length(specified_covariates) == n) {
+      break
+    } #close if()
+    
+  } #close for()
+ 
+  
+  # give a warning if fewer than `n` covariates of the specified type are available
+  if (length(specified_covariates) < n) {
+    warning(paste("Only", length(specified_covariates), "matching covariates found for the specified type."))
+  }
+  
+
+  # this loop creates a dataframe of density predictions for every covariate 
+  # in `specified_covarites`. The result is a list with as many elements as
+  # `length(specified_covariates)`
+  specified_covariates_dfs <- list()
+  
+  for (v in 1:length(specified_covariates)) {
+    
+    var <- specified_covariates[v]
+    
+    # construct the key to access the data frame
+    key <- paste(bcr, common_name, var, sep = "_")
+    
+    # combine all bootstrap replicates of a specific spp x bcr x var tuple
+    # into one data frame with a `replicate` column
+    combined_df <- bind_rows(data[[key]], .id = "replicate")
+    covariate_sym <- rlang::sym(var)
+    
+    if (var_type == "factor") {
+      # For factors, calculate mean response for each level
+      summary_df <- combined_df %>%
+        group_by(!!covariate_sym) %>%
+        summarise(
+          mean_response = mean(y, na.rm = TRUE),
+          lower_bound = quantile(y, 0.025, na.rm = TRUE),
+          upper_bound = quantile(y, 0.975, na.rm = TRUE)
+        ) %>%
+        mutate(covariate_value = !!covariate_sym,
+               covariate_name = var) %>%
+        select(covariate_value, mean_y, lower_y, upper_y, covariate_name)  # add a covariate identifier for faceting
+      
+    } else if (var_type == "continuous") {
+      
+      # for continuous variables, define the prediction domain
+      x_grid <- seq(min(combined_df[[var]], na.rm = TRUE), 
+                    max(combined_df[[var]], na.rm = TRUE), 
+                    length.out = 1000)
+      
+      # fit smoothing splines and predict for each bootstrap replicate
+      f <- function(df) {fit <- smooth.spline(df[[var]], df$y); predict(fit, x_grid)$y}
+      predictions_v <- lapply(data[[key]], f)
+      
+      # combine predictions into a single data frame
+      predictions_v_merged <- as_tibble(do.call(cbind, predictions_v))
+      colnames(predictions_v_merged) <- paste0("replicate_", seq_along(predictions_v_merged))
+      predictions_v_merged[[var]] <- 
+        predictions_v_merged |> 
+        dplyr::mutate(covariate_value = x_grid)
+      
+      # estimate mean and error bounds for each predictor value
+      summary_df <- 
+        predictions_v_merged[[var]] %>%
+        pivot_longer(cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") %>%
+        group_by(covariate_value) %>%
+        summarise(
+          mean_y = mean(predicted_response, na.rm = TRUE),
+          lower_y = quantile(predicted_response, 0.025, na.rm = TRUE),
+          upper_y = quantile(predicted_response, 0.975, na.rm = TRUE)
+        ) %>%
+        mutate(covariate_name = var)   # add a covariate identifier for faceting
+    } #close else()
+    
+    # create a list element for the target covariate
+    specified_covariates_dfs[[var]] <- summary_df
+    
+  } # close for()
+
+  # merge all data frames of predictions 
+  # treat `covariate_name` as a factor to prevent alphabetizing by `ggplot`
+  merged_df <- 
+    specified_covariates_dfs |> 
+    dplyr::bind_rows() |> 
+    mutate(covariate_name = factor(covariate_name, levels = specified_covariates)) 
+  
+  
+  # generate a faceted plot based on the specified variable type
+  plot <- 
+    ggplot(merged_df, aes(covariate_value, y = mean_y)) +
+    labs(title = paste("Partial Dependence Plots for", common_name, "in BCR", bcr),
+         x = "Covariate Value", y = "Singing Males per Ha") +
+    facet_wrap(~ covariate_name, scales = "free_x") +
     theme_minimal()
   
+  if (var_type == "continuous") {
+    plot <- plot +
+      geom_line(color = "purple") +
+      geom_ribbon(aes(ymin = lower_y, ymax = upper_y), alpha = 0.2, fill = "purple")
+  } else if (var_type == "factor") {
+    plot <- plot +
+      geom_point(size = 3, color = "purple") +
+      geom_errorbar(aes(ymin = lower_y, ymax = upper_y), width = 0.2, color = "purple")
+  } # close if()
   
-}
-
-
+  print(plot)
+} #close function
+  
 
 
 
