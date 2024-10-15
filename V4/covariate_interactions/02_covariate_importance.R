@@ -8,8 +8,14 @@ root1 <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0/Manuscript/vari
 varclass_lookup <- read_csv(file.path(root1, "BAM_VariableListClasses.csv")) 
   
 
+
+
 # import covariate importance data from "01_prepare_data.R"
 root2 <- "C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsV5/"
+
+# import nice variables names for manuscript readability 
+nice_var_names <- read_csv(file.path(root2, "v4", "covariate_interactions", "nice_var_names.csv"))
+
 bam_covariate_importance <- 
   readRDS(file.path(root2, "v4", "covariate_interactions", "rds_files", "02_covariate_importance.rds")) |>  
   dplyr::mutate(boot = as.integer(boot)) |> 
@@ -20,9 +26,9 @@ bam_covariate_importance <-
             n_boots = sum(rel.inf > 0)) |>    # count the number of bootstraps where the variable appeared (non-zero rel.inf)
   dplyr::filter(mean_rel_inf > 0) |> 
   dplyr::arrange(spp, bcr, desc(mean_rel_inf)) |> 
-  dplyr::left_join(varclass_lookup, by = "var") |> 
+  dplyr::left_join(nice_var_names, by = "var") |> 
   dplyr::slice_max(mean_rel_inf, n=20, with_ties = FALSE)
 
-write.csv(bam_covariate_importance, file=file.path(root1, "BAM_RelativeImportance.csv"))
+write_csv(bam_covariate_importance, file=file.path(root1, "BAM_RelativeImportance.csv"))
   
   

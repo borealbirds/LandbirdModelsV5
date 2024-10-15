@@ -21,8 +21,8 @@ library(tidyverse)
 
 
 #2. define local or cluster
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. set number of tasks for local vs cluster----
 if(cc){ n_tasks <- 32}
@@ -163,7 +163,7 @@ process_gbm <- function(obj_path) {
           
         } else {
           
-        message("calculating interactions for ", out$var.names[i], " and ", out$var.names[j])
+        
         pts[[interaction_index]] <- gbm::interact.gbm(x = out, data = DAT_sample, i.var = c(i, j))  # test the interaction between variable i and j
         
         } # close nested else()

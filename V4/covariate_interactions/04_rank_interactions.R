@@ -18,10 +18,10 @@ root <- "C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_m
 
 
 boot_group_keys_i2 <- 
-  readRDS(file = file.path(root, "boot_group_keys_i2.rds")) |> 
-  dplyr::filter(bcr == "BCR_60" & spp == "CAWA")
+  readRDS(file = file.path(root, "rds_files", "boot_group_keys_i2.rds")) |> 
+  dplyr::filter(bcr == "BCR_81" & spp == "CONW")
 
-boot_pts_i2 <- readRDS(file = file.path(root, "boot_pts_i2_cawa60.rds"))
+boot_pts_i2 <- readRDS(file = file.path(root, "results", "boot_pts_i2_conw81.rds"))
 
 
 #7. sort and filter results for CONW and CAWA----
@@ -80,13 +80,12 @@ for (z in 1:nrow(boot_group_keys_i2)){
   if (purrr::is_empty(spp_bcr_var_i2) == FALSE){
     mean_z <- 
       spp_bcr_var_i2 |> 
-      purrr::list_c() |> 
-      colMeans() |> 
-      matrix(data=_, ncol=2) |> 
-      data.frame() |> 
-      setNames(c("mean_y_mean", "mean_y_sd"))
+      unlist() |> 
+      tibble(value = _) |> 
+      summarise(mean = mean(value), sd = sd(value)) 
+      
     
-    if (mean_z$mean_y_mean >= 0.010){
+    if (!is.na(mean_z$mean) && mean_z$mean >= 0.00010) {
       boot_pts_sorted_i2[[z]] <- mean_z
     } else {
       boot_pts_sorted_i2[[z]] <- list()
@@ -107,8 +106,14 @@ for (z in 1:nrow(boot_group_keys_i2)){
 
 
 # remove empty elements (output reduced from 8.9MB to 905.2kB;with threshold set and non-threshold elements removed)
-boot_pts_reduced_i2 <- purrr::discard(boot_pts_sorted_i2, purrr::is_empty)
-saveRDS(boot_pts_reduced_i2, file=file.path(root, "conw_bcr60_interactions.rds"))
+boot_pts_reduced_i2 <- 
+  boot_pts_sorted_i2 |> 
+  purrr::discard(purrr::is_empty) |>    # Remove empty elements
+  purrr::imap_dfr(~ tibble(name = str_remove(.y, "^BCR_81\\.CONW\\."), mean = .x$mean,  sd = .x$sd)) |> 
+  tidyr::extract(name, into = c("covariate_1", "covariate_2"), regex = "(.+)\\.(.+)$") |>
+  dplyr::arrange(desc(mean)) |> 
+  dplyr::slice_max(mean, n=20, with_ties = FALSE)
+
+readr::write_csv(boot_pts_reduced_i2, file=file.path(root, "results", "conw81_interactions.csv"))
 
 
-summarise_interactions(data = boot_pts_reduced_i2, bcr=)

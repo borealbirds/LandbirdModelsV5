@@ -22,7 +22,7 @@ library(tidyverse)
 # connect to BAM Drive and find bootstrap files 
 root <- "G:/Shared drives/BAM_NationalModels4/NationalModels4.0/Feb2020/out/boot"
 dirs <- c("CAWA/BCR_60", "CAWA/BCR_12", "CONW/BCR_60", "CONW/BCR_81")
-
+dirs <- c("CONW/BCR_81")
 # gbm objects stored on the BAM drive
 # filter for CONW (BCR60, BCR81) and CAWA (BCR60, BCR12)
 gbm_objs <- 
