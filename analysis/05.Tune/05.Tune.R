@@ -104,21 +104,21 @@ brt_tune <- function(i){
   id.i <- 3
   
   #2. Get visits to include----
-  set.seed(i)
-  visit.i <- gridlist[bcrlist[,bcr.i],] %>% 
-    group_by(year, cell) %>% 
+  set.seed(1234)
+  visit.i <- gridlist[bcrlist[,bcr.i],] |> 
+    group_by(year, cell) |> 
     mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) %>% 
-    ungroup() %>% 
+           use = sample(1:max(rowid), 1)) |> 
+    ungroup() |> 
     dplyr::filter(rowid==use)
   
   #3. Get response data (bird data)----
   bird.i <- bird[as.character(visit.i$id), spp.i]
   
   #4. Get covariates----
-  covlist.i <- covlist %>% 
-    dplyr::filter(bcr==bcr.i) %>% 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+  covlist.i <- covlist |> 
+    dplyr::filter(bcr==bcr.i) |> 
+    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$cov]
   
@@ -129,7 +129,7 @@ brt_tune <- function(i){
   year.i <- visit[visit$id %in% visit.i$id, "year"]
   
   #7. Put together data object----
-  dat.i <- cbind(bird.i, year.i, meth.i, cov.i) %>% 
+  dat.i <- cbind(bird.i, year.i, meth.i, cov.i) |> 
     rename(count = bird.i)
   
   #8. Get offsets----
@@ -139,7 +139,7 @@ brt_tune <- function(i){
   rm(visit.i, bird.i, year.i, meth.i, cov.i)
   
   #10. Run model----
-  set.seed(i)
+  set.seed(1234)
   m.i <- try(dismo::gbm.step(data=dat.i,
                          gbm.x=c(2:ncol(dat.i)),
                          gbm.y=1,
@@ -175,7 +175,7 @@ brt_tune <- function(i){
   #11. Get performance metrics----
   if(class(m.i)=="NULL"){
     
-    out.i <- loop[i,] %>% 
+    out.i <- loop[i,] |> 
       cbind(data.frame(trees = NA,
                        deviance.mean = NA,
                        deviance.se = NA,
@@ -186,14 +186,14 @@ brt_tune <- function(i){
                        correlation.se = NA,
                        n = nrow(dat.i),
                        ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3])) %>% 
+                       time = (proc.time()-t0)[3])) |> 
       mutate(lr = lr.i)
     
     write.csv(out.i, file=file.path(file.path(root, "output", "tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
     
   } else {
     
-    out.i <- loop[i,] %>% 
+    out.i <- loop[i,] |> 
       cbind(data.frame(trees = m.i$n.trees,
                        deviance.mean = m.i$cv.statistics$deviance.mean,
                        deviance.se = m.i$cv.statistics$deviance.se,
@@ -204,7 +204,7 @@ brt_tune <- function(i){
                        correlation.se = m.i$cv.statistics$correlation.se,
                        n = nrow(dat.i),
                        ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3])) %>% 
+                       time = (proc.time()-t0)[3])) |> 
       mutate(lr = lr.i)
     
     #12. Save model----
@@ -224,15 +224,15 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 
 #1. Get BCR & bird combo list----
 #filter by list of desired species
-bcr.spp <- birdlist %>% 
-  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") %>% 
-  dplyr::filter(use==TRUE) %>% 
-  dplyr::filter(spp %in% sppuse) %>% 
+bcr.spp <- birdlist |> 
+  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+  dplyr::filter(use==TRUE) |> 
+  dplyr::filter(spp %in% sppuse) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
-bcr.cov <- covlist %>% 
-  pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") %>% 
+bcr.cov <- covlist |> 
+  pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
   dplyr::filter(use==TRUE)
 
 print("* Loading covariate list on workers *")
@@ -240,8 +240,8 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
 files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
-                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
-  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) |> 
+  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
@@ -257,52 +257,54 @@ if(nrow(files) > 0){
   perf <- map_dfr(read.csv, .x=files$path)
   
   #6. Determine which ones are done or won't run----
-  done <- perf %>% 
-    dplyr::filter((trees >= 1000 & trees < 10000) | lr<=lr.stop) %>% 
-    dplyr::select(spp, bcr) %>% 
+  done <- perf |> 
+    dplyr::filter((trees >= 1000 & trees < 10000) | lr<=lr.stop) |> 
+    dplyr::select(spp, bcr) |> 
     unique()
   
   #7. Determine learning rate for those that need rerunning----
-  redo <- perf %>% 
-    anti_join(done) %>% 
-    group_by(spp, bcr) %>% 
-    mutate(last = ifelse(trees==10000, max(lr), min(lr))) %>% 
-    dplyr::filter(lr == last) %>% 
+  redo <- perf |> 
+    anti_join(done) |> 
+    group_by(spp, bcr) |> 
+    mutate(last = ifelse(trees==10000, max(lr), min(lr))) |> 
+    dplyr::filter(lr == last) |> 
     mutate(lr.next = case_when(trees == 10000 ~ lr*10,
-                               trees < 1000 ~ lr/10)) %>% 
+                               trees < 1000 ~ lr/10)) |> 
     ungroup()
   
   #8. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
-  loop <- bcr.spp %>% 
-    anti_join(done) %>% 
-    anti_join(redo) %>% 
-    mutate(lr = 0.001) %>% 
-    rbind(redo %>% 
-            dplyr::select(spp, bcr, lr.next) %>% 
-            rename(lr = lr.next)) %>% 
+  loop <- bcr.spp |> 
+    anti_join(done) |> 
+    anti_join(redo) |> 
+    mutate(lr = 0.001) |> 
+    rbind(redo |> 
+            dplyr::select(spp, bcr, lr.next) |> 
+            rename(lr = lr.next)) |> 
     arrange(spp, bcr)
   
 }
 
 #9. Make dataframe of models to run if there are no files yet----
 if(nrow(files)==0){
-  loop <- bcr.spp %>% 
-    mutate(lr = 0.001) %>% 
+  loop <- bcr.spp |> 
+    mutate(lr = 0.001) |> 
     arrange(spp, bcr)
 }
 
 #10. Get list of species*bcr that don't meet criteria----
 #Have a csv but no model object
 mods <- data.frame(path = list.files(file.path(root, "output", "fullmodels"), pattern="*.R", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) %>% 
+                   file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
   separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   dplyr::select(spp, bcr) |> 
   unique()
 
-norun <- anti_join(bcr.spp, mods)
-
-write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
+if(nrow(loop)==0){
+  norun <- anti_join(bcr.spp, mods)
+  
+  write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
+}
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
