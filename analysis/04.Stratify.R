@@ -166,9 +166,18 @@ birdlist <- data.frame(bcr=bcrs)
 for(i in 1:length(bcrs)){
   
   #3. Select visits within BCR----
+  #thin for realistic example
+  set.seed(1234)
   bcr.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
-    dplyr::filter(use==TRUE)
+    dplyr::filter(use==TRUE) |> 
+    left_join(visit.grid |> 
+                dplyr::select(id, year, cell)) |> 
+    group_by(year, cell) |> 
+    mutate(rowid = row_number(),
+           use = sample(1:max(rowid), 1)) |> 
+    ungroup() |> 
+    dplyr::filter(rowid==use)
   
   #4. Filter bird data----
   bird.i <- bird.use |> 
@@ -248,10 +257,10 @@ cov.conus[bcrs %in% c("can11"), -1] <- FALSE
 
 #8. Put all together----
 covlist.in <- cbind(cov.global, cov.can[,-1], cov.us[,-1], cov.ak[,-1], cov.conus[,-1], cov.vlce[,-1])
+rownames(covlist.in) <- covlist.in$bcr
 
 #9. Set up bcr loop----
-covlist.out <- covlist.in
-covlist <- data.frame()
+covlist <- covlist.in
 vif <- list()
 for(i in 1:length(bcrs)){
   
@@ -292,12 +301,9 @@ for(i in 1:length(bcrs)){
   vif.i <- vifstep(cov.i, th=10, keep=c("SCANFIheight_1km", "SCANFIheight_5x5", "SCANFIprcC_1km", "SCANFIprcC_5x5", "SCANFIprcD_1km", "SCANFIprcD_5x5", "LFheigth_1km", "LFheigth_5x5", "ETHheight_1km", "ETHheight_5x5", "canroad_1km", "canroad_5x5", "usaroad_1km", "usaroad_5x5", "CCNL_1km"))
   
   #15. Update covariate list----
-  covlist.out[bcrs[i], vif.i@excluded] <- FALSE
+  covlist[bcrs[i], vif.i@excluded] <- FALSE
   
-  #16. Keep the row for this bcr----
-  covlist <- rbind(covlist, covlist.out[bcrs[i],])
-  
-  #17. Save the vif info to look at later----
+  #16. Save the vif info to look at later----
   vif[[i]] <- vif.i
   save(vif, file=file.path(root, "data", "Covariates", "VIF.Rdata"))
   
@@ -328,6 +334,7 @@ offsets <- offsets.use
 bcrlist <- bcr.use
 
 #2. Take the NA offsets out----
+#Infinite offset because duration==0, should move this to filtering
 offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
 cov <- dplyr::filter(cov, id %in% offsets$id)
 visit <- dplyr::filter(visit, id %in% offsets$id)
