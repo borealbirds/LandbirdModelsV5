@@ -54,8 +54,6 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 
 #INVENTORY####
 
-#Take out the BCR aggregation option that's not being used
-
 #1. Get list of predictions----
 predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
                         file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
@@ -80,14 +78,26 @@ mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosa
   mutate(year = as.numeric(str_sub(year, -100, -5)),
          boot = as.numeric(boot))
 
-#4. Make the to-do list----
+#4. Figure out which spp*boot*year*bcr are predicted and mosaicked----
 all <- inner_join(predicted, extrapolated)
 
-todo <- all |> 
-  dplyr::select(spp, boot, year) |> 
-  unique() |> 
-  anti_join(mosaicked)
-  
+#5. Make the to-do list----
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
+
+todo <- birdlist |> 
+  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
+  expand_grid(year = seq(1985, 2020, 5),
+              boot = seq(1, 10, 1))
+
+#6. Remove spp*boot*year combinations that don't have all BCRs----
+loop <- full_join(all, todo) |> 
+    mutate(na = ifelse(is.na(file.pred), 1, 0)) |>
+    group_by(spp, boot, year) |>
+    summarize(nas = sum(na)) |>
+    ungroup() |>
+    dplyr::filter(nas==0)
+
 #5. Check against bcr list per species----
 
 # #remove spp*bcr combinations never hit a satisfactory learning rate in model tuning
@@ -105,25 +115,21 @@ todo <- all |>
 #   anti_join(norun) |> 
 #   anti_join(norun_spp)
 
-spp <- birdlist |> 
-  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE)
-
-#This takes a couple minutes to run
-loop <- data.frame()
-for(i in 1:nrow(todo)){
-  
-  all.i <- all |> 
-    dplyr::filter(spp==todo$spp[i],
-                  boot==todo$boot[i],
-                  year==todo$year[i])
-  
-  spp.i <- spp |> 
-    dplyr::filter(spp==todo$spp[i])
-  
-  if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i,])}
-  
-}
+# #This takes a couple minutes to run
+# loop <- data.frame()
+# for(i in 1:nrow(todo)){
+#   
+#   all.i <- all |> 
+#     dplyr::filter(spp==todo$spp[i],
+#                   boot==todo$boot[i],
+#                   year==todo$year[i])
+#   
+#   spp.i <- spp |> 
+#     dplyr::filter(spp==todo$spp[i])
+#   
+#   if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i,])}
+#   
+# }
 
 #MOSAIC####
 
@@ -147,19 +153,21 @@ for(i in 1:nrow(loop)){
   year.i <- loop$year[i]
   
   #5. Loop file lists----
-  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
-  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
+  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i) |> 
+    inner_join(spp)
+  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i) |> 
+    inner_join(spp)
   
-  #6. Determine required blank predictions for unmodelled BCRs----
+  #6. Skip loop if rows don't match-----
+  if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
+  
+  #7. Determine required blank predictions for unmodelled BCRs----
   zeros.i <- zeros |> 
     anti_join(predicted.i)
   
-  #7. Skip loop if rows don't match-----
-  if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
-  
-  #8. Otherwise add zero files to available files----
+  #8. Add zero files to available files----
   loop.i <- full_join(predicted.i, extrapolated.i) |> 
-    dplyr::select(-file.pred, -file.extrap) |> 
+    dplyr::select(-file.pred, -file.extrap, -use) |> 
     rbind(zeros.i |> 
             rename(path.pred = path) |> 
             mutate(path.extrap = path.pred,
