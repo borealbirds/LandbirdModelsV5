@@ -19,9 +19,9 @@ root <- "C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_m
 
 boot_group_keys_i2 <- 
   readRDS(file = file.path(root, "rds_files", "boot_group_keys_i2.rds")) |> 
-  dplyr::filter(bcr == "BCR_81" & spp == "CONW")
+  dplyr::filter(bcr == "BCR_12" & spp == "CAWA")
 
-boot_pts_i2 <- readRDS(file = file.path(root, "results", "boot_pts_i2_conw81.rds"))
+boot_pts_i2 <- readRDS(file = file.path(root, "results", "boot_pts_i2_cawa12.rds"))
 
 
 #7. sort and filter results for CONW and CAWA----
@@ -106,14 +106,21 @@ for (z in 1:nrow(boot_group_keys_i2)){
 
 
 # remove empty elements (output reduced from 8.9MB to 905.2kB;with threshold set and non-threshold elements removed)
+nice_var_names <- read_csv("C:/Users/mannf/Proton Drive/mannfredboehm/My files/Drive/boreal_avian_modelling_project/NationalModelsv5/v4/covariate_interactions/results/nice_var_names.csv")
+
+
 boot_pts_reduced_i2 <- 
   boot_pts_sorted_i2 |> 
   purrr::discard(purrr::is_empty) |>    # Remove empty elements
-  purrr::imap_dfr(~ tibble(name = str_remove(.y, "^BCR_81\\.CONW\\."), mean = .x$mean,  sd = .x$sd)) |> 
+  purrr::imap_dfr(~ tibble(name = str_remove(.y, "^BCR_12\\.CAWA\\."), mean = .x$mean,  sd = .x$sd)) |> 
   tidyr::extract(name, into = c("covariate_1", "covariate_2"), regex = "(.+)\\.(.+)$") |>
   dplyr::arrange(desc(mean)) |> 
-  dplyr::slice_max(mean, n=20, with_ties = FALSE)
+  dplyr::left_join(nice_var_names, by = c("covariate_1" = "var")) |> 
+  dplyr::left_join(nice_var_names, by = c("covariate_2" = "var")) |> 
+  dplyr::select(var_nice.x, var_nice.y, mean, sd) |> 
+  dplyr::slice_max(mean, n=20, with_ties = FALSE) |> 
+  
 
-readr::write_csv(boot_pts_reduced_i2, file=file.path(root, "results", "conw81_interactions.csv"))
+readr::write_csv(boot_pts_reduced_i2, file=file.path(root, "results", "cawa12_interactions.csv"))
 
 
