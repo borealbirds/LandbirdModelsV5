@@ -6,9 +6,9 @@
 
 #NOTES################################
 
-# This script calculates means and standard deviation across bootstraps of model predictions for packaging
+# This script calculates means and coefficients of variation (CV) across bootstraps of model predictions for packaging
 
-# Means and sds are calculated for two extends:
+# Means and cvs are calculated for two extends:
 #1. Subunit: this the output of `07.Predict.R` run on compute canada, with the predictions trimmed to the BCR boundary.
 #2. Mosaic: this is the output of `09.MosaicPredictions.R`
 
@@ -94,10 +94,13 @@ for(i in 1:nrow(loop)){
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #11. Stack----
-  out.i <- c(mean.i, sd.i)
+  #11. Calculate cv----
+  cv.i <- sd.i/mean.i
   
-  #12. Save----
+  #12. Stack----
+  out.i <- c(mean.i, cv.i)
+  
+  #13. Save----
   writeRaster(out.i, filename = file.path(root, "output", "averages", "subunit", paste0(spp.i, "_", bcr.i, "_", year.i, ".tiff")), overwrite=TRUE)
   
   cat("Finished", i, "of", nrow(loop), "prediction sets\n")
@@ -160,15 +163,18 @@ for(i in 1:nrow(loop)){
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #10. Stack----
-  out.i <- c(mean.i, sd.i)
+  #10. Calculate cv----
+  cv.i <- sd.i/mean.i
   
-  #11. Save----
+  #11. Stack----
+  out.i <- c(mean.i, cv.i)
+  
+  #13. Save----
   writeRaster(out.i, filename = file.path(root, "output", "averages", "mosaic", paste0(spp.i, "_", year.i, ".tiff")), overwrite=TRUE)
   
   cat("Finished", i, "of", nrow(loop), "prediction sets")
   
 }
 
-#12. Check output against todo list----
+#14. Check output against todo list----
 files <- list.files(file.path(root, "output", "averages", "mosaic"))
