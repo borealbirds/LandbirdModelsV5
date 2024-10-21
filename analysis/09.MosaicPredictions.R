@@ -27,8 +27,6 @@
 # 4) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
 # -------------------
 
-#TO DO: FILL IN REST OF BCRS WITH ZERO PREDICTIONS##########
-
 #PREAMBLE####
 
 #1. Load packages -------- 
@@ -96,7 +94,8 @@ loop <- full_join(all, todo) |>
     group_by(spp, boot, year) |>
     summarize(nas = sum(na)) |>
     ungroup() |>
-    dplyr::filter(nas==0)
+    dplyr::filter(nas==0) |> 
+    anti_join(mosaicked)
 
 #5. Check against bcr list per species----
 
@@ -153,10 +152,8 @@ for(i in 1:nrow(loop)){
   year.i <- loop$year[i]
   
   #5. Loop file lists----
-  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i) |> 
-    inner_join(spp)
-  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i) |> 
-    inner_join(spp)
+  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
+  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
   
   #6. Skip loop if rows don't match-----
   if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
@@ -167,7 +164,7 @@ for(i in 1:nrow(loop)){
   
   #8. Add zero files to available files----
   loop.i <- full_join(predicted.i, extrapolated.i) |> 
-    dplyr::select(-file.pred, -file.extrap, -use) |> 
+    dplyr::select(-file.pred, -file.extrap) |> 
     rbind(zeros.i |> 
             rename(path.pred = path) |> 
             mutate(path.extrap = path.pred,
