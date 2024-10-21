@@ -1,7 +1,11 @@
 # this function is called `bamexplorer_facet_pd` in BAMexploreR
 # as of Oct 7, 2024
 
-bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp, n = 9) {
+# need to indicate scales= "free", fixed", free_x", "free_y" (see: https://ggplot2.tidyverse.org/reference/facet_grid.html)
+# covariate_importance_zeroed <- readRDS("rds_files/02_covariate_importance_zeroed.rds")
+# boot_pts_sorted <- readRDS("rds_files/02_boot_pts_sorted.rds")
+
+bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp, n = 9, scales=NULL) {
   
   # ensure the user specifies the variable type
   if (is.null(var_type) || !var_type %in% c("continuous", "factor")) {
@@ -13,8 +17,8 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
   # NOTE: data not yet filtered for `var_type`
   ranked_covariates <- 
     covariate_importance_zeroed |> 
-    filter(spp == !!spp & bcr == !!bcr) # in case `spp` or `bcr` are objects in the local env.
-    # dplyr::slice_max(mean_rel_inf, n = n, with_ties = FALSE)
+    dplyr::filter(spp == !!spp & bcr == !!bcr) |>  # in case `spp` or `bcr` are objects in the local env.
+    slice_max(mean_rel_inf, n = n, with_ties = FALSE)
   
   
   # iterate over each row in covariate_importance to filter for variable type
@@ -66,21 +70,21 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
     
     # combine all bootstrap replicates of a specific spp x bcr x var tuple
     # into one data frame with a `replicate` column
-    combined_df <- bind_rows(data[[key]], .id = "replicate")
+    combined_df <- dplyr::bind_rows(data[[key]], .id = "replicate")
     covariate_sym <- rlang::sym(var)
     
     if (var_type == "factor") {
       # For factors, calculate mean response for each level
-      summary_df <- combined_df %>%
-        group_by(!!covariate_sym) %>%
-        summarise(
+      summary_df <- combined_df |> 
+        dplyr::group_by(!!covariate_sym) |> 
+        dplyr::summarise(
           mean_response = mean(y, na.rm = TRUE),
           lower_bound = quantile(y, 0.025, na.rm = TRUE),
           upper_bound = quantile(y, 0.975, na.rm = TRUE)
-        ) %>%
-        mutate(covariate_value = !!covariate_sym,
-               covariate_name = var) %>%
-        select(covariate_value, mean_y, lower_y, upper_y, covariate_name)  # add a covariate identifier for faceting
+        ) |> 
+        dplyr::mutate(covariate_value = !!covariate_sym,
+               covariate_name = var) |> 
+        dplyr::select(covariate_value, mean_y, lower_y, upper_y, covariate_name)  # add a covariate identifier for faceting
       
     } else if (var_type == "continuous") {
       
@@ -94,7 +98,7 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
       predictions_v <- lapply(data[[key]], f)
       
       # combine predictions into a single data frame
-      predictions_v_merged <- as_tibble(do.call(cbind, predictions_v))
+      predictions_v_merged <- tibble::as_tibble(do.call(cbind, predictions_v))
       colnames(predictions_v_merged) <- paste0("replicate_", seq_along(predictions_v_merged))
       predictions_v_merged[[var]] <- 
         predictions_v_merged |> 
@@ -102,15 +106,15 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
       
       # estimate mean and error bounds for each predictor value
       summary_df <- 
-        predictions_v_merged[[var]] %>%
-        pivot_longer(cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") %>%
-        group_by(covariate_value) %>%
-        summarise(
+        predictions_v_merged[[var]] |> 
+        tidyr::pivot_longer(cols = starts_with("replicate_"), names_to = "replicate", values_to = "predicted_response") |> 
+        dplyr::group_by(covariate_value) |> 
+        dplyr::summarise(
           mean_y = mean(predicted_response, na.rm = TRUE),
           lower_y = quantile(predicted_response, 0.025, na.rm = TRUE),
           upper_y = quantile(predicted_response, 0.975, na.rm = TRUE)
-        ) %>%
-        mutate(covariate_name = var)   # add a covariate identifier for faceting
+        ) |> 
+        dplyr::mutate(covariate_name = var)   # add a covariate identifier for faceting
     } #close else()
     
     # create a list element for the target covariate
@@ -138,9 +142,9 @@ bamexplorer_facet_pd <- function(data = boot_pts_sorted, var_type=NULL, bcr, spp
   # generate a faceted plot based on the specified variable type
   plot <- 
     ggplot(merged_df, aes(covariate_value, y = mean_y)) +
-    labs(title = paste("Partial Dependence Plots for", spp, "in BCR", bcr),
+    labs(title = paste("Partial Dependence Plots for", spp, "in", bcr),
          x = "Covariate Value", y = "Singing Males per Ha") +
-    facet_wrap(~ covariate_name, scales = "free_x") +
+    facet_wrap(~ covariate_name, scales = scales) +
     theme_minimal()
   
   if (var_type == "continuous") {

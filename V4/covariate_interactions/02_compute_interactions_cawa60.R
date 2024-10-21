@@ -59,13 +59,15 @@ tmpcl <- clusterEvalQ(cl, library(tidyverse))
 
 
 #7. index gbm objects for CONW and CAWA----
-print("* indexing gbm objects for CAWA BCR12 *")
+print("* indexing gbm objects for CAWA BCR60 *")
 
 # gbm objects for CAWA and CONW have been transfered to the symbolic link file "scratch"
 # dirs <- c("CAWA/BCR_60", "CAWA/BCR_12", "CONW/BCR_60", "CONW/BCR_81")
 # gbm_objs <- unlist(lapply(file.path(root, dirs), list.files, full.names = TRUE))
 dirs <- "CAWA/BCR_60"
 gbm_objs <- list.files(file.path(root, dirs), full.names = TRUE)
+message("Found ", length(gbm_objs), " files: ", gbm_objs)
+
 
 # load in V4 count data
 try_load <- suppressWarnings(try(load(file.path(root, "BAMdb-GNMsubset-2020-01-08.RData")), silent=TRUE))
@@ -92,7 +94,7 @@ process_gbm <- function(obj_path) {
   } else {
     message("successfully loaded gbm_obj from: ", obj_path)
   } #close else()
-  
+  flush.console()
   
   
   # build `DAT` for the target species x bcr
@@ -127,15 +129,19 @@ process_gbm <- function(obj_path) {
   } else {
     message("check: all covariates in `out` are in `DAT`")
   } 
-  
+  flush.console()
+
   # find evaluation points (`data.frame`) for every covariate permutation of degree 2 (indexed by i,j) 
   pts <- list()
   n <- length(out$var.names); message("check: `out` has ", n, " covariates")
   interaction_index <- 1 # starts at 1 and increases for every covariate interaction computed. Resets at one when moving to the next bootstrap model.
-  
+  flush.console()
+
   # end at n-1 to avoid finding the interaction of variable n x variable n
   for (i in 1:(n-1)) {
-    
+  message("computing all interactions with ", out$var.names[i])
+  flush.console()
+
     # start at i+1 to avoid finding the interaction of variable 1 x variable 1
     for (j in (i+1):n) {
       
@@ -160,7 +166,7 @@ process_gbm <- function(obj_path) {
         if (var_i_unique < 2 || var_j_unique < 2) {
           message("skipping interaction for ", out$var.names[i], " and ", out$var.names[j], " due to insufficient variability.")
           pts[[interaction_index]] <- NA
-          
+          flush.console()
         } else {
           
         
@@ -189,8 +195,7 @@ clusterExport(cl, c("gbm_objs", "interact.gbm", "process_gbm", "dd", "dd2", "yy"
 
 #10. run the function in parallel----
 print("* running `process_gbm` in parallel *")
-boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs[1], fun = process_gbm)
-boot_pts_i2 <- lapply(X = gbm_objs[1], FUN = process_gbm)
+boot_pts_i2 <- parLapply(cl = cl, X = gbm_objs, fun = process_gbm)
 
 
 #11. stop the cluster----
@@ -200,9 +205,7 @@ stopCluster(cl)
 
 #12. save list of 2-way interactions per bootstrap----
 print("* saving RDS file *")
-saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_cawa12.rds"))
+saveRDS(boot_pts_i2, file=file.path(root, "boot_pts_i2_cawa60.rds"))
 
 if(cc){ q() }
 
-
-ARU and Landsc750_Popu_Gra_v1
