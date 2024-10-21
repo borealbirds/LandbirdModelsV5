@@ -254,7 +254,7 @@ files.stack <- data.frame(file=list.files(file.path(root, "gis", "stacks"), patt
   separate(file, into=c("bcr", "year", "tif"), remove=FALSE) |>
   mutate(year = as.numeric(year),
          country = str_sub(bcr, 1, 3),
-         subUnit = as.numeric(str_sub(bcr, 4, 5))) |> 
+         subUnit = as.numeric(str_sub(bcr, 4, 10))) |> 
   dplyr::filter(str_sub(file, -3, -1)!="xml")
 
 todo.stack <- anti_join(units, files.stack)
