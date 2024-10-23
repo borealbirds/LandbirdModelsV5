@@ -14,6 +14,8 @@
 
 # Each averaged raster is also masked by water bodies
 
+#TO DO: PARALLELIZE
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -31,13 +33,14 @@ water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_l
   vect()
 
 #1. Subunit polygons----
-bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
+bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
+  mutate(bcr= paste0(country, subUnit))
 
 #SUBUNIT AVERAGING#########
 
 #1. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
-                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+predicted <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
+                        file = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
   separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          boot = as.numeric(boot)) |> 
@@ -74,7 +77,7 @@ for(i in 1:nrow(loop)){
                   year==year.i)
   
   #7. Read them in----
-  stack.i <- try(rast(pred.i$path.pred))
+  stack.i <- try(rast(pred.i$path))
   
   if(inherits(stack.i, "try-error")){ next }
   
