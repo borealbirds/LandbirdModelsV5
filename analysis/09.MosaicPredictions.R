@@ -27,6 +27,8 @@
 # 4) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
 # -------------------
 
+#TO DO: PARALLELIZE######
+
 #PREAMBLE####
 
 #1. Load packages -------- 
