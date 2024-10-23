@@ -8,11 +8,15 @@
 
 # This script uses the withheld data from each bootstrap to validate the spatial the models.
 
-# Validation is done by using the raw model object to predict values to the withheld data instead of spatial predictions because predictions were made for particular years, but the withheld data is across all years.
+# Validation is done by rounding the withheld data to the nearest five years and extracting the predicted density values from the spatial prediction for each bootstrap.
 
-# Validation is done for two spatial extents:
-# 1. BCR: uses the single bootstrapped model to predict. Points that were used to build the model in the 100 km buffer are removed from validation because the packaged subunit predictions exclude the buffer.
-# 2. Study area: The predicted values from each subunit model are saved out in this script and used in the subsequent script `12.ValidateMosaics.R` to evaluate the mosaic predictions.
+# Validation is done for two spatial extents: BCR & study area.
+
+# The script works by running only on species and bootstrap combinations that have been fully run for all bcrs (determined by whether they've been mosaicked) and all years
+
+#TO DO: CONSIDER SPLITTING INTO TWO SCRIPTS##########
+
+#TO DO: PARALLELIZE
 
 #PREAMBLE############################
 
@@ -64,7 +68,7 @@ visit.v <- visit |>
   st_transform(5072) |> 
   vect()
 
-#3. Set up loop for BCR attribution----
+#3. Set up mosaicked for BCR attribution----
 bcrdf <- data.frame(id=visit$id)
 for(i in 1:nrow(bcr.country)){
   
@@ -87,10 +91,10 @@ for(i in 1:nrow(bcr.country)){
 
 colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 
-#VALIDATE SUBUNITS###############
+#INVENTORY#########
 
 #1. Get list of models----
-todo <- data.frame(path.mod = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
+booted <- data.frame(path.mod = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
                    file.mod = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
   separate(file.mod, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |>  
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
@@ -101,255 +105,367 @@ predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predic
   separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          boot = as.numeric(boot)) |> 
-  dplyr::select(-folder, -file) |> 
-  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
+  dplyr::select(-folder, -file)
 
-#3. Make todo list----
-years <- seq(1985, 2020, 5)
-
-loop <- predicted |> 
-  group_by(spp, bcr, boot) |> 
-  summarize(n=n()) |> 
-  ungroup() |> 
-  dplyr::filter(n==length(years)) |> 
-  inner_join(todo)
+#3. Get list of mosaics----
+mosaicked <- data.frame(path.mos = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
+                        file.mos = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file.mos, into=c("spp", "boot", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         boot = as.numeric(boot))
 
 #4. Get previously run output----
-if(file.exists(file.path(root, "output", "validation", "ModelValidation_BCR.RData"))){
-  
-  load(file.path(root, "output", "validation", "ModelValidation_BCR.RData"))
-  
-  start <- length(out.list) + 1
-  
-} else {
-  
-    out.list <- list()
-    start <- 1
-    
-    }
 
-for(i in start:nrow(loop)){
+#Test data
+if(file.exists(file.path(root, "output", "validation", "Validation_TestData.RData"))){
+  
+  load(file.path(root, "output", "validation", "Validation_TestData.RData"))
+  
+  tested <- data.frame(name = names(test)) |> 
+    separate(name, into=c("spp", "boot")) |> 
+    mutate(boot = as.numeric(boot))
+  
+}  else { tested <- data.frame(spp = NA, boot = NA)}
+
+#Validations
+if(file.exists(file.path(root, "output", "validation", "Validation_Results.csv"))){
+  
+  evaluations <- read.csv(file.path(root, "output", "validation", "Validation_Results.csv"))
+  evaluated <- evaluations |> 
+    dplyr::select(spp, boot) |> 
+    unique()
+  
+} else { evaluated <- data.frame(spp = NA, boot = NA)}
+
+#TEST DATA COMPILATION###############
+
+#1. Make to do list----
+#only do spp*boot with all years of prediction----
+nyears <- length(seq(1985, 2020, 5))
+
+loop <- mosaicked |> 
+  group_by(spp, boot) |> 
+  summarize(years = n()) |> 
+  ungroup() |> 
+  dplyr::filter(years==nyears) |> 
+  mutate(name = paste0(spp, "_", boot)) |> 
+  anti_join(tested)
+
+#2. Set up loop----
+test.new <- list()
+train.new <- list()
+mod.new <- list()
+for(i in 1:nrow(loop)){
   
   start.i <- Sys.time()
   
   #3. Get loop settings----
-  bcr.i <- loop$bcr[i]
   spp.i <- loop$spp[i]
   boot.i <- loop$boot[i]
   
-  #4. Read in files----
-  load(loop$path.mod[i])
+  #4. Get the bcrs----
+  loop.i <- loop[i,] |> 
+    left_join(booted, multiple="all")
   
-  #5. Get training data----
-  train.i <- visit.i |> 
-    left_join(visit, by=c("id", "year")) |> 
-    inner_join(bcrlist |> 
-                 dplyr::select(id, loop$bcr[i]) |> 
-                 rename(bcr = loop$bcr[i]) |>
-                 dplyr::filter(bcr==TRUE),
-               by = "id") |> 
-    inner_join(bird.df |> 
-                 dplyr::select(id, loop$spp[i]) |> 
-                 rename(count = loop$spp[i]),
-               by = "id")
-  
-  #6. Get withheld test data----
-  #add species presence/absence
-  #add offset
-  withheld.i <- gridlist[bcrlist[,bcr.i],] |> 
-    anti_join(visit.i, by=c("id", "year", "cell")) |> 
-    left_join(visit, by=c("id", "year")) |>
-    left_join(bird.df |> 
-                dplyr::select(id, loop$spp[i]) |> 
-                rename(count = loop$spp[i]),
-              by="id") |> 
-    mutate(p = ifelse(count > 0, 1, 0)) |> 
-    left_join(offsets |> 
-                dplyr::select(id, loop$spp[i]) |> 
-                rename(offset = loop$spp[i]),
-              by="id") |> 
-    left_join(cov,
-              by=c("id", "tagMethod", "method")) |> 
-    rename(year1 = year) |> 
-    mutate(meth.i = method,
-           year = round(year1/5)*5,
-           year = ifelse(year==1980, 1985, year)) 
-  
-  #7. Get predictions----
-  
-  #Get rounded years in data
-  years.i <- sort(unique(withheld.i$year))
-  
-  #Make data frame to hold predictions
-  prediction.i <- data.frame()
-  
-  #Loop through years
-  for(j in 1:length(years.i)){
+  #5. Set up bcr loop----
+  test.i <- list()
+  train.i <- list()
+  mod.i <- list()
+  for(j in 1:nrow(loop.i)){
     
-    #Read in prediction raster
-    rast.j <- try(rast(file.path(root, "output", "predictions", spp.i,
-                             paste0(spp.i, "_", bcr.i, "_", boot.i, "_", years.i[j], ".tiff"))))
+    #6. Get the bcr---
+    bcr.j <- loop.i$bcr[j]
     
-    #End loop if raster doesn't load
-    if(inherits(rast.j, "try-error")){ break }
+    #7. Read in files----
+    load(loop.i$path.mod[j])
     
-    #filter and project data
-    withheld.j <- withheld.i |> 
-      dplyr::filter(year==years.i[j])
+    #8. Get training data----
+    train.j <- visit.i |> 
+      left_join(visit, by=c("id", "year")) |> 
+      inner_join(bcrlist |> 
+                   dplyr::select(id, loop.i$bcr[i]) |> 
+                   rename(bcr = loop.i$bcr[i]) |>
+                   dplyr::filter(bcr==TRUE),
+                 by = "id") |> 
+      inner_join(bird.df |> 
+                   dplyr::select(id, loop$spp[i]) |> 
+                   rename(count = loop$spp[i]),
+                 by = "id")
     
-    vect.j <- withheld.j |> 
-      st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
-      st_transform(crs=crs(rast.j)) |> 
-      vect()
+    #9. Get withheld test data----
+    #add species presence/absence
+    #add offset
+    withheld.j <- gridlist[bcrlist[,bcr.j],] |> 
+      anti_join(visit.i, by=c("id", "year", "cell")) |> 
+      left_join(visit, by=c("id", "year")) |>
+      left_join(bird.df |> 
+                  dplyr::select(id, loop$spp[i]) |> 
+                  rename(count = loop$spp[i]),
+                by="id") |> 
+      mutate(p = ifelse(count > 0, 1, 0)) |> 
+      left_join(offsets |> 
+                  dplyr::select(id, loop$spp[i]) |> 
+                  rename(offset = loop$spp[i]),
+                by="id") |> 
+      # left_join(cov,
+      #           by=c("id", "tagMethod", "method")) |> 
+      rename(year1 = year) |> 
+      mutate(meth.i = method,
+             year = round(year1/5)*5,
+             year = ifelse(year==1980, 1985, year))
     
-    #Extract predictions
-    withheld.j$prediction <- extract(rast.j, vect.j)$lyr1
+    #10. Get list of predictions----
+    #Get rounded years in data
+    loop.j <- loop.i[j,] |> 
+      left_join(predicted, multiple="all")
     
-    prediction.i <- rbind(prediction.i, withheld.j)
+    #11. Set up loop to get the predictions for the withheld data----
     
-    cat("Year", years.i[j], "\n")
+    #Make data frame to hold predictions
+    prediction.j <- data.frame()
+
+    for(k in 1:nrow(loop.j)){
+      
+      #12. Read in prediction raster----
+      rast.k <- rast(loop.j$path.pred[k])
+      
+      #13. filter and project data----
+      withheld.k <- withheld.j |> 
+        dplyr::filter(year==loop.j$year[k])
+      
+      vect.k <- withheld.k |> 
+        st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
+        st_transform(crs=crs(rast.k)) |> 
+        vect()
+      
+      #14. Extract predictions----
+      withheld.k$prediction <- extract(rast.k, vect.k)$lyr1
+      
+      prediction.j <- rbind(prediction.j, withheld.k)
+      
+      cat("Year", loop.j$year[k], "\n")
+      
+    }
+    
+    #15. Use within BCR only for validation----
+    #i.e., filter out the points in the buffer
+    test.i[[j]] <- prediction.j |> 
+      inner_join(bcrdf |> 
+                   dplyr::select(id, loop.i$bcr[i]) |> 
+                   rename(bcr = loop.i$bcr[i]) |>
+                   dplyr::filter(bcr==TRUE),
+                 by="id")
+    train.i[[j]] <- train.j
+    
+    #16. Get the model object details----
+    mod.i[[j]] <- data.frame(spp=spp.i,
+                             bcr=bcr.i,
+                             boot=boot.i,
+                             trees = b.i$n.trees,
+                             n.train = b.i$nTrain)
+    
+    cat("BCR", loop.i$bcr[j], ":", j, "of", nrow(loop.i), "\n")
     
   }
   
-  #Go to next in loop
-  if(inherits(rast.j, "try-error")){ next }
+  #16. Add to the big list----
+  test.new[[i]] <- test.i
+  train.new[[i]] <- train.i
+  mod.new[[i]] <- mod.i
+  names(test.new[[i]]) <- loop.i$bcr 
+  names(train.new[[i]]) <- loop.i$bcr
+  names(mod.new[[i]]) <- loop.i$bcr
   
-  #8. Use within BCR only for validation----
-  test.i <- prediction.i |> 
-     inner_join(bcrdf |> 
-                 dplyr::select(id, loop$bcr[i]) |> 
-                 rename(bcr = loop$bcr[i]) |>
-                 dplyr::filter(bcr==TRUE),
-                by="id")
-
-  #9. Calculate total and training residual deviance----
-  totaldev.i <- calc.deviance(train.i$count, rep(mean(train.i$count), nrow(train.i)), family="poisson", calc.mean = FALSE)/nrow(train.i)
+  cat("FINISHED SPECIES*BOOTSTRAP", i, "OF", nrow(loop), "\n")
   
-  train.resid.i <- mean(b.i$train.error^2)
-  
-  #10. Determine whether can evaluate----  
-  #Skip to next loop if there's no withheld data or positive detections for that time period
-  if(nrow(test.i)==0 | sum(test.i$p) == 0){
-    
-    out.i <- data.frame(spp=spp.i,
-                        bcr=bcr.i,
-                        boot=boot.i,
-                        trees = b.i$n.trees,
-                        n.train = b.i$nTrain,
-                        n.train.p = nrow(dplyr::filter(train.i, count > 0)),
-                        n.train.a = nrow(dplyr::filter(train.i, count == 0)),
-                        total.dev = totaldev.i,
-                        train.resid = train.resid.i,
-                        train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                        n.test.p = sum(test.i$p),
-                        n.test.a = nrow(test.i) - sum(test.i$p),
-                        duration = as.numeric(difftime(Sys.time(), start.i, units="mins")))
-    
-    next
-  }
-  
-  #10. Estimate SSB (spatial sorting bias; Hijmans 2012 Ecology)----
-  p.i <- test.i |> 
-    dplyr::filter(p==1) |> 
-    dplyr::select(lon, lat) |> 
-    as.matrix()
-  
-  #cheat and add another row if there's only one detection
-  if(nrow(p.i)==1){p.i <- rbind(p.i, p.i)}
-  
-  a.i <- test.i |> 
-    dplyr::filter(p==0) |> 
-    dplyr::select(lon, lat) |> 
-    as.matrix()
-
-  train.p.i <- train.i |> 
-    dplyr::filter(count > 0) |> 
-    dplyr::select(lon, lat) |> 
-    as.matrix()
-  
-  ssb.i <- ssb(p=p.i, a=a.i, reference=train.p.i, lonlat=TRUE)
-  
-  #11. Dismo evaluate presence & absence----
-  p.i <- test.i |> 
-    dplyr::filter(p==1)
-
-  a.i <- test.i |> 
-    dplyr::filter(p==0)
-  
-  eval.i <- dismo::evaluate(p.i$prediction, a.i$prediction)
-  
-  #12. Brier score----
-  brier.i <- BrierScore(resp = test.i$count, pred = test.i$prediction)
-  
-  #13. Calculate other count metrics----
-  #Accuracy, discrimination (spearman, pearson, intercept, slope), precision (Norberg et al. 2019 Ecol Mongr, Waldock et al. 2022 Ecography)
-  
-  accuracy.i <- test.i |> 
-    mutate(diff = abs(count - prediction)) |> 
-    summarize(accuracy = mean(diff)/mean(count))
-  
-  precision.i <- sd(test.i$count)/sd(test.i$prediction)
-  
-  lm.i <- lm(prediction ~ count, data=test.i)
-  
-  cor.spearman.i = cor(test.i$prediction, test.i$count, method="spearman")
-  cor.pearson.i = cor(test.i$prediction, test.i$count, method="pearson")
-  
-  #14. Calculate test deviance & residuals----
-  test.dev.i <- calc.deviance(test.i$count, test.i$prediction, family="poisson")
-  
-  test.resid.i <- mean(abs(test.i$count - test.i$prediction))
-  
-  #15. Calculate pseudo-R2----
-  r2.i <- pseudo_r2(test.i$count, test.i$prediction)
-  
-  #16. Put together----
-  out.vals <- data.frame(spp=spp.i,
-                      bcr=bcr.i,
-                      boot=boot.i,
-                      trees = b.i$n.trees,
-                      n.train = b.i$nTrain,
-                      n.train.p = nrow(dplyr::filter(train.i, count > 0)),
-                      n.train.a = nrow(dplyr::filter(train.i, count == 0)),
-                      total.dev = totaldev.i,
-                      test.dev = test.dev.i,
-                      train.resid = train.resid.i,
-                      test.resid = test.resid.i,
-                      train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                      test.d2 = (totaldev.i - test.resid.i)/totaldev.i, 
-                      n.test.p = sum(test.i$p),
-                      n.test.a = nrow(test.i) - sum(test.i$p),
-                      ssb.p = ssb.i[1],
-                      ssb.a = ssb.i[2],
-                      ssb = ssb.i[1]/ssb.i[2],
-                      auc = eval.i@auc,
-                      cor = eval.i@cor,
-                      cor.spearman = cor.spearman.i,
-                      cor.pearson = cor.pearson.i,
-                      brier = brier.i,
-                      accuracy = accuracy.i$accuracy,
-                      precision = precision.i,
-                      discrim.intercept = lm.i$coefficients[1],
-                      discrim.slope = lm.i$coefficients[2],
-                      pseudor2 <-r2.i[1],
-                      duration = as.numeric(difftime(Sys.time(), start.i, units="mins")))
-  
-  #17. Save interim object----
-  out.list[[i]] <- out.vals
-  
-  save(out.list, file = file.path(root, "output", "validation", "ModelValidation_BCR.RData"))
-  
-  #18. Save test data for national evaluation----
-  test <- test.i |> 
-    dplyr::select(id, year, cell, count, offset, prediction) |> 
-    mutate(spp=spp.i,
-           bcr=bcr.i,
-           boot=boot.i)
-  
-  write.csv(test, file.path(root, "output", "validation", "data",
-                            paste0(spp.i, "_", bcr.i, "_", boot.i, ".csv")), row.names = FALSE)
-  
-  print(paste0("Finished evaluation ", i, " of ", nrow(loop), " in ", out.vals$duration, " minutes"))
-  
-
 }
+
+#17. Save test data predictions----
+names(test.new) <- loop$name
+names(train.new) <- loop$name
+names(mod.new) <- loop$name
+
+if(exists("test")){test <- c(test, test.new)} else {test <- test.new}
+if(exists("train")){train <- c(train, train.new)} else {train <- train.new}
+if(exists("mod")){mod <- c(mod, mod.new)} else {mod <- mod.new}
+
+save(test, train, mod, file = file.path(root, "output", "validation", "Validation_TestData.RData"))
+load(file.path(root, "output", "validation", "Validation_TestData.RData"))
+
+#VALIDATE###########
+
+#1. Make to do list----
+#only do spp*boot with all years of prediction----
+loop <- data.frame(name = names(test)) |> 
+  separate(name, into=c("spp", "boot")) |> 
+  mutate(boot = as.numeric(boot)) |> 
+  anti_join(evaluated)
+
+#2. Set up loop-----
+if(!exists("evaluations")){evaluations <- data.frame()}
+for(i in 1:nrow(loop)){
+  
+  #3. Loop settings----
+  spp.i <- loop$spp[i]
+  boot.i <- loop$boot[i]
+  
+  #4. Get the bcrs to run individually----
+  test.i <- test[[i]]
+  train.i <- train[[i]]
+  mod.i <- mod[[i]]
+  
+  #5. Add the whole study area to the list----
+  test.i[[length(test.i)+1]] <- do.call(rbind, test.i)
+  names(test.i)[[length(test.i)]] <- "range"
+  
+  train.i[[length(train.i)+1]] <- do.call(rbind, train.i)
+  names(train.i)[[length(train.i)]] <- "range"
+  
+  mod.i[[length(mod.i)+1]] <- do.call(rbind, mod.i) |> 
+    group_by(spp, boot) |> 
+    summarize(trees = mean(trees),
+              n.train = mean(n.train)) |> 
+    ungroup() |> 
+    mutate(bcr = "range")
+  names(mod.i)[[length(mod.i)]] <- "range"
+  
+  evals <- list()
+  #6. Set up to loop through the list----
+  for(j in 1:length(test.i)){
+    
+    #7. BCR----
+    bcr.j <- names(test.i)[j]
+    
+    #8. Get the train and test data for this iteration----
+    test.j <- test.i[[j]]
+    train.j <- train.i[[j]]
+    
+    #9. Calculate total and training residual deviance----
+    totaldev.i <- calc.deviance(train.j$count, rep(mean(train.j$count), nrow(train.j)), family="poisson", calc.mean = FALSE)/nrow(train.j)
+    
+    train.resid.i <- mean(b.i$train.error^2)
+    
+    #10. Determine whether can evaluate----  
+    #Skip to next loop if there's no withheld data or positive detections for that time period
+    if(nrow(test.j)==0 | sum(test.j$p) == 0){
+      
+      #11. Save what we can----
+      evals[[j]] <- data.frame(spp=spp.i,
+                          bcr=bcr.j,
+                          boot=boot.i,
+                          trees = mod.i[[j]]$trees,
+                          n.train = mod.i[[j]]$n.train,
+                          n.train.p = nrow(dplyr::filter(train.j, count > 0)),
+                          n.train.a = nrow(dplyr::filter(train.j, count == 0)),
+                          total.dev = totaldev.i,
+                          train.resid = train.resid.i,
+                          train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
+                          n.test.p = sum(test.j$p),
+                          n.test.a = nrow(test.j) - sum(test.i$p))
+      
+      cat("Finished BCR", j, "of", length(train.i), "\n")
+      
+      next
+    }
+    
+    #12. Estimate SSB (spatial sorting bias; Hijmans 2012 Ecology)----
+    p.i <- test.j |> 
+      dplyr::filter(p==1) |> 
+      dplyr::select(lon, lat) |> 
+      as.matrix()
+    
+    #skip if there's only one detection
+    if(nrow(p.i)==1){ssb.i <- list(NA, NA, NA)} else {
+      
+      a.i <- test.j |> 
+        dplyr::filter(p==0) |> 
+        dplyr::select(lon, lat) |> 
+        as.matrix()
+      
+      train.p.i <- train.j |> 
+        dplyr::filter(count > 0) |> 
+        dplyr::select(lon, lat) |> 
+        as.matrix()
+      
+      ssb.i <- ssb(p=p.i, a=a.i, reference=train.p.i, lonlat=TRUE)
+      ssb.i[3] <- ssb.i[1]/ssb.i[2]
+      
+    }
+    
+    #13. Dismo evaluate presence & absence----
+    p.i <- test.j |> 
+      dplyr::filter(p==1)
+    
+    a.i <- test.j |> 
+      dplyr::filter(p==0)
+    
+    eval.i <- dismo::evaluate(p.i$prediction, a.i$prediction)
+    
+    #14. Brier score----
+    brier.i <- BrierScore(resp = test.j$count, pred = test.j$prediction)
+    
+    #15. Calculate other count metrics----
+    #Accuracy, discrimination (spearman, pearson, intercept, slope), precision (Norberg et al. 2019 Ecol Mongr, Waldock et al. 2022 Ecography)
+    
+    accuracy.i <- test.j |> 
+      mutate(diff = abs(count - prediction)) |> 
+      summarize(accuracy = mean(diff)/mean(count))
+    
+    precision.i <- sd(test.j$count)/sd(test.j$prediction)
+    
+    lm.i <- lm(prediction ~ count, data=test.j)
+    
+    cor.spearman.i = cor(test.j$prediction, test.j$count, method="spearman")
+    cor.pearson.i = cor(test.j$prediction, test.j$count, method="pearson")
+    
+    #16. Calculate test deviance & residuals----
+    test.dev.i <- calc.deviance(test.j$count, test.j$prediction, family="poisson")
+    
+    test.resid.i <- mean(abs(test.j$count - test.j$prediction))
+    
+    #17. Calculate pseudo-R2----
+    r2.i <- pseudo_r2(test.j$count, test.j$prediction)
+    
+    #18. Put together----
+    evals[[j]] <- data.frame(spp=spp.i,
+                           bcr=bcr.j,
+                           boot=boot.i,
+                           trees = mod.i[[j]]$trees,
+                           n.train = mod.i[[j]]$n.train,
+                           n.train.p = nrow(dplyr::filter(train.j, count > 0)),
+                           n.train.a = nrow(dplyr::filter(train.j, count == 0)),
+                           total.dev = totaldev.i,
+                           test.dev = test.dev.i,
+                           train.resid = train.resid.i,
+                           test.resid = test.resid.i,
+                           train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
+                           test.d2 = (totaldev.i - test.resid.i)/totaldev.i, 
+                           n.test.p = sum(test.j$p),
+                           n.test.a = nrow(test.j) - sum(test.j$p),
+                           ssb.p = ssb.i[1],
+                           ssb.a = ssb.i[2],
+                           ssb = ssb.i[3],
+                           auc = eval.i@auc,
+                           cor = eval.i@cor,
+                           cor.spearman = cor.spearman.i,
+                           cor.pearson = cor.pearson.i,
+                           brier = brier.i,
+                           accuracy = accuracy.i$accuracy,
+                           precision = precision.i,
+                           discrim.intercept = lm.i$coefficients[1],
+                           discrim.slope = lm.i$coefficients[2],
+                           pseudor2 <-r2.i[1])
+    
+    cat("Finished BCR", j, "of", length(train.i), "\n")
+    
+  }
+  
+  #19. Bind to dataframe----
+  evaluations <- rbind(evaluations, data.table::rbindlist(evals, fill=TRUE))
+  
+  cat("Finished evaluation", i, "of", nrow(loop), "\n")
+  
+}
+
+#20. Save----
+write.csv(evaluations, file.path(root, "output", "validation", "Validation_Results.csv"))
