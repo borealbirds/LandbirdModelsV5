@@ -194,10 +194,8 @@ colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
 #F. COVARIATE LOOKUP TABLE###############
 
 #1. Get extraction methods lookup table----
-#remove biomass
 meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"), sheet = "ExtractionLookup") |> 
-  dplyr::filter(Use==1,
-                !Label %in% c("SCANFIbiomass_1km", "SCANFIbiomass_5x5"))
+  dplyr::filter(Use==1)
 
 #2. Set up dataframe for variables that are global---
 meth.global <- meth |> 
