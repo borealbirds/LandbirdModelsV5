@@ -31,7 +31,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -79,7 +79,7 @@ brt_boot <- function(i){
   trees.i <- loop$trees[i]
 
   #2. Get visits to include----
-  set.seed(i)
+  set.seed(boot.i)
   visit.i <- gridlist[bcrlist[,bcr.i],] %>% 
     group_by(year, cell) %>% 
     mutate(rowid = row_number(),
@@ -107,7 +107,7 @@ brt_boot <- function(i){
   rm(bird.i, year.i, cov.i)
   
   #9. Run model----
-  set.seed(i)
+  set.seed(boot.i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
                   data = dat.i[, -1],
                   n.trees = trees.i,
