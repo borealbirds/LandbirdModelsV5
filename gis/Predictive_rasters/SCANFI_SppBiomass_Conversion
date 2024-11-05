@@ -1,0 +1,59 @@
+#######################################
+# Title: Extract species-biomass prediction rasters
+# Author: Anna Drake
+# Date: October 5, 2024
+########################################
+require(terra)
+require(dplyr)
+require(sf)
+
+#1. shorthand functions ----
+`%notin%` <- Negate(`%in%`)
+`%notlike%` <- Negate(`%like%`)
+
+#2. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
+crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
+
+#3. Set file paths ----
+root<-"G:/Shared drives/BAM_NationalModels5"
+
+#4. Load data package with covariates and BCR lists ----
+load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+rm(bird,birdlist,gridlist,offsets)
+
+#5. Load prediction raster list - 1 km -----
+List <- dir(paste0(root,"/PredictionRasters/Biomass/SCANFI/1km/"))
+List <- subset(List, List %notlike% "height"& List %notlike% "closure" & List %notlike% "biomass")
+
+#6. Run process for each year -----
+year<-c(1985,1990,1995,2000,2005,2010,2015,2020)
+
+for (i in c(1:length(year))) {
+
+#7. Load the appropriate biomass year -----    
+Biomass<-rast(paste0(root,"/PredictionRasters/Biomass/SCANFI/1km/SCANFIbiomass_1km_",year[i],".tif"))
+
+#8. Load the vegetation layers for the year ------
+yearList<-subset(List, List %like% year[i])
+
+#9. Convert to spp-biomass ---------
+for (h in c(1:length(yearList))) {
+out<-rast(paste0(root,"/PredictionRasters/Biomass/SCANFI/1km/", yearList[h]))
+outb<-(out/100)*Biomass 
+writeRaster(outb,paste0("C:/Users/andrake/Desktop/BiomassAdj_SCANFI/1km/",yearList[h])) # save to temp folder
+} # end of within-year layers
+
+} # end of year
+
+#10. Take 1km outputs and get focal 5km mean ----
+List <- dir(paste0(root,"/PredictionRasters/Biomass/SCANFI/1km/")) # These must be the updated product rasters
+List <- subset(List, List %notlike% "height"& List %notlike% "closure" & List %notlike% "biomass")
+
+for (h in c(1:length(List))) {
+  out<-rast(paste0(root,"/PredictionRasters/Biomass/SCANFI/1km/", List[h]))
+  out5k<-terra::focal(out,w=matrix(1,5,5),fun="mean",na.rm=TRUE) 
+  Name<-sub("1km","5x5",List[h])
+  writeRaster(out5k,paste0("C:/Users/andrake/Desktop/BiomassAdj_SCANFI/5x5/",Name)) # save to temp folder
+}
+
+################### End of script ##############
