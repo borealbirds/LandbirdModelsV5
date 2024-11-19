@@ -164,7 +164,7 @@ brt_tune <- function(i){
                                gbm.y=1,
                                offset=off.i,
                                tree.complexity = id.i,
-                               learning.rate = 1e-10,
+                               learning.rate = lr.i,
                                family="poisson",
                                step.size = 10))
     
