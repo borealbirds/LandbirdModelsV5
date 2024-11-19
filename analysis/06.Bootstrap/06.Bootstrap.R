@@ -30,11 +30,11 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
-if(cc){ nodes <- 32}
+if(cc){ nodes <- 48}
 if(!cc | test){ nodes <- 2}
 
 #4. Create and register clusters----
@@ -68,7 +68,7 @@ tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "gr
 #WRITE FUNCTION##########
 
 brt_boot <- function(i){
-  
+
   t0 <- proc.time()
   
   #1. Get model settings----
@@ -77,8 +77,22 @@ brt_boot <- function(i){
   boot.i <- loop$boot[i]
   lr.i <- loop$lr[i]
   trees.i <- loop$trees[i]
-
-  #2. Get visits to include----
+  
+  #2. Load full model----
+  trymod <- try(load(file=file.path(root, "output", "fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
+  
+  if(inherits(trymod, "try-error")){ return(NULL) }
+  
+  #3. Make the new covlist----
+  #make sure to retain method and year
+  covsnew.i <- m.i[["contributions"]] %>% 
+    dplyr::filter(rel.inf >= 0.1 |
+                    var %in% c("year", "method"))
+  
+  #remove the model
+  rm(b.i)
+  
+  #4. Get visits to include----
   set.seed(boot.i)
   visit.i <- gridlist[bcrlist[,bcr.i],] %>% 
     group_by(year, cell) %>% 
@@ -87,26 +101,26 @@ brt_boot <- function(i){
     ungroup() %>% 
     dplyr::filter(rowid==use)
   
-  #3. Get response data (bird data)----
+  #5. Get response data (bird data)----
   bird.i <- bird[as.character(visit.i$id), spp.i]
   
-  #4. Get covariates and remove the nonsignificant ones----
-  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew[[i]]$var]
+  #6. Get covariates and remove the nonsignificant ones----
+  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew.i$var]
   
-  #5. Add year----
+  #7. Add year----
   year.i <- visit[visit$id %in% visit.i$id, "year"]
   
-  #6. Put together data object----
+  #8. Put together data object----
   dat.i <- cbind(bird.i, year.i, cov.i) %>% 
     rename(count = bird.i)
   
-  #7. Get offsets----
+  #9. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
-  #8. Clean up to save space----
+  #10. Clean up to save space----
   rm(bird.i, year.i, cov.i)
   
-  #9. Run model----
+  #11. Run model----
   set.seed(boot.i)
   b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
                   data = dat.i[, -1],
@@ -185,22 +199,6 @@ if(test) {loop <- arrange(loop, time)[1:2,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
-
-#8. Update the covariate lists (remove covs that explain < 0.01 % of deviance)----
-covsnew <- list()
-for(i in 1:nrow(loop)){
-  
-  load(file=file.path(root, "output", "fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R")))
-  
-  #make sure to retain method and year
-  covsnew[[i]] <- m.i[["contributions"]] %>% 
-    dplyr::filter(rel.inf >= 0.1 |
-                    var %in% c("year", "method"))
-  
-}
-
-print("* Loading new covariate lists *")
-tmpcl <- clusterExport(cl, c("covsnew"))
 
 #9. Run BRT function in parallel----
 print("* Fitting models *")
