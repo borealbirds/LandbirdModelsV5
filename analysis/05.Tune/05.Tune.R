@@ -54,7 +54,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -165,8 +165,7 @@ brt_tune <- function(i){
                                offset=off.i,
                                tree.complexity = id.i,
                                learning.rate = lr.i,
-                               family="poisson",
-                               step.size = 10))
+                               family="poisson"))
     
     trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
     
@@ -245,7 +244,7 @@ files <- data.frame(path = list.files(file.path(root, "output", "tuning"), patte
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
-lr.stop <- 1e-06
+lr.stop <- 1e-10
 
 print("* Loading stop threshold on workers *")
 tmpcl <- clusterExport(cl, c("lr.stop"))
@@ -258,7 +257,7 @@ if(nrow(files) > 0){
   
   #6. Determine which ones are done or won't run----
   done <- perf |> 
-    dplyr::filter((trees >= 1000 & trees < 10000) | lr<=lr.stop) |> 
+    dplyr::filter((trees >= 1000 & trees < 10000)) |> 
     dplyr::select(spp, bcr) |> 
     unique()
   
@@ -272,11 +271,19 @@ if(nrow(files) > 0){
                                trees < 1000 ~ lr/10)) |> 
     ungroup()
   
-  #8. Make dataframe of models to run----
+  #8. Determine those that won't run----
+  norun <- perf |> 
+    anti_join(done) |> 
+    anti_join(redo)
+  
+  write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
+  
+  #9. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
   loop <- bcr.spp |> 
     anti_join(done) |> 
     anti_join(redo) |> 
+    anti_join(norun) |> 
     mutate(lr = 0.001) |> 
     rbind(redo |> 
             dplyr::select(spp, bcr, lr.next) |> 
@@ -285,26 +292,13 @@ if(nrow(files) > 0){
   
 }
 
-#9. Make dataframe of models to run if there are no files yet----
+#10. Make dataframe of models to run if there are no files yet----
 if(nrow(files)==0){
   loop <- bcr.spp |> 
     mutate(lr = 0.001) |> 
     arrange(spp, bcr)
 }
 
-#10. Get list of species*bcr that don't meet criteria----
-#Have a csv but no model object
-mods <- data.frame(path = list.files(file.path(root, "output", "fullmodels"), pattern="*.R", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
-  separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
-  dplyr::select(spp, bcr) |> 
-  unique()
-
-if(nrow(loop)==0){
-  norun <- anti_join(bcr.spp, mods)
-  
-  write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
-}
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
