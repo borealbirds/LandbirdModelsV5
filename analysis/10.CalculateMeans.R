@@ -157,13 +157,11 @@ for(i in 1:nrow(loop)){
   #8. Calculate mean----
   #Also crop and mask
   mean.i <- mean(stack.i, na.rm=TRUE) |> 
-    crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
   #9. Calculate sd----
   #Also crop and mask
   sd.i <- stdev(stack.i, na.rm=TRUE) |> 
-    crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
   #10. Calculate cv----
