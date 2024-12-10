@@ -30,7 +30,7 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
@@ -85,7 +85,7 @@ brt_boot <- function(i){
   
   #3. Make the new covlist----
   #make sure to retain method and year
-  covsnew.i <- m.i[["contributions"]] %>% 
+  covsnew.i <- m.i[["contributions"]] |> 
     dplyr::filter(rel.inf >= 0.1 |
                     var %in% c("year", "method"))
   
@@ -94,11 +94,11 @@ brt_boot <- function(i){
   
   #4. Get visits to include----
   set.seed(boot.i)
-  visit.i <- gridlist[bcrlist[,bcr.i],] %>% 
-    group_by(year, cell) %>% 
+  visit.i <- gridlist[bcrlist[,bcr.i],] |> 
+    group_by(year, cell) |> 
     mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) %>% 
-    ungroup() %>% 
+           use = sample(1:max(rowid), 1)) |> 
+    ungroup() |> 
     dplyr::filter(rowid==use)
   
   #5. Get response data (bird data)----
@@ -111,7 +111,7 @@ brt_boot <- function(i){
   year.i <- visit[visit$id %in% visit.i$id, "year"]
   
   #8. Put together data object----
-  dat.i <- cbind(bird.i, year.i, cov.i) %>% 
+  dat.i <- cbind(bird.i, year.i, cov.i) |> 
     rename(count = bird.i)
   
   #9. Get offsets----
@@ -132,7 +132,7 @@ brt_boot <- function(i){
                   n.cores=1))
   
   #10. Get performance metrics----
-  out.i <- loop[i,] %>% 
+  out.i <- loop[i,] |> 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
@@ -151,37 +151,45 @@ tmpcl <- clusterExport(cl, c("brt_boot"))
 
 #1. Get list of models that are tuned----
 tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
-                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) %>% 
-  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) %>% 
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) |> 
+  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))  |> 
   inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
                separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=TRUE) |> 
                mutate(lr = as.numeric(str_sub(lr, -100, -3))))
 
 #2. Get learning rates----
-perf <- map_dfr(read.csv, .x=tuned$path) %>% 
+perf <- map_dfr(read.csv, .x=tuned$path) |> 
   dplyr::filter(trees >= 1000 & trees < 10000)
 
 #3. Set number of bootstraps----
 boots <- 10
 
-#4. Create to do list----
+#4. Get the list of ones that need forcing----
+notune <- read.csv(file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv")) |> 
+  dplyr::select(bcr, spp) |> 
+  mutate(lr = 1e-05,
+         trees = 9999,
+         time = mean(perf$time))
+
+#5. Create to do list----
 #Sort longest to shortest duration to get the big models going first
-todo <- perf %>% 
-  dplyr::select(bcr, spp, lr, trees, time) %>% 
-  expand_grid(boot=c(1:boots)) %>% 
+todo <- perf |> 
+  dplyr::select(bcr, spp, lr, trees, time) |> 
+  rbind(notune) |> 
+  expand_grid(boot=c(1:boots)) |> 
   arrange(-time)
 
-#5. Determine which are already done----
+#6. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) %>% 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) %>% 
+                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
+  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #6. Create final to do list----
 if(nrow(done) > 0){
   
-  loop <- todo %>% 
+  loop <- todo |> 
     anti_join(done)
   
 } else { loop <- todo }
