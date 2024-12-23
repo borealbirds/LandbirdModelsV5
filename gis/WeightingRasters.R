@@ -15,6 +15,8 @@
 # All outputs go into "MosaicWeighting" folder
 # Note: use latest version of Terra. terra::mosaic function has bug between 7-29 & 7-39 (https://github.com/rspatial/terra/issues/1262)
 
+#TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
+
 #PREAMBLE##########
 
 #1. Load packages ----
