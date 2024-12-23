@@ -28,10 +28,10 @@ library(terra)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
-if(cc){ nodes <- 32}
+if(cc){ nodes <- 48}
 if(!cc | test){ nodes <- 2}
 
 #4. Create and register clusters----
@@ -63,7 +63,7 @@ brt_predict <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load.i <- try(load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
+  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
   if(inherits(load.i, "try-error")){ return(NULL) }
   
   #3. Load raster stack----
@@ -95,10 +95,10 @@ tmpcl <- clusterExport(cl, c("brt_predict"))
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
-                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
-  mutate(boot = as.numeric(str_sub(boot, -100, -3)))
+booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
+  mutate(boot = as.numeric(boot))
 
 #3. Create to do list----
 #currently set to prioritize 

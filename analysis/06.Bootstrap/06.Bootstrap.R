@@ -79,7 +79,7 @@ brt_boot <- function(i){
   trees.i <- loop$trees[i]
   
   #2. Load full model----
-  trymod <- try(load(file=file.path(root, "output", "fullmodels", paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
+  trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
   
   if(inherits(trymod, "try-error")){ return(NULL) }
   
@@ -131,14 +131,18 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
-  #10. Get performance metrics----
+  #11. Get performance metrics----
   out.i <- loop[i,] |> 
     cbind(data.frame(n = nrow(dat.i),
                      ncount = nrow(dplyr::filter(dat.i, count > 0)),
                      time = (proc.time()-t0)[3]))
   
-  #11. Save----
-  save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  #12. Save model----
+  if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
+    dir.create(file.path(root, "output", "predictions", spp.i))
+  }
+  
+  save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
 }
 
@@ -150,13 +154,16 @@ tmpcl <- clusterExport(cl, c("brt_boot"))
 #RUN MODELS###############
 
 #1. Get list of models that are tuned----
-tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
-                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) |> 
+tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv", recursive=TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))  |> 
-  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R")) |> 
-               separate(file, into=c("spp", "bcr", "lr"), sep="_", remove=TRUE) |> 
-               mutate(lr = as.numeric(str_sub(lr, -100, -3))))
+  dplyr::select(-step) |> 
+  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R", recursive=TRUE)) |> 
+               separate(file, into=c("folder", "bcr", "lr"), sep="_", remove=TRUE) |> 
+               separate(folder, into=c("folder", "spp")) |> 
+               mutate(lr = as.numeric(str_sub(lr, -100, -3))) |> 
+               dplyr::select(-folder))
 
 #2. Get learning rates----
 perf <- map_dfr(read.csv, .x=tuned$path) |> 
@@ -166,7 +173,7 @@ perf <- map_dfr(read.csv, .x=tuned$path) |>
 boots <- 10
 
 #4. Get the list of ones that need forcing----
-notune <- read.csv(file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv")) |> 
+notune <- read.csv(file.path(root, "output", "tuning", "SpeciesBCRCombos_NotTuned.csv")) |> 
   dplyr::select(bcr, spp) |> 
   mutate(lr = 1e-05,
          trees = 9999,
@@ -181,9 +188,9 @@ todo <- perf |>
   arrange(-time)
 
 #6. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
-                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
+done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive=TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
   mutate(boot = as.numeric(str_sub(boot, -100, -3)))
 
 #6. Create final to do list----
