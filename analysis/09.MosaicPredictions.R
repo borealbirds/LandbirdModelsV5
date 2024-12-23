@@ -29,6 +29,8 @@
 
 #TO DO: PARALLELIZE######
 
+#TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
+
 #PREAMBLE####
 
 #1. Load packages -------- 
@@ -85,7 +87,7 @@ all <- inner_join(predicted, extrapolated)
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 todo <- birdlist |> 
-  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+  pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE, spp %in% sppuse) |> 
   expand_grid(year = seq(1985, 2020, 5),
               boot = seq(1, 10, 1))
@@ -94,43 +96,10 @@ todo <- birdlist |>
 loop <- full_join(all, todo) |> 
     mutate(na = ifelse(is.na(file.pred), 1, 0)) |>
     group_by(spp, boot, year) |>
-    summarize(nas = sum(na)) |>
+    summarize(nas = sum(na)) |> 
     ungroup() |>
     dplyr::filter(nas==0) |> 
     anti_join(mosaicked)
-
-#5. Check against bcr list per species----
-
-# #remove spp*bcr combinations never hit a satisfactory learning rate in model tuning
-# norun <- read.csv(file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"))
-# 
-# #remove spp that had more than 4 bcr combiantions that never hit a satisfactory learning rate in model tuning
-# norun_spp <- norun |> 
-#   group_by(spp) |> 
-#   summarize(n = n()) |> 
-#   dplyr::filter(n > 4)
-# 
-# spp <- birdlist |> 
-#   pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
-#   dplyr::filter(use==TRUE) |> 
-#   anti_join(norun) |> 
-#   anti_join(norun_spp)
-
-# #This takes a couple minutes to run
-# loop <- data.frame()
-# for(i in 1:nrow(todo)){
-#   
-#   all.i <- all |> 
-#     dplyr::filter(spp==todo$spp[i],
-#                   boot==todo$boot[i],
-#                   year==todo$year[i])
-#   
-#   spp.i <- spp |> 
-#     dplyr::filter(spp==todo$spp[i])
-#   
-#   if(nrow(all.i)==nrow(spp.i)){ loop <- rbind(loop, todo[i,])}
-#   
-# }
 
 #MOSAIC####
 
@@ -271,9 +240,6 @@ for(i in 1:nrow(loop)){
   
   duration <- Sys.time() - start
   
-  cat("Finished loop", i, "of", nrow(loop), "in", duration, attr(duration, "units"))
+  cat("Finished loop", i, "of", nrow(loop), "in", duration, attr(duration, "units"), "\n")
   
 }
-
-#19. Delete the corrupt files----
-
