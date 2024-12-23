@@ -41,8 +41,6 @@
 
 #BAM has previously used the Graham cluster; however, we hit major obstacles with innaccessibility of the scratch space during V5 and moved our work to Cedar.
 
-#To consider for V6: Store output in species subfolders to facilitate moving files around to and from Compute Canada. This is implemented in the extrapolation and prediction scripts of V5, but should be extended to the other cluster steps for V6.
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -118,7 +116,7 @@ brt_tune <- function(i){
   #4. Get covariates----
   covlist.i <- covlist |> 
     dplyr::filter(bcr==bcr.i) |> 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
+    pivot_longer(-bcr, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covlist.i$cov]
   
@@ -152,13 +150,14 @@ brt_tune <- function(i){
   
   #rerun if lr too high (small sample size e.g., can3)
   #stop at a certain lr and remove that model from the to-do list
-  while((trees.i < 1000 & lr.i >= lr.stop) |
-        (trees.i==10000 & lr.i >= lr.stop)){
+  while((trees.i < 1000 & lr.i >= lr.min) |
+        (trees.i==10000 & lr.i <= lr.max)){
     
     if(trees.i < 1000){ lr.i <- lr.i/10}
-    if(trees.i==10000){ lr.i <- lr.i*10}
+    if(trees.i==10000 & lr.i < 0.1){ lr.i <- lr.i*10}
+#    if(trees.i==10000 & lr.i == 0.1){ lr.i <- lr.i + 0.1}
     
-    set.seed(i)
+    set.seed(1234)
     m.i <- try(dismo::gbm.step(data=dat.i,
                                gbm.x=c(2:ncol(dat.i)),
                                gbm.y=1,
@@ -188,7 +187,7 @@ brt_tune <- function(i){
                        time = (proc.time()-t0)[3])) |> 
       mutate(lr = lr.i)
     
-    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
     
   } else {
     
@@ -207,8 +206,12 @@ brt_tune <- function(i){
       mutate(lr = lr.i)
     
     #12. Save model----
-    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
-    save(m.i, file=file.path(root, "output", "fullmodels", paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+    if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
+      dir.create(file.path(root, "output", "predictions", spp.i))
+    }
+    
+    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    save(m.i, file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
     
   }
   
@@ -224,30 +227,31 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 #1. Get BCR & bird combo list----
 #filter by list of desired species
 bcr.spp <- birdlist |> 
-  pivot_longer(AGOS:YTVI, names_to="spp", values_to="use") |> 
+  pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
   dplyr::filter(spp %in% sppuse) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
 bcr.cov <- covlist |> 
-  pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
+  pivot_longer(-bcr, names_to="cov", values_to="use") |> 
   dplyr::filter(use==TRUE)
 
 print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE),
-                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv")) |> 
+files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
-lr.stop <- 1e-10
+lr.min <- 1e-10
+lr.max <- 0.5
 
 print("* Loading stop threshold on workers *")
-tmpcl <- clusterExport(cl, c("lr.stop"))
+tmpcl <- clusterExport(cl, c("lr.min", "lr.max"))
 
 #5. Read in performance of those models----
 
@@ -276,7 +280,7 @@ if(nrow(files) > 0){
     anti_join(done) |> 
     anti_join(redo)
   
-  write.csv(norun, file.path(root, "output", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
+  write.csv(norun, file.path(root, "output", "tuning", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
   
   #9. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
@@ -298,7 +302,6 @@ if(nrow(files)==0){
     mutate(lr = 0.001) |> 
     arrange(spp, bcr)
 }
-
 
 #For testing
 if(test) {loop <- loop[1:nodes,]}
