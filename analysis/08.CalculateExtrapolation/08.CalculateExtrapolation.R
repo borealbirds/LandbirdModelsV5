@@ -19,6 +19,8 @@
 # 2) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
 
+#TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
+
 #PREAMBLE####
 
 #1. Load packages----
@@ -92,7 +94,7 @@ calc_extrapolation <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load(file.path(root, "output", "bootstraps", paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
   
   #3. Get list of covariates used----
   Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
@@ -151,10 +153,10 @@ tmpcl <- clusterExport(cl, c("calc_extrapolation"))
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE),
-                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R")) |> 
-  separate(file, into=c("spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
-  mutate(boot = as.numeric(str_sub(boot, -100, -3)))
+booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
+                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive=TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
+  mutate(boot = as.numeric(boot))
 
 #3. Create to do list----
 #currently set to prioritize 
