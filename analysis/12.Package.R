@@ -77,12 +77,14 @@ todo <- mosaics |>
   unique()
 
 #3. Check which have been run----
-done <- data.frame(file.mean = list.files(file.path(root, "output", "packaged"), pattern="*.tiff", recursive=TRUE))  |> 
-  separate(file.mean, into=c("folder", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)))
+done <- data.frame(file = list.files(file.path(root, "output", "packaged"), pattern="*.tiff", recursive=TRUE))  |> 
+  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
+  mutate(year = as.numeric(year))
 
 #4. Make the todo list----
-loop <- anti_join(todo, done) 
+loop <- anti_join(todo, done |> 
+                    dplyr::filter(bcr=="mosaic") |> 
+                    dplyr::select(spp, year)) 
 
 #AVERAGE MOSAICS###########
 
