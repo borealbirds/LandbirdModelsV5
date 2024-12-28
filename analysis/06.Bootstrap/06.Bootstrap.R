@@ -30,8 +30,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 48}
@@ -90,7 +90,7 @@ brt_boot <- function(i){
                     var %in% c("year", "method"))
   
   #remove the model
-  rm(b.i)
+  rm(m.i)
   
   #4. Get visits to include----
   set.seed(boot.i)
