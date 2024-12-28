@@ -45,7 +45,7 @@ library(usdm) #VIF
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with offsets and covariates----
-load(file.path(root, "Data", "03_NM5.0_data_covariates.R"))
+load(file.path(root, "data", "03_NM5.0_data_covariates.R"))
 
 #4. Turn off scientific notation---
 options(scipen=99999)
@@ -231,7 +231,7 @@ cov.ak <- expand.grid(bcr=bcrs, cov = meth.ak$Label) |>
   mutate(val = TRUE) |> 
   pivot_wider(names_from=cov, values_from=val)
 cov.ak[str_detect(bcrs, "can"), -1] <- FALSE
-cov.ak[!(bcrs %in% c("usa2", "usa41423", "usa5", "usa43")),-1] <- FALSE
+cov.ak[!(bcrs %in% c("usa2", "usa41423", "usa5", "usa43", "usa40")),-1] <- FALSE
 
 #6. Set up dataframe for variables that are in CONUS----
 meth.conus <- meth |> 
@@ -241,7 +241,7 @@ cov.conus <- expand.grid(bcr=bcrs, cov = meth.conus$Label) |>
   mutate(val = TRUE) |> 
   pivot_wider(names_from=cov, values_from=val)
 cov.conus[str_detect(bcrs, "can"), -1] <- FALSE
-cov.conus[bcrs %in% c("usa2", "usa41423", "usa5", "usa43"),-1] <- FALSE
+cov.conus[bcrs %in% c("usa2", "usa41423", "usa5", "usa43", "usa40"),-1] <- FALSE
 
 #7. Set up VLCE dataframe----
 meth.vlce <- meth |> 
@@ -250,8 +250,8 @@ meth.vlce <- meth |>
 cov.vlce <- expand.grid(bcr=bcrs, cov = meth.vlce$Label) |> 
   mutate(val = TRUE) |> 
   pivot_wider(names_from=cov, values_from=val)
-cov.conus[str_detect(bcrs, "usa"), -1] <- FALSE
-cov.conus[bcrs %in% c("can11"), -1] <- FALSE
+cov.vlce[str_detect(bcrs, "usa"), -1] <- FALSE
+cov.vlce[bcrs %in% c("can11"), -1] <- FALSE
 
 #8. Put all together----
 covlist.in <- cbind(cov.global, cov.can[,-1], cov.us[,-1], cov.ak[,-1], cov.conus[,-1], cov.vlce[,-1])
