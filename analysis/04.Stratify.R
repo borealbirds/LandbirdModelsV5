@@ -27,6 +27,7 @@
 #To consider for V6:
 #stratification across years for year-specific validation.
 #variable to indicate training data in buffer vs in subunit to speed up validation process.
+#Explore tidy models
 
 #PREAMBLE############################
 
