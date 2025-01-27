@@ -100,10 +100,17 @@ mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "pr
          boot = as.numeric(boot))
 
 #2. Make the todo list----
+#remove spp*boot combinations that don't have all years
 todo <- mosaics |> 
-  dplyr::select(spp) |> 
+  dplyr::select(spp, boot) |> 
   unique() |> 
-  expand_grid(boot = seq(1:10))
+  expand_grid(year = seq(1985, 2020, 5)) |> 
+  full_join(mosaics) |> 
+  mutate(na = ifelse(is.na(path), 1, 0)) |>
+  group_by(spp, boot) |>
+  summarize(nas = sum(na)) |> 
+  ungroup() |>
+  dplyr::filter(nas==0)
 
 #3. Check which have been run----
 done <- data.frame(file.mean = list.files(file.path(root, "output", "validation"), pattern="*.Rdata"))  |> 
@@ -116,7 +123,7 @@ loop <- anti_join(todo, done)
 #TEST DATA COMPILATION###############
 
 #1. Set up loop----
-for(i in 5:nrow(loop)){
+for(i in 1:nrow(loop)){
   
   start.i <- Sys.time()
   
@@ -222,7 +229,10 @@ for(i in 5:nrow(loop)){
       #12. Extract predictions----
       withheld.k$prediction <- extract(rast.k, vect.k)$lyr1
       
-      prediction.j <- rbind(prediction.j, withheld.k)
+      #remove NAs and infinite predictions
+      prediction.j <- rbind(prediction.j, withheld.k) |> 
+        dplyr::filter(!is.na(prediction),
+                      !is.infinite(prediction))
       
       cat("Year", year.k, "\n")
       
@@ -320,7 +330,7 @@ for(i in 5:nrow(loop)){
     
     precision.i <- sd(test.j$count)/sd(test.j$prediction)
     
-    lm.i <- lm(prediction ~ count, data=test.j)
+    lm.i <- lm(prediction ~ count, data=test.j, na.action = "na.exclude")
     
     cor.spearman.i = cor(test.j$prediction, test.j$count, method="spearman")
     cor.pearson.i = cor(test.j$prediction, test.j$count, method="pearson")
@@ -379,6 +389,8 @@ for(i in 5:nrow(loop)){
   save(test, train, eval, file = file.path(root, "output", "validation",
                                                           paste0(spp.i, "_", boot.i, ".Rdata")))
   
-  cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "\n")
+  end.i <- Sys.time()
+  
+  cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="mins"), "minutes\n")
   
 }
