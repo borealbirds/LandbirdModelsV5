@@ -30,8 +30,8 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 48}
@@ -77,21 +77,35 @@ brt_boot <- function(i){
   boot.i <- loop$boot[i]
   lr.i <- loop$lr[i]
   trees.i <- loop$trees[i]
+  tuned.i <- loop$tuned[i]
   
   #2. Load full model----
-  trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
-  
-  if(inherits(trymod, "try-error")){ return(NULL) }
-  
-  #3. Make the new covlist----
-  #make sure to retain method and year
-  covsnew.i <- m.i[["contributions"]] |> 
-    dplyr::filter(rel.inf >= 0.1 |
-                    var %in% c("year", "method"))
-  
-  #remove the model
-  rm(m.i)
-  
+  if(tuned.i==TRUE){
+    trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
+    
+    if(inherits(trymod, "try-error")){ return(NULL) }
+    
+    #3. Make the new covlist if already tuned----
+    #make sure to retain method and year
+    covsnew.i <- m.i[["contributions"]] |> 
+      dplyr::filter(rel.inf >= 0.1 |
+                      var %in% c("year", "method"))
+    
+    #remove the model
+    rm(m.i)
+    
+  }
+
+  #3. Make the new covlist if not tuned----
+  if(tuned.i==FALSE){
+    
+    covsnew.i <- covlist |> 
+      dplyr::filter(bcr==bcr.i) |> 
+      pivot_longer(-bcr, names_to="var", values_to="use") |> 
+      dplyr::filter(use==TRUE)
+    
+  }
+
   #4. Get visits to include----
   set.seed(boot.i)
   visit.i <- gridlist[bcrlist[,bcr.i],] |> 
@@ -177,12 +191,14 @@ notune <- read.csv(file.path(root, "output", "tuning", "SpeciesBCRCombos_NotTune
   dplyr::select(bcr, spp) |> 
   mutate(lr = 1e-05,
          trees = 9999,
-         time = mean(perf$time))
+         time = mean(perf$time),
+         tuned = FALSE)
 
 #5. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf |> 
   dplyr::select(bcr, spp, lr, trees, time) |> 
+  mutate(tuned = TRUE) |> 
   rbind(notune) |> 
   expand_grid(boot=c(1:boots)) |> 
   arrange(-time)
@@ -190,8 +206,8 @@ todo <- perf |>
 #6. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive=TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot"), sep="_", remove=FALSE) |> 
-  mutate(boot = as.numeric(str_sub(boot, -100, -3)))
+  separate(file, into=c("folder", "spp", "bcr", "boot", "filetype"), remove=FALSE) |>
+  mutate(boot = as.numeric(boot))
 
 #6. Create final to do list----
 if(nrow(done) > 0){
