@@ -15,6 +15,7 @@
 #1. Load packages----
 library(tidyverse)
 library(terra)
+library(sf)
 
 #2. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
