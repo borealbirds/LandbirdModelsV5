@@ -148,7 +148,7 @@ for(i in 1:nrow(units)){
   #3. Get covariate list----
   covlist.i <- covlist |> 
     dplyr::filter(bcr==bcr.i) |> 
-    pivot_longer(ERAMAP_1km:mTPI_1km, names_to="cov", values_to="use") |> 
+    pivot_longer(-bcr, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
   
   #4. Get file paths----
