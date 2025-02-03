@@ -94,7 +94,9 @@ calc_extrapolation <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
+  if(inherits(load.i, "try-error")){ return(NULL) }
+  if(inherits(b.i, "try-error")){ return(NULL) }
   
   #3. Get list of covariates used----
   Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
