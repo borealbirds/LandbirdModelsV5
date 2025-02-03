@@ -18,22 +18,6 @@
 
 #TO DO: PARALLELIZE
 
-#TO DO: CONSIDER ADDING RANGE TRUNCATION TO MOSAIC PRODUCTS
-
-#TO DO: ADD ZEROS TO THE REST OF THE CV LAYER?
-
-#TO DO: ADD ATTRIBUTES FOR SP ETC
-
-#NOTES FROM PACKAGING SCRIPT:
-#LIST OF PRODUCTS PER SPECIES:
-#2 extents: boreal, regional
-#Products in both: mean, cv, extrapolation, sampling
-
-#LIST OF SAMPLING PRODUCT:
-#All the extrapolation
-#Sampling density
-#Distance to sampling
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -64,7 +48,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
 #INVENTORY#########
 
 #1. Get list of sets that have been mosaicked----
-#We use the mosaics as input because we know they have all subunits, ten bootstraps, and the mosaics and extrapolation complete
+#We use the mosaics as input because we know they have all subunits and the mosaics and extrapolation complete
 mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
                         file = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
   separate(file, into=c("spp", "boot", "year", "filetype"), remove=FALSE) |>  
@@ -72,9 +56,11 @@ mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "pr
          boot = as.numeric(boot))
 
 #2. Make the todo list----
+#Add all 10 bootstraps
 todo <- mosaics |> 
   dplyr::select(spp, year) |> 
-  unique()
+  unique() |> 
+  expand_grid(boot = seq(1, 10, 1))
 
 #3. Check which have been run----
 done <- data.frame(file = list.files(file.path(root, "output", "packaged"), pattern="*.tiff", recursive=TRUE))  |> 
@@ -82,9 +68,13 @@ done <- data.frame(file = list.files(file.path(root, "output", "packaged"), patt
   mutate(year = as.numeric(year))
 
 #4. Make the todo list----
-loop <- anti_join(todo, done |> 
-                    dplyr::filter(bcr=="mosaic") |> 
-                    dplyr::select(spp, year)) 
+loop <- full_join(mosaics, todo) |> 
+  mutate(na = ifelse(is.na(file), 1, 0)) |>
+  group_by(spp, year) |>
+  summarize(nas = sum(na)) |> 
+  ungroup() |>
+  dplyr::filter(nas==0) |> 
+  anti_join(done)
 
 #AVERAGE MOSAICS###########
 
@@ -148,8 +138,8 @@ for(i in 1:nrow(loop)){
     stack.j <- try(rast(files.j$predpath) |> 
                      project("ESRI:102001"))
     
-    #8. Truncate to 99% quantile----
-    q99 <- global(stack.j, fun=function(x) quantile(x, 0.99, na.rm=TRUE))
+    #8. Truncate to 99.9% quantile----
+    q99 <- global(stack.j, fun=function(x) quantile(x, 0.999, na.rm=TRUE))
     
     truncate.j <- stack.j
     for(k in 1:nlyr(truncate.j)){
@@ -180,8 +170,7 @@ for(i in 1:nrow(loop)){
       mask(water, inverse=TRUE)
     
     #14. Read in the sampling distance layers----
-    #TO DO: REMOVE SUBSAMPLE LINE############
-    sample.j <- try(rast(files.j$samplepath[c(3,4)]) |> 
+    sample.j <- try(rast(files.j$samplepath) |> 
                       project("ESRI:102001"))
     
     #15. Calculate mean sampling distance----
@@ -190,9 +179,20 @@ for(i in 1:nrow(loop)){
       crop(sf.j, mask=TRUE) |> 
       mask(water, inverse=TRUE)
     
+    #16. Read in range limit shp----
+    range.j <- read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |> 
+      dplyr::filter(Limit=="0.1% limit") |> 
+      st_transform(crs="ESRI:102001")
+    
+    #17. Zero out mean prediction outside range----
+    mask.j <- mask(mean.j, range.j)
+    mask.j[is.na(mask.j)] <- 0
+    range.j <- crop(mask.j, sf.j, mask=TRUE) |> 
+      mask(water, inverse=TRUE)
+    
     #16. Stack----
-    out.i <- c(mean.j, cv.j, extrapmn.j, samplemn.j)
-    names(out.i) <- c("mean", "cv", "extrapolation", "detections")
+    out.i <- c(mean.j, cv.j, extrapmn.j, samplemn.j, range.j)
+    names(out.i) <- c("mean", "cv", "extrapolation", "detections", "range-limited mean")
     
     #17. Add some attributes----
     attr(out.i, "species") <- spp.i
