@@ -52,7 +52,7 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
@@ -155,7 +155,6 @@ brt_tune <- function(i){
     
     if(trees.i < 1000){ lr.i <- lr.i/10}
     if(trees.i==10000 & lr.i < 0.1){ lr.i <- lr.i*10}
-#    if(trees.i==10000 & lr.i == 0.1){ lr.i <- lr.i + 0.1}
     
     set.seed(1234)
     m.i <- try(dismo::gbm.step(data=dat.i,
