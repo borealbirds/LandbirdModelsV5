@@ -154,8 +154,8 @@ brt_boot <- function(i){
                      time = (proc.time()-t0)[3]))
   
   #12. Save model----
-  if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
-    dir.create(file.path(root, "output", "predictions", spp.i))
+  if(!(file.exists(file.path(root, "output", "bootstraps", spp.i)))){
+    dir.create(file.path(root, "output", "bootstraps", spp.i))
   }
   
   save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
