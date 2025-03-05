@@ -21,6 +21,8 @@
 
 #TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
 
+#TO DO FOR V6: There are some covariates that are functionally zero across the BCR that are making it into the bootstrap stage of the model, likely because the model fit is so poor that they don't fall below the 0.1% threshold for exclusion. These variables cause the extrapolation anaysis to fail, but likely also slow down the modelling process. They should be removed after VIF in the stratify script.
+
 #PREAMBLE####
 
 #1. Load packages----
@@ -32,11 +34,11 @@ library(parallel)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
-if(!cc | test){ nodes <- 2}
+if(!cc | test){ nodes <- 4}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -106,39 +108,46 @@ calc_extrapolation <- function(i){
     #4. Get training data for that bootstrap----
     sample <- cov_clean |> 
       dplyr::filter(id %in% visit.i$id) |> 
-      dplyr::select(all_of(Variables))
-    
+      dplyr::select(all_of(Variables),
+                    where(function(x) sum(x, na.rm=TRUE)!=0)) |> 
+      data.frame()
+
     #tidy
     rm(b.i, visit.i)
     
     #5. Create target dataframe of prediction raster values----
     target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
       as.data.frame(xy=TRUE) |> 
-      dplyr::select(c("x", "y", all_of(Variables))) 
+      dplyr::select(c("x", "y", all_of(Variables))) |> 
+      data.frame()
     
     #6. Compute extrapolation----
-    Extrapol <- compute_extrapolation(samples = sample,
+    Extrapol <- try(compute_extrapolation(samples = sample,
                                       covariate.names = names(sample),
                                       prediction.grid = target,
                                       coordinate.system = crs,
-                                      verbose=F)
+                                      verbose=F))
     
-    #tidy
-    rm(sample, target)
-    
-    #7. Produce binary raster of extrapolation area----
-    raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
-    raster[raster>0] <- 1  # extrapolated locations in each boot
-    raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
-    
-    #tidy
-    rm(Extrapol)
-    
-    #14. Write raster----
-    if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
-      dir.create(file.path(root, "output", "extrapolation", spp.i))
+    if(!inherits(Extrapol, "try-error")){
+      
+      #tidy
+      rm(sample, target)
+      
+      #7. Produce binary raster of extrapolation area----
+      raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
+      raster[raster>0] <- 1  # extrapolated locations in each boot
+      raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
+      
+      #tidy
+      rm(Extrapol)
+      
+      #14. Write raster----
+      if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
+        dir.create(file.path(root, "output", "extrapolation", spp.i))
+      }
+      writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+      
     }
-    writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
     
   }
   
@@ -179,7 +188,8 @@ done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"),
 if(nrow(done) > 0){
   
   loop <- todo |> 
-    anti_join(done)
+    anti_join(done) |> 
+    dplyr::filter(str_sub(bcr, 1, 3)=="can")
   
 } else { loop <- todo }
 
