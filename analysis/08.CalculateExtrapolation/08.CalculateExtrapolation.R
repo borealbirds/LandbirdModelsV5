@@ -106,22 +106,24 @@ calc_extrapolation <- function(i){
   if(!inherits(b.i, "try-error")){
     
     #4. Get training data for that bootstrap----
-    sample <- cov_clean |> 
+    sample_all <- cov_clean |> 
       dplyr::filter(id %in% visit.i$id) |> 
-      dplyr::select(all_of(Variables),
-                    where(function(x) sum(x, na.rm=TRUE)!=0)) |> 
+      dplyr::select(all_of(Variables)) |> 
       data.frame()
-
+    
+    #5. Remove variables that are all zero----
+    sample <- sample_all[,colSums(sample_all, na.rm = TRUE)!=0]
+    
     #tidy
     rm(b.i, visit.i)
     
-    #5. Create target dataframe of prediction raster values----
+    #6. Create target dataframe of prediction raster values----
     target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
       as.data.frame(xy=TRUE) |> 
       dplyr::select(c("x", "y", all_of(Variables))) |> 
       data.frame()
     
-    #6. Compute extrapolation----
+    #7. Compute extrapolation----
     Extrapol <- try(compute_extrapolation(samples = sample,
                                       covariate.names = names(sample),
                                       prediction.grid = target,
@@ -133,7 +135,7 @@ calc_extrapolation <- function(i){
       #tidy
       rm(sample, target)
       
-      #7. Produce binary raster of extrapolation area----
+      #8. Produce binary raster of extrapolation area----
       raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
       raster[raster>0] <- 1  # extrapolated locations in each boot
       raster[raster!=1|is.na(raster)] <- 0 #eliminate NA areas
@@ -141,7 +143,7 @@ calc_extrapolation <- function(i){
       #tidy
       rm(Extrapol)
       
-      #14. Write raster----
+      #9. Write raster----
       if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
         dir.create(file.path(root, "output", "extrapolation", spp.i))
       }
@@ -153,7 +155,7 @@ calc_extrapolation <- function(i){
   
 }
 
-#15. Export to clusters----
+#10. Export to clusters----
 print("* Loading function on workers *")
 
 tmpcl <- clusterExport(cl, c("calc_extrapolation"))
