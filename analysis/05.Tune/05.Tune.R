@@ -186,6 +186,10 @@ brt_tune <- function(i){
                        time = (proc.time()-t0)[3])) |> 
       mutate(lr = lr.i)
     
+    if(!(file.exists(file.path(root, "output", "tuning", spp.i)))){
+      dir.create(file.path(root, "output", "tuning", spp.i))
+    }
+    
     write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
     
   } else {
@@ -205,8 +209,12 @@ brt_tune <- function(i){
       mutate(lr = lr.i)
     
     #12. Save model----
-    if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
-      dir.create(file.path(root, "output", "predictions", spp.i))
+    if(!(file.exists(file.path(root, "output", "fullmodels", spp.i)))){
+      dir.create(file.path(root, "output", "fullmodels", spp.i))
+    }
+    
+    if(!(file.exists(file.path(root, "output", "tuning", spp.i)))){
+      dir.create(file.path(root, "output", "tuning", spp.i))
     }
     
     write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
@@ -228,7 +236,8 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::filter(spp %in% sppuse) |> 
+  dplyr::filter(spp %in% sppuse,
+                bcr %in% c("usa5", "usa30", "usa28", "usa23", "usa2", "usa14", "usa13", "usa12", "usa11", "usa10")) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
