@@ -78,7 +78,6 @@ todo <- validated |>
   unique()
 
 #3. Check which have been run----
-#COME BACK TO THIS
 done <- data.frame(file.mean = list.files(file.path(root, "output", "sampling"), pattern="*.tiff", recursive=TRUE)) |> 
   separate(file.mean, into=c("folder", "spp", "bcr", "boot", "year", "filetype"), remove=FALSE) |> 
   mutate(boot = as.numeric(boot)) |> 
@@ -134,7 +133,7 @@ for(i in 1:nrow(loop)){
       dplyr::filter(count > 0)
     
     #10. Set up year loop----
-    years <- seq(1985, 2020, 5)
+    years <- seq(1990, 2020, 5)
     for(k in 1:length(years)){
       
       #11. Get the year----
@@ -144,11 +143,10 @@ for(i in 1:nrow(loop)){
       detections.k <- detections.j |> 
         dplyr::filter(year==year.k)
       
-      #13. If there's not detections, make a blank raster----
+      #13. If there's no detections, make a blank raster----
       if(nrow(detections.k)==0){
         
-        #TO DO: DECIDE WHAT TO PUT HERE####
-        rast.out <- ifel(!is.na(rast.j), Inf, NA)
+        rast.out <- rasts[[bcr.j]]
         
       } else {
         
@@ -159,7 +157,7 @@ for(i in 1:nrow(loop)){
           vect()
         
         #15. Caculate distance to nearest----
-        rast.out <- distance(rast.j, pts.k) |> 
+        rast.out <- distance(rast.j, pts.k, unit="km") |> 
           crop(sf.j, mask=TRUE)
         
       }
