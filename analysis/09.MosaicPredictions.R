@@ -27,6 +27,8 @@
 # 4) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
 # -------------------
 
+# This script collects a list of prediction model objects that will not load and deletes them at the end of the script. The prediction script will need to be rerun for those files.
+
 #TO DO: PARALLELIZE######
 
 #TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
@@ -62,7 +64,8 @@ predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predic
   separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          boot = as.numeric(boot)) |> 
-  dplyr::select(-folder, -file)
+  dplyr::select(-folder, -file) |> 
+  dplyr::filter(str_sub(bcr, 1, 3)=="can")
 
 #2. Get list of extrapolations----
 extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
@@ -71,7 +74,7 @@ extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "e
     mutate(year = as.numeric(year),
            boot = as.numeric(boot)) |> 
     dplyr::select(-folder, -file) |> 
-  dplyr::filter(!bcr %in% c("can8182", "usa41423", "usa2"))
+  dplyr::filter(str_sub(bcr, 1, 3)=="can")
 
 #3. Get list of mosaics completed----
 mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE),
@@ -88,7 +91,8 @@ sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.
 
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
+  dplyr::filter(use==TRUE, spp %in% sppuse,
+                str_sub(bcr, 1, 3)=="can") |> 
   expand_grid(year = seq(1985, 2020, 5),
               boot = seq(1, 10, 1))
 
@@ -100,6 +104,17 @@ loop <- full_join(all, todo) |>
     ungroup() |>
     dplyr::filter(nas==0) |> 
     anti_join(mosaicked)
+
+#7. Not done----
+missing <- full_join(all, todo) |> 
+  mutate(na = ifelse(is.na(file.pred), 1, 0)) |>
+  group_by(spp, boot, year) |>
+  summarize(nas = sum(na)) |> 
+  ungroup() |>
+  dplyr::filter(nas>0)
+
+notextrap <- predicted |> 
+  anti_join(extrapolated)
 
 #MOSAIC####
 
@@ -141,7 +156,8 @@ for(i in 1:nrow(loop)){
             mutate(path.extrap = path.pred,
                    spp = spp.i,
                    boot = boot.i,
-                   year = year.i))
+                   year = year.i)) |> 
+    dplyr::filter(str_sub(bcr, 1, 3)=="can")
     
   #9. Import, mosaic, and sum extrapolation rasters-------
   f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
