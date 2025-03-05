@@ -14,7 +14,7 @@
 
 # Validation is done for two spatial extents: BCR & mosaic. The mosaic extent is added to the end of the list of BCRs and compiled from the BCR data.
 
-#TO DO: PARALLELIZE
+# This script collects a list of bootstrap model objects that will not load and deletes them at the end of the script. The bootstrap script will need to be rerun for those files.
 
 #PREAMBLE############################
 
@@ -92,7 +92,7 @@ colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 #INVENTORY#########
 
 #1. Get list of sets that have been mosaicked----
-#We use the mosaics as input because we know they have all subunits, ten bootstraps, and the mosaics and extrapolation complete
+#We use the mosaics as input because we know they have all subunits, and the mosaics and extrapolation complete at the bootstrap level
 mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
                       file = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
   separate(file, into=c("spp", "boot", "year", "filetype"), remove=FALSE) |>  
@@ -123,6 +123,7 @@ loop <- anti_join(todo, done)
 #TEST DATA COMPILATION###############
 
 #1. Set up loop----
+corrupt <- data.frame()
 for(i in 1:nrow(loop)){
   
   start.i <- Sys.time()
@@ -134,7 +135,8 @@ for(i in 1:nrow(loop)){
   #3. Get the bcrs----
   loop.i <- birdlist[,c("bcr", spp.i)] |> 
     pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-    dplyr::filter(use==TRUE) |> 
+    dplyr::filter(use==TRUE,
+                  str_sub(bcr, 1, 3)=="can") |> 
     dplyr::select(bcr, use) |> 
     rbind(data.frame(bcr="mosaic", use=TRUE))
   
@@ -151,8 +153,17 @@ for(i in 1:nrow(loop)){
     if(bcr.j!="mosaic"){
       
       #6. Read in files----
-      load(file.path(root, "output", "bootstraps", spp.i,
-                     paste0(spp.i, "_", bcr.j, "_", boot.i, ".R")))
+      mod.i <- try(load(file.path(root, "output", "bootstraps", spp.i,
+                     paste0(spp.i, "_", bcr.j, "_", boot.i, ".R"))))
+      
+      if(inherits(mod.i, "try-error")){
+        
+        corrupt <- rbind(corrupt, loop[i,] |> 
+                           mutate(output = "bootstraps",
+                                  bcr = bcr.j))
+        break
+        
+      }
       
       #7. Get training data----
       train.j <- visit.i |> 
@@ -209,12 +220,14 @@ for(i in 1:nrow(loop)){
       
       #10. Read in prediction raster----
       if(bcr.j!="mosaic"){
-        rast.k <- rast(file.path(root, "output", "predictions", spp.i,
-                                 paste0(spp.i, "_", bcr.j, "_", boot.i, "_", year.k, ".tiff")))
+        rast.k <- try(rast(file.path(root, "output", "predictions", spp.i,
+                                 paste0(spp.i, "_", bcr.j, "_", boot.i, "_", year.k, ".tiff"))))
       } else {
-        rast.k <- rast(file.path(root, "output", "mosaics", "predictions",
-                                 paste0(spp.i, "_", boot.i, "_", year.k, ".tiff")))
+        rast.k <- try(rast(file.path(root, "output", "mosaics", "predictions",
+                                 paste0(spp.i, "_", boot.i, "_", year.k, ".tiff"))))
       }
+      
+      if(inherits(rast.k, "try-error")){break}
 
       
       #11. filter and project data----
@@ -237,6 +250,8 @@ for(i in 1:nrow(loop)){
       cat("Year", year.k, "\n")
       
     }
+    
+    if(inherits(rast.k, "try-error")){break}
     
     #13. Use within BCR only for validation----
     #i.e., filter out the points in the buffer (non-mosaic only)
@@ -318,10 +333,7 @@ for(i in 1:nrow(loop)){
     
     eval.i <- dismo::evaluate(p.i$prediction, a.i$prediction)
     
-    #6. Brier score----
-    brier.i <- BrierScore(resp = test.j$count, pred = test.j$prediction)
-    
-    #7. Calculate other count metrics----
+    #6. Calculate other count metrics----
     #Accuracy, discrimination (spearman, pearson, intercept, slope), precision (Norberg et al. 2019 Ecol Mongr, Waldock et al. 2022 Ecography)
     
     accuracy.i <- test.j |> 
@@ -335,15 +347,15 @@ for(i in 1:nrow(loop)){
     cor.spearman.i = cor(test.j$prediction, test.j$count, method="spearman")
     cor.pearson.i = cor(test.j$prediction, test.j$count, method="pearson")
     
-    #8. Calculate test deviance & residuals----
+    #7. Calculate test deviance & residuals----
     test.dev.i <- calc.deviance(test.j$count, test.j$prediction, family="poisson")
     
     test.resid.i <- mean(abs(test.j$count - test.j$prediction))
     
-    #9. Calculate pseudo-R2----
+    #8. Calculate pseudo-R2----
     r2.i <- pseudo_r2(test.j$count, test.j$prediction)
     
-    #10. Put together----
+    #9. Put together----
     eval[[j]] <- data.frame(spp=spp.i,
                              bcr=bcr.j,
                              boot=boot.i,
@@ -366,12 +378,11 @@ for(i in 1:nrow(loop)){
                              cor = eval.i@cor,
                              cor.spearman = cor.spearman.i,
                              cor.pearson = cor.pearson.i,
-                             brier = brier.i,
                              accuracy = accuracy.i$accuracy,
                              precision = precision.i,
                              discrim.intercept = lm.i$coefficients[1],
                              discrim.slope = lm.i$coefficients[2],
-                             pseudor2 <-r2.i[1])
+                             pseudor2 = r2.i[1])
     
     train[[j]] <- train.j
     test[[j]] <- test.j
@@ -379,6 +390,9 @@ for(i in 1:nrow(loop)){
     cat("BCR", loop.i$bcr[j], ":", j, "of", nrow(loop.i), "\n")
 
   }
+  
+  if(inherits(rast.k, "try-error")){next}
+  if(inherits(mod.i, "try-error")){next}
   
   #15. Add some names----
   names(test) <- loop.i$bcr
@@ -394,3 +408,10 @@ for(i in 1:nrow(loop)){
   cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="mins"), "minutes\n")
   
 }
+
+#17. Delete corrupt bootstraps----
+remove <- corrupt |> 
+  mutate(path = file.path(root, "output", "bootstraps", spp,
+                          paste0(spp, "_", bcr, "_", boot, ".R")))
+
+file.remove(unique(remove$path))
