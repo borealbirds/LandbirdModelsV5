@@ -37,7 +37,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 48}
-if(!cc | test){ nodes <- 2}
+if(!cc | test){ nodes <- 4}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -83,7 +83,7 @@ brt_boot <- function(i){
   
   #2. Load full model----
   if(tuned.i==TRUE){
-    trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(loop$spp[i], "_", loop$bcr[i], "_", loop$lr[i], ".R"))))
+    trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".R"))))
     
     if(inherits(trymod, "try-error")){ return(NULL) }
     
@@ -147,6 +147,8 @@ brt_boot <- function(i){
                   keep.data = FALSE,
                   n.cores=1))
   
+  if(inherits(b.i, "try-error")){ return(NULL) }
+  
   #11. Get performance metrics----
   out.i <- loop[i,] |> 
     cbind(data.frame(n = nrow(dat.i),
@@ -154,8 +156,8 @@ brt_boot <- function(i){
                      time = (proc.time()-t0)[3]))
   
   #12. Save model----
-  if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
-    dir.create(file.path(root, "output", "predictions", spp.i))
+  if(!(file.exists(file.path(root, "output", "bootstraps", spp.i)))){
+    dir.create(file.path(root, "output", "bootstraps", spp.i))
   }
   
   save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
@@ -203,7 +205,8 @@ todo <- perf |>
   mutate(tuned = TRUE) |> 
   rbind(notune) |> 
   expand_grid(boot=c(1:boots)) |> 
-  arrange(-time)
+  arrange(-time) |> 
+  unique()
 
 #6. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
