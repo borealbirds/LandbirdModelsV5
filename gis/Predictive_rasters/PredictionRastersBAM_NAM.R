@@ -179,6 +179,7 @@ MODIS<-list()
 
 for (j in 1:length(ModList)){
   MODIS[[j]]<-rast(ModList[[j]])
+  MODIS[[j]]<-terra::project(MODIS[[j]],Format,mask=TRUE,align=TRUE,method="near")  # corrected April 10 2025 - this line missing and resulted in misaligned layer
   MODIS[[j]]<-crop(MODIS[[j]],e) 
   writeRaster(MODIS[[j]],paste(ModList[j],"2.tiff",sep=""))
 }
