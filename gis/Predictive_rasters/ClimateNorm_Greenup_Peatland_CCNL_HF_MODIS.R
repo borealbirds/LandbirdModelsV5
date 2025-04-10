@@ -171,15 +171,4 @@ for (j in 1:length(Light)){
   writeRaster(Light[[j]],paste(substr(Lights[j],1,4),substr(Lights[j],10,14),".tif",sep=""))
   }
 
-#### MODIS ####
-setwd("/Users/annadrake/Downloads/MODIS/")
-##Crop and reproject and align
-ModList<-list.files(pattern=".tif",all.files=TRUE, full.names=FALSE)
-MODIS<-list()
 
-for (j in 1:length(ModList)){
-  MODIS[[j]]<-rast(ModList[[j]])
-  MODIS[[j]]<-terra::project(MODIS[[j]],Format,mask=TRUE,align=TRUE,method="near")  # corrected April 10 2025 - this line missing and resulted in misaligned layer
-  MODIS[[j]]<-crop(MODIS[[j]],e) 
-  writeRaster(MODIS[[j]],paste(ModList[j],"2.tiff",sep=""))
-}
