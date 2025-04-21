@@ -16,6 +16,8 @@
 
 #wt_qpad_offsets() is now available as a function in wildRtrax and should replace much of the code below in future versions.
 
+#TO DO: FIGURE AND FIX NAS in TSSR
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -56,30 +58,29 @@ source("functions.R")
 load(file.path(root, "data", "01_NM5.0_data_clean.Rdata"))
 
 #2. Format visit data for offset calculation---
-visit.x <- visit %>% 
+visit.x <- visit |> 
   mutate(time = str_sub(date, 12, 16),
-         date = as.character(date(date))) %>% 
-  rename(dur = duration, dis = distance, tagmeth = tagMethod)
+         date = as.character(date(date))) |> 
+  rename(dur = duration, dis = distance, tagmeth = tagMethod) |> 
+  data.frame()
 
-#3. Split into local and utc time zone objects----
-visit.x.local <- visit.x %>% 
-  dplyr::filter(source!="eBird")
-visit.x.utc <- visit.x %>% 
-  dplyr::filter(source=="eBird")
+#3. Format for offset calculation----
+x <- make_x(visit.x, tz="local", check_xy=FALSE)
+x$id <- visit.x$id
 
-#4. Format for offset calculation----
-x.local <- make_x(visit.x.local, tz="local", check_xy=FALSE, tm=FALSE)
-x.local$id <- visit.x.local$id
-x.utc <- make_x(visit.x.utc, tz="utc",  check_xy=FALSE, tm=FALSE)
-x.utc$id <- visit.x.utc$id
-x <- rbind(x.local, x.utc)
-
-#5. Add temporal covs to visits object
-visit <- visit %>% 
-  left_join(x %>% 
+#4. Add temporal covs to visits object ----
+visit <- visit |> 
+  left_join(x |> 
               mutate(tssr = 24*TSSR,
-                     jday = JDAY*365) %>% 
+                     jday = floor(JDAY*365)) |> 
               dplyr::select(id, tssr, jday))
+
+#5. Check tssr distribution ----
+#just take a sample to speed it up
+set.seed(1234)
+ggplot(visit |> sample_n(100000)) +
+  geom_point(aes(x=lon, y=tssr)) +
+  facet_wrap(~source)
 
 #D. CALCULATE OFFSETS####
 
