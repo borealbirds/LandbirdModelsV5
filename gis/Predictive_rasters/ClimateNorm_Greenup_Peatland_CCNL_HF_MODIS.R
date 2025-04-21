@@ -1,6 +1,7 @@
 #################################################
 #  Producing Prediction Rasters for BAM NAM 4.1
 #  February, 2023
+#  Anna Drake
 #################################################
 
 #install.packages('terra', repos='https://rspatial.r-universe.dev')
@@ -123,8 +124,7 @@ for (j in 1:length(Greenfiles)){
   
   writeRaster(AvDormancy,"StandardDormancy2001_2005.tif", overwrite=TRUE)
   writeRaster(AvGreenup,"StandardGreenup2001_2005.tif", overwrite=TRUE)
-  
-?mean
+
 
 #### HUMAN FOOTPRINT CANADA #######
 HF<-rast("cum_threat2020.02.18.tif")
@@ -171,14 +171,4 @@ for (j in 1:length(Light)){
   writeRaster(Light[[j]],paste(substr(Lights[j],1,4),substr(Lights[j],10,14),".tif",sep=""))
   }
 
-#### MODIS ####
-setwd("/Users/annadrake/Downloads/MODIS/")
-##Crop and reproject and align
-ModList<-list.files(pattern=".tif",all.files=TRUE, full.names=FALSE)
-MODIS<-list()
 
-for (j in 1:length(ModList)){
-  MODIS[[j]]<-rast(ModList[[j]])
-  MODIS[[j]]<-crop(MODIS[[j]],e) 
-  writeRaster(MODIS[[j]],paste(ModList[j],"2.tiff",sep=""))
-}
