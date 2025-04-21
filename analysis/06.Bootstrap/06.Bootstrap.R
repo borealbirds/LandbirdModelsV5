@@ -60,7 +60,7 @@ tmpcl <- clusterEvalQ(cl, library(stats))
 #7. Load data package----
 print("* Loading data on master *")
 
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Load data objects----
 print("* Loading data on workers *")
@@ -83,7 +83,7 @@ brt_boot <- function(i){
   
   #2. Load full model----
   if(tuned.i==TRUE){
-    trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".R"))))
+    trymod <- try(load(file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata"))))
     
     if(inherits(trymod, "try-error")){ return(NULL) }
     
@@ -160,7 +160,7 @@ brt_boot <- function(i){
     dir.create(file.path(root, "output", "bootstraps", spp.i))
   }
   
-  save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R")))
+  save(b.i, out.i, visit.i, file=file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".Rdata")))
   
 }
 
@@ -177,7 +177,7 @@ tuned <- data.frame(path = list.files(file.path(root, "output", "tuning"), patte
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5)))  |> 
   dplyr::select(-step) |> 
-  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.R", recursive=TRUE)) |> 
+  inner_join(data.frame(file = list.files(file.path(root, "output", "fullmodels"), pattern="*.Rdata", recursive=TRUE)) |> 
                separate(file, into=c("folder", "bcr", "lr"), sep="_", remove=TRUE) |> 
                separate(folder, into=c("folder", "spp")) |> 
                mutate(lr = as.numeric(str_sub(lr, -100, -3))) |> 
@@ -209,8 +209,8 @@ todo <- perf |>
   unique()
 
 #6. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
-                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive=TRUE)) |> 
+done <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
   separate(file, into=c("folder", "spp", "bcr", "boot", "filetype"), remove=FALSE) |>
   mutate(boot = as.numeric(boot))
 

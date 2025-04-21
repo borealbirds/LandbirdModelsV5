@@ -30,7 +30,7 @@ meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"
 #A. DATA PREP####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.Rdata"))
 rm(bird)
 rm(offsets)
 
@@ -577,7 +577,7 @@ write.csv(loc.gee, file=file.path(root, "Data", "Covariates", "03_NM5.0_data_cov
 #E. ASSEMBLE####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM5.0_data_offsets.R"))
+load(file.path(root, "Data", "02_NM5.0_data_offsets.Rdata"))
 
 #2. Load previously extracted covariates and bind with new ones----
 loc.gee.match <- read.csv(file.path(root, "Data", "Covariates", "03_NM5.0_data_covariates_GEE-match.csv")) %>% 
@@ -643,4 +643,4 @@ visit.covs <- visit %>%
 #G. SAVE#####
 visit <- visit.covs
 
-save(visit, bird, offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.R"))
+save(visit, bird, offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.Rdata"))

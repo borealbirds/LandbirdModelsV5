@@ -23,12 +23,13 @@ print("* Loading packages on master *")
 library(tidyverse)
 library(gbm)
 library(parallel)
+#library(future)
 library(Matrix)
 library(terra)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 48}
@@ -37,6 +38,7 @@ if(!cc | test){ nodes <- 2}
 #4. Create and register clusters----
 print("* Creating clusters *")
 cl <- makePSOCKcluster(nodes, type="PSOCK")
+#plan(multisession, workers = nodes)
 
 #5. Set root path----
 print("* Setting root file path *")
@@ -63,8 +65,8 @@ brt_predict <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
-  if(inherits(load.i, "try-error")){ return(NULL) }
+  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".Rdata"))))
+  if(inherits(load.i, "try-error")){ return(NULL)}
   
   #3. Load raster stack----
   stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
@@ -95,8 +97,8 @@ tmpcl <- clusterExport(cl, c("brt_predict"))
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive = TRUE),
-                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive = TRUE)) |> 
+booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", recursive = TRUE)) |> 
   separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
   mutate(boot = as.numeric(boot))
 
@@ -131,9 +133,12 @@ tmpcl <- clusterExport(cl, c("loop"))
 
 #6. Run BRT function in parallel----
 print("* Making predictions *")
+# mods <- future_lapply(X=1:nrow(loop),
+#                   FUN=brt_predict)
+
 mods <- parLapply(cl,
                   X=1:nrow(loop),
-                  fun=brt_predict)
+                  fun = brt_predict)
 
 #CONCLUDE####
 

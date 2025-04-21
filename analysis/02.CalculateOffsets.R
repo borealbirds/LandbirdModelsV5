@@ -53,7 +53,7 @@ source("functions.R")
 #B. PREP DATA####
 
 #1. Load data package from script 01----
-load(file.path(root, "01_NM5.0_data_clean.R"))
+load(file.path(root, "data", "01_NM5.0_data_clean.Rdata"))
 
 #2. Format visit data for offset calculation---
 visit.x <- visit %>% 
@@ -104,4 +104,4 @@ offsets <- rename(offsets, CAJA = GRAJ)
 #E. SAVE####
 
 #1. Save----
-save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.R"))
+save(visit, bird, offsets, file=file.path(root, "02_NM5.0_data_offsets.Rdata"))

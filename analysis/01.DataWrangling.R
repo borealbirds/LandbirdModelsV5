@@ -547,4 +547,4 @@ bird <- bird.ak %>%
   replace(is.na(.), 0)
 
 #10. Save it----
-save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.R"))
+save(visit, bird, file=file.path(root, "01_NM5.0_data_clean.Rdata"))

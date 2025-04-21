@@ -54,7 +54,7 @@ bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
 
 #6. Data package----
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #INVENTORY####
 

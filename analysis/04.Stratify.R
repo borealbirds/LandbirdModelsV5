@@ -46,7 +46,7 @@ library(usdm) #VIF
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with offsets and covariates----
-load(file.path(root, "data", "03_NM5.0_data_covariates.R"))
+load(file.path(root, "data", "03_NM5.0_data_covariates.Rdata"))
 
 #4. Turn off scientific notation---
 options(scipen=99999)
@@ -342,4 +342,4 @@ gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
 bird <- bird[as.character(visit$id),]
 
 #3. Save----
-save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))

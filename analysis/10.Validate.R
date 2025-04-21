@@ -31,7 +31,7 @@ library(carat)
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data file----
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #4. Convert bird data to dataframe----
 bird.df <- as.data.frame(as.matrix(bird))
@@ -154,7 +154,7 @@ for(i in 1:nrow(loop)){
       
       #6. Read in files----
       mod.i <- try(load(file.path(root, "output", "bootstraps", spp.i,
-                     paste0(spp.i, "_", bcr.j, "_", boot.i, ".R"))))
+                     paste0(spp.i, "_", bcr.j, "_", boot.i, ".Rdata"))))
       
       if(inherits(mod.i, "try-error")){
         
@@ -412,6 +412,6 @@ for(i in 1:nrow(loop)){
 #17. Delete corrupt bootstraps----
 remove <- corrupt |> 
   mutate(path = file.path(root, "output", "bootstraps", spp,
-                          paste0(spp, "_", bcr, "_", boot, ".R")))
+                          paste0(spp, "_", bcr, "_", boot, ".Rdata")))
 
 file.remove(unique(remove$path))

@@ -24,8 +24,6 @@
 
 #TO DO: PARALLELIZE
 
-#TO DO: ADD MODEL VALIDATION OUTPUT#########
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -51,7 +49,7 @@ bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffe
 bcr.all <- st_union(bcr.country)
 
 #6. Data package----
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #INVENTORY#########
 
@@ -83,6 +81,13 @@ todo <- inner_join(mosaics, sampled) |>
   ungroup() |> 
   dplyr::filter(boots==10)
 
+missing <- inner_join(mosaics, sampled) |> 
+  group_by(spp, year, bcr) |> 
+  summarize(boots = n()) |> 
+  ungroup() |> 
+  dplyr::filter(boots < 10) |> 
+  dplyr::filter(bcr %in% c("can71", "can81"))
+
 #3. Check which have been run----
 done <- data.frame(file = list.files(file.path(root, "output", "packaged"), pattern="*.tiff", recursive=TRUE))  |> 
   separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
@@ -92,7 +97,9 @@ done <- data.frame(file = list.files(file.path(root, "output", "packaged"), patt
 
 #4. Make the todo list----
 loop <- anti_join(todo, done) |> 
-  dplyr::filter(bcr=="mosaic")
+  dplyr::filter(bcr %in% c("mosaic"),
+                year==2020,
+                spp %in% c("TEWA", "OSFL"))
 
 #PACKAGE###########
 

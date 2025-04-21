@@ -60,7 +60,7 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 #7. Load data package----
 print("* Loading data on master *")
 
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(bird, covlist, bcrlist, offsets, visit, gridlist)
 
 #8. Get list of covariates to include----
@@ -96,7 +96,7 @@ calc_extrapolation <- function(i){
   year.i <- loop$year[i]
   
   #2. Load model----
-  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".R"))))
+  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".Rdata"))))
   if(inherits(load.i, "try-error")){ return(NULL) }
   if(inherits(b.i, "try-error")){ return(NULL) }
   
@@ -166,8 +166,8 @@ tmpcl <- clusterExport(cl, c("calc_extrapolation"))
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", full.names=TRUE, recursive=TRUE),
-                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.R", recursive=TRUE)) |> 
+booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive=TRUE),
+                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
   separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
   mutate(boot = as.numeric(boot))
 

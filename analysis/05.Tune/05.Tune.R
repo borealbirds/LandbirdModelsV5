@@ -78,7 +78,7 @@ tmpcl <- clusterEvalQ(cl, library(Matrix))
 #7. Load data package----
 print("* Loading data on master *")
 
-load(file.path(root, "data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Set species subset----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
@@ -218,7 +218,7 @@ brt_tune <- function(i){
     }
     
     write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
-    save(m.i, file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".R")))
+    save(m.i, file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata")))
     
   }
   
@@ -236,8 +236,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::filter(spp %in% sppuse,
-                bcr %in% c("usa5", "usa30", "usa28", "usa23", "usa2", "usa14", "usa13", "usa12", "usa11", "usa10")) |> 
+  dplyr::filter(spp %in% sppuse) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
@@ -252,7 +251,8 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
                     file = list.files(file.path(root, "output", "tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+  mutate(lr = as.numeric(str_sub(lr, -100, -5))) |> 
+  dplyr::filter(spp %in% sppuse)
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
@@ -278,7 +278,9 @@ if(nrow(files) > 0){
     anti_join(done) |> 
     group_by(spp, bcr) |> 
     mutate(last = ifelse(trees==10000, max(lr), min(lr))) |> 
-    dplyr::filter(lr == last) |> 
+    dplyr::filter(lr == last,
+                  lr > lr.min,
+                  lr < lr.max) |> 
     mutate(lr.next = case_when(trees == 10000 ~ lr*10,
                                trees < 1000 ~ lr/10)) |> 
     ungroup()
