@@ -14,8 +14,7 @@ library(dplyr)
 setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
 
 # Set extent 
-EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
-rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
+rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = "EPSG:5072")
 
 ## Access urls and extract yearlist
 webData <- read.csv("./Scripts/webDataAccess.csv", fileEncoding="UTF-8-BOM")
@@ -74,8 +73,8 @@ for (yr in yrlist) {
 
 
 ## When considering the rank
-  road <- road[,c("isroad", "RANK")]
-  for(rk in unique(road$RANK)){
+road <- road[,c("isroad", "RANK")]
+for(rk in unique(road$RANK)){
     roadcast <- road %>%
       filter(RANK == rk) %>%
       st_transform(st_crs(rast1k)) %>%
@@ -85,16 +84,16 @@ for (yr in yrlist) {
     out.rast100 <- file.path(out.folder, paste0("canroad_1km", as.character(yr), "_rk", rk, ".tif"))
     writeRaster(roadrast, out.rast100)
     rm(roadrast)
-  }
-  roadcast <- road %>%
+}
+roadcast <- road %>%
     st_transform(st_crs(rast1k)) %>%
     st_cast("MULTILINESTRING")
   
-  roadvec <- vect(roadcast)
-  road.1kden <- rasterizeGeom(roadvec, rast1k, fun="length", unit="km")
-  rm(roadcast)
-  out.rast1k <- file.path(out.folder, paste0("canroad_1kmden_", as.character(yr), ".tif"))
-  writeRaster(road.1kden, out.rast1k)
-  rm(roadvec)
-}
+roadvec <- vect(roadcast)
+road.1kden <- rasterizeGeom(roadvec, rast1k, fun="length", unit="km")
+rm(roadcast)
+out.rast1k <- file.path(out.folder, paste0("canroad_1kmden_", as.character(yr), ".tif"))
+writeRaster(road.1kden, out.rast1k)
+rm(roadvec)
+
                                                                                                                                                                                                                                 
