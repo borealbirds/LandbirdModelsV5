@@ -60,7 +60,8 @@ visit.v <- visit |>
   st_transform(5072) |> 
   vect()
 
-#2. Read in buffered & shapefile----
+#2. Read in buffered & unbuffered shapefiles----
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
 bcr.buff <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
   
 #3. Set up loop for BCR attribution----
@@ -68,23 +69,39 @@ bcr.df <- data.frame(id=visit$id)
 for(i in 1:nrow(bcr.buff)){
   
   #4. Filter bcr shapefile----
-  bcr.i <- bcr.buff |> 
+  bcr_buff.i <- bcr.buff |> 
     dplyr::filter(row_number()==i)
+  bcr.i <- bcr |> 
+    dplyr::filter(subUnit==bcr_buff.i$subUnit,
+                  country==bcr_buff.i$country)
   
   #5. Convert to raster for fast extraction----
+  r_buff <- rast(ext(bcr_buff.i), resolution=1000, crs=crs(bcr_buff.i))
   r <- rast(ext(bcr.i), resolution=1000, crs=crs(bcr.i))
+  
+  bcr_buff.r <- rasterize(x=bcr_buff.i, y=r_buff, field="subUnit")
   bcr.r <- rasterize(x=bcr.i, y=r, field="subUnit")
   
   #6. Extract raster value----
+  bcr_buff.out <- data.frame(subUnit=extract(x=bcr_buff.r, y=visit.v)[,2]) |> 
+    mutate(buff = ifelse(!is.na(subUnit), TRUE, FALSE))
   bcr.out <- data.frame(subUnit=extract(x=bcr.r, y=visit.v)[,2]) |> 
-    mutate(use = ifelse(!is.na(subUnit), TRUE, FALSE))
-  bcr.df[,(i+1)] <- bcr.out$use
+    mutate(bcr = ifelse(!is.na(subUnit), TRUE, FALSE))
+  
+  #7. Wrangle to 3 classes: 0 = exclude from model, 1 = use in model, 2 = use in validation
+  bcr.use <- bcr_buff.out |> 
+    mutate(bcr = bcr.out$bcr) |> 
+    mutate(use = case_when(buff==FALSE & bcr==FALSE ~ 0,
+                           bcr==FALSE & buff==TRUE ~ 2,
+                           buff==TRUE ~ 1))
+  
+  bcr.df[,(i+1)] <- bcr.use$use
   
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.buff)))
   
 }
 
-colnames(bcr.df) <- c("id", paste0(bcr.buff$country, bcr.buff$subUnit))
+colnames(bcr.df) <- c("id", paste0(bcr$country, bcr$subUnit))
 
 #FILTERING######################
 
@@ -98,11 +115,15 @@ mintssr <- -1
 maxtssr <- 6
 
 #day of year
-minday <- 135 #May 15
+minday <- 152 #June 1
 maxday <- 196 #July 15
 
 #2. Remove points outside study area
-bcr.in <- bcr.df[rowSums(ifelse(bcr.df[,2:length(bcr.df)]==TRUE, 1, 0)) > 0,]
+bcr.in <- bcr.df |> 
+  column_to_rownames("id") |> 
+  dplyr::filter(rowSums(across(everything())) > 0) |> 
+  rownames_to_column("id") |> 
+  mutate(id = as.integer(id))
 
 #3. Filter visits----
 visit.use <- visit |> 
@@ -111,7 +132,8 @@ visit.use <- visit |>
                 tssr >= mintssr,
                 tssr <= maxtssr,
                 jday >= minday,
-                jday <= maxday)
+                jday <= maxday,
+                duration > 0)
 
 #4. Filter offset, bird, and bcr objects by remaining visits----
 offsets.use <- offsets |> 
@@ -127,14 +149,14 @@ bcr.use <- bcr.in |>
 
 #1. Summarize subunit sample sizes----
 bcr.n <- data.frame(bcr = unique(colnames(bcr.use)[-1]),
-                    n = colSums(bcr.use[-1]==TRUE)) |> 
+                    n = colSums(bcr.use[-1]>0)) |> 
   arrange(n)
 
 write.csv(bcr.n, file.path(root, "Regions", "SubUnitSampleSizes.csv"), row.names=FALSE)
 
 #2. Plot sample sizes----
 bcr.sf <- bcr.buff |> 
-  mutate(bcr = paste0(country, "_", subUnit)) |> 
+  mutate(bcr = paste0(country, subUnit)) |> 
   left_join(bcr.n)
 
 ggplot(bcr.sf) +
@@ -143,7 +165,7 @@ ggplot(bcr.sf) +
 
 ggsave(filename=file.path(root, "Figures", "SubUnitSampleSizes.jpeg"), width = 8, height = 4)
 
-#SPATIAL GRID FOR BOOTSTRAP THINNING##############
+#BOOTSTRAP THINNING##############
 
 #1. Get list of BCRs----
 bcrs <- sort(unique(colnames(bcr.use)[-1]))
@@ -156,6 +178,43 @@ visit.grid <- visit.use |>
 
 length(unique(visit.grid$cell))
 
+#3. Set number of bootstraps ----
+boots <- 32
+
+#4. Get list of unique grid cells & years ----
+samples <- visit.grid |> 
+  dplyr::select(year, cell) |> 
+  unique()
+
+#5. Make the bootstrap list ----
+#Choose one sample id for each unique grid cell & year ----
+for(i in 1:boots){
+  
+  set.seed(i)
+  
+  boot.i <- visit.grid |> 
+    dplyr::select(id, year, cell) |> 
+    group_by(year, cell) |> 
+    mutate(rowid = row_number(),
+           use = sample(1:max(rowid), 1)) |> 
+    ungroup() |> 
+    dplyr::filter(rowid==use) |> 
+    dplyr::select(cell, year, id) |> 
+    arrange(cell, year)
+  
+  if(i==1){
+    bootlist <- boot.i
+  } else {
+    bootlist[,i+2] <- boot.i$id
+  }
+  
+  cat(i, "    ")
+
+}
+
+#6. Fix column names ----
+colnames(bootlist) <- c("cell", "year", paste0("b", seq(1:boots)))
+
 #UPDATE BIRD LIST BY BCR##############
 
 #1. Set detection threshold for inclusion----
@@ -166,31 +225,22 @@ birdlist <- data.frame(bcr=bcrs)
 
 for(i in 1:length(bcrs)){
   
-  #3. Select visits within BCR----
-  #thin for realistic example
-  set.seed(1234)
-  bcr.i <- bcr.use[,c("id", bcrs[i])] |>
+  #3. Filter bird data by BCR & bootstrap 1----
+  bird.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
-    dplyr::filter(use==TRUE) |> 
-    left_join(visit.grid |> 
-                dplyr::select(id, year, cell)) |> 
-    group_by(year, cell) |> 
-    mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) |> 
-    ungroup() |> 
-    dplyr::filter(rowid==use)
+    dplyr::filter(use > 0) |> 
+    dplyr::select(-use) |> 
+    left_join(bird.use, by="id") |> 
+    dplyr::filter(id %in% bootlist$b1) |> 
+    dplyr::select(all_of(colnames(offsets)))
   
-  #4. Filter bird data----
-  bird.i <- bird.use |> 
-    dplyr::filter(id %in% bcr.i$id)
-  
-  #5. Determine whether exceeds threshold----
-  birdlist[i,c(2:ncol(bird.use))] <- sapply(bird.i[2:ncol(bird.use)], function(x) sum(x > 0, na.rm=TRUE)) > nmin
+  #4. Determine whether exceeds threshold----
+  birdlist[i,c(2:ncol(bird.i))] <- sapply(bird.i[2:ncol(bird.i)], function(x) sum(x > 0, na.rm=TRUE)) > nmin
   
 }
 
-#6. Rename columns with bird ID----
-colnames(birdlist) <- c("bcr", colnames(bird.use[2:ncol(bird.use)]))
+#5. Rename columns with bird ID----
+colnames(birdlist) <- c("bcr", colnames(offsets[2:ncol(offsets)]))
 
 #F. COVARIATE LOOKUP TABLE###############
 
@@ -266,7 +316,7 @@ for(i in 1:length(bcrs)){
   #10. Filter data to BCR----
   visit.i <- bcr.use[,c("id", bcrs[i])] |>
     data.table::setnames(c("id", "use")) |>
-    dplyr::filter(use==TRUE) |> 
+    dplyr::filter(use > 0) |> 
     dplyr::select(-use) |> 
     left_join(visit.use, by="id")
   
@@ -275,22 +325,11 @@ for(i in 1:length(bcrs)){
     dplyr::filter(bcr==bcrs[i]) |> 
     pivot_longer(-bcr, names_to="cov", values_to="use") |> 
     dplyr::filter(use==TRUE)
-  
-  #12. Thin visits to be realistic of a model run----
-  set.seed(1234)
-  visit.i.sub <- visit.grid |> 
-    dplyr::select(id, year, cell) |> 
-    group_by(year, cell) |> 
-    mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) |> 
-    ungroup() |> 
-    dplyr::filter(rowid==use) |> 
-    inner_join(visit.i)
-  
-  #13. Get the covariates----
+
+  #12. Get the covariates for bootstrap 1----
   #Drop factors, use them always
-  cov.i <- visit |> 
-    dplyr::filter(id %in% visit.i.sub$id) |> 
+  cov.i <- visit.i |> 
+    dplyr::filter(id %in% bootlist$b1) |> 
     dplyr::select(all_of(covlist.i$cov)) |> 
     select_if(is.numeric) |> 
     data.frame()
@@ -317,29 +356,19 @@ for(i in 1:length(bcrs)){
 #thin out covariate fields for minimizing RAM
 #convert bird object to sparse matrix for minimizing RAM (doesn't save space to do this for other objects because they don't have enough zeros)
 cov <- visit.use |> 
-  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday)
+  dplyr::select(-source, -organization, -project, -sensor, -equipment, -location, -buffer, -lat, -lon, -year, -date, -observer, -duration, -distance, -tssr, -jday, -tagMethod, -method, -country)
 
 visit <- visit.use |> 
-  dplyr::select(id, source, organization, project, sensor, tagMethod, method, equipment, location, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
-
-gridlist <- visit.grid |> 
-  dplyr::select(id, year, cell)
+  dplyr::select(id, source, organization, project, sensor, tagMethod, method, equipment, location, country, buffer, lat, lon, year, date, observer, duration, distance, tssr, jday) 
 
 bird <- bird.use |> 
+  dplyr::select(all_of(colnames(offsets))) |> 
   column_to_rownames("id") |> 
   as.matrix() |> 
   as("dgCMatrix")
+
 offsets <- offsets.use
 bcrlist <- bcr.use
 
-#2. Take the NA offsets out----
-#Infinite offset because duration==0, should move this to filtering
-offsets <- offsets[is.infinite(offsets$ALFL)==FALSE,]
-cov <- dplyr::filter(cov, id %in% offsets$id)
-visit <- dplyr::filter(visit, id %in% offsets$id)
-bcrlist <- dplyr::filter(bcrlist, id %in% offsets$id)
-gridlist <- dplyr::filter(gridlist, id %in% offsets$id)
-bird <- bird[as.character(visit$id),]
-
 #3. Save----
-save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, gridlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
+save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, bootlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
