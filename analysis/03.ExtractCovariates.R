@@ -43,7 +43,7 @@ library(terra) #basic raster handling
 library(sf) #basic shapefile handling
 library(exactextractr) #fast & efficient raster extraction
 library(rgee)
-ee_Initialize(gcs=TRUE)
+#ee_Initialize(gcs=TRUE)
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -54,7 +54,7 @@ meth <- readxl::read_excel(file.path(root, "NationalModels_V5_VariableList.xlsx"
 #A. DATA PREP####
 
 #1. Load data----
-load(file.path(root, "Data", "02_NM5.0_data_offsets.Rdata"))
+load(file.path(root, "data", "02_NM5.0_data_offsets.Rdata"))
 rm(bird)
 rm(offsets)
 
@@ -69,7 +69,7 @@ loc.yr <- visit |>
 #EXTRA. Test sample dataset----
 # set.seed(1234)
 # loc.n <- loc.yr |>
-#   sample_n(100000)
+#   sample_n(100)
 loc.n <- loc.yr
 
 #3. Buffer location objects----
@@ -870,6 +870,7 @@ visit.covs <- visit.country |>
          NLCD_1km = factor(NLCD_1km),
          ABoVE_1km = factor(ABoVE_1km),
          VLCE_1km = factor(VLCE_1km),
+         SurfaceWater_1km = factor(SurfaceWater_1km),
          tagMethod = factor(tagMethod)) |> 
   mutate(method = ifelse(source=="eBird", "eBird", as.character(tagMethod)),
          method = factor(method, levels=c("PC", "eBird", "1SPM", "1SPT"))) |> 
@@ -897,29 +898,29 @@ visit.sample <- visit.covs |>
 meth.plot <- meth.use |> 
   dplyr::filter(!Label %in% c("SCANFIbiomass_1km", "SCANFIbiomass_5x5"))
 
-#Plot to a folder
-for(i in 1:nrow(meth.plot)){
-  
-  visit.i <- visit.sample |> 
-    dplyr::select(lat, lon, meth.plot$Label[i]) |> 
-    data.table::setnames(c("lat", "lon", "cov")) |> 
-    mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
-  
-  plot.na.i <- ggplot(visit.i) +
-    geom_point(aes(x=lon, y=lat, colour=na))
-  
-  ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
-  
-  plot.i <- ggplot(visit.i) +
-    geom_point(aes(x=lon, y=lat, colour=cov))
-  
-  ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
-  
-  print(paste0("Finished plot ", i, " of ", nrow(meth.plot)))
-  
-}
+# #Plot to a folder
+# for(i in 1:nrow(meth.plot)){
+#   
+#   visit.i <- visit.sample |> 
+#     dplyr::select(lat, lon, meth.plot$Label[i]) |> 
+#     data.table::setnames(c("lat", "lon", "cov")) |> 
+#     mutate(na = ifelse(is.na(cov), "NA", "VALUE"))
+#   
+#   plot.na.i <- ggplot(visit.i) +
+#     geom_point(aes(x=lon, y=lat, colour=na))
+#   
+#   ggsave(plot.na.i, filename=file.path(root, "Data", "Covariates", "Plots", "NA", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
+#   
+#   plot.i <- ggplot(visit.i) +
+#     geom_point(aes(x=lon, y=lat, colour=cov))
+#   
+#   ggsave(plot.i, filename=file.path(root, "Data", "Covariates", "Plots", "Cov", paste0(meth.plot$Label[i], ".jpeg")), width=10, height=8)
+# 
+#   print(paste0("Finished plot ", i, " of ", nrow(meth.plot)))
+#   
+# }
 
 #G. SAVE#####
 visit <- visit.covs
 
-save(visit, bird, offsets, file=file.path(root, "Data", "03_NM5.0_data_covariates.Rdata"))
+save(visit, bird, offsets, file=file.path(root, "data", "03_NM5.0_data_covariates.Rdata"))
