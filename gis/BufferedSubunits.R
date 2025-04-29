@@ -57,35 +57,23 @@ bcr.usa <- bcr |>
 
 #For subunits that have < 1000 observations
 
-#CA: merge 42 with 41
 #USA: merge 42 and 3 with 41
 
-#Newfoundland and BCR 2 still have < 1000 but merging may be less useful than retaining
-
-bcr.can4142 <- bcr.ca |> 
-  dplyr::filter(subUnit %in% c(41, 42)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
-  mutate(country="can",
-         subUnit = 4142)
-st_geometry(bcr.can4142) <- "geometry"
-
-bcr.usa41423 <- bcr.usa |> 
-  dplyr::filter(subUnit %in% c(41, 42, 3)) |> 
-  st_union() |> 
-  nngeo::st_remove_holes() |> 
-  st_sf() |> 
+bcr.usa41423 <- bcr.usa |>
+  dplyr::filter(subUnit %in% c(41, 42, 3)) |>
+  st_union() |>
+  nngeo::st_remove_holes() |>
+  st_sf() |>
   mutate(country="usa",
          subUnit = 41423)
 st_geometry(bcr.usa41423) <- "geometry"
 
 #polygons to remove
-bcr.remove <- data.frame(country=c("can", "can", "usa", "usa", "usa"),
-                         subUnit=c(41, 42, 3, 42, 41))
+bcr.remove <- data.frame(country=c("usa", "usa", "usa"),
+                         subUnit=c(3, 42, 41))
 
 #5. Put together----
-bcr.country <- rbind(bcr.ca, bcr.usa, bcr.can4142, bcr.usa41423) |> 
+bcr.country <- rbind(bcr.ca, bcr.usa, bcr.usa41423) |>
   anti_join(bcr.remove)
 
 write_sf(bcr.country, file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp"))
