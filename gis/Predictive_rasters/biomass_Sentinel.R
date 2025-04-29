@@ -23,11 +23,12 @@ googledrive::drive_auth("houle.melina@gmail.com")
 setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
 
 # Set extent 
-EPSG.5072 <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
-rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = EPSG.5072)
+rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = "EPSG:5072")
 
 # Set output and download folder
 out_f <- "./PredictionRasters/ETH2"
+out_f <- "./temp/ETH2"
+
 if (!file.exists(out_f)) {
   dir.create(out_f, showWarnings = FALSE)
 }
@@ -72,8 +73,8 @@ rastlist <- list.files(path = "./", pattern="ETH",
 flf <-lapply(rastlist, rast) # Load images as SpatRaster
 raster_sprc <- terra::sprc(flf) # Create SpatRastCollection
 raster_mosaic<- terra::mosaic(raster_sprc, fun = "mean")  # Mosaic all SpatRast together
-r_ETHheight <- project(raster_mosaic, rast1km, res = 1000, method = "bilinear", align = TRUE) # Reproject
-ETHheight <- crop(r_ETHheight, ext(rast1km), extend = TRUE) # Crop to NatMod extent
+r_ETHheight <- project(raster_mosaic, rast1k, res = 1000, method = "bilinear", align = TRUE) # Reproject
+ETHheight <- crop(r_ETHheight, ext(rast1k), extend = TRUE) # Crop to NatMod extent
 #5x5
 ETHfocal5k<-terra::focal(r_ETHheight,w=matrix(1,5,5),fun=mean,na.rm=TRUE) #get 5k average at 1k resolution
 ETH5k <- terra::crop(ETHfocal5k, rast1k, extend = TRUE) # Extend to NatMod extent
@@ -84,7 +85,6 @@ cv <- function(x){
   sd(y) / mean(y)
 }
 
-r_ETHheight <- project(raster_mosaic, rast1k, method = "bilinear", align = TRUE) # Reproject
 r_ETHheightcv <- aggregate(r_ETHheight, fact=10, fun=cv) #coefficient of variation
 r_ETHheightcv1k <- project(r_ETHheightcv, rast1k, res = 1000, method = "bilinear", align = TRUE) # Reproject
 ETHheightcv1k <- terra::crop(r_ETHheightcv1k, rast1k, extend = TRUE) # Extend to NatMod extent
@@ -97,6 +97,3 @@ writeRaster(ETHheight, filename="./ETHheight.tif", filetype="GTiff", overwrite=T
 writeRaster(ETH5k, filename="./ETHheight5k.tif", filetype="GTiff", overwrite=TRUE)
 writeRaster(ETHheightcv1k, filename="./ETHheightcv.tif", filetype="GTiff", overwrite=TRUE)
 writeRaster(ETHheightcv5k, filename="./ETHheightcv5k.tif", filetype="GTiff", overwrite=TRUE)
-
-
-#### test
