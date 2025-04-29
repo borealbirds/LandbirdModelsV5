@@ -56,7 +56,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ nodes <- 32}
-if(!cc | test){ nodes <- 2}
+if(!cc | test){ nodes <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -81,12 +81,13 @@ print("* Loading data on master *")
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Set species subset----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
+  dplyr::filter(rerun==1)
 
 #9. Load data objects----
 print("* Loading data on workers *")
 
-tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "gridlist", "visit"))
+tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "bootlist", "visit"))
 
 #WRITE FUNCTION##########
 
@@ -102,13 +103,9 @@ brt_tune <- function(i){
   id.i <- 3
   
   #2. Get visits to include----
-  set.seed(1234)
-  visit.i <- gridlist[bcrlist[,bcr.i],] |> 
-    group_by(year, cell) |> 
-    mutate(rowid = row_number(),
-           use = sample(1:max(rowid), 1)) |> 
-    ungroup() |> 
-    dplyr::filter(rowid==use)
+  #use bootstrap #1
+  visit.i <- bcrlist[bcrlist[,bcr.i]>0, c("id", bcr.i)] |> 
+    dplyr::filter(id %in% bootlist$b1)
   
   #3. Get response data (bird data)----
   bird.i <- bird[as.character(visit.i$id), spp.i]
@@ -236,7 +233,8 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::filter(spp %in% sppuse) |> 
+  dplyr::filter(spp %in% sppuse$species_code,
+                bcr %in% c("can71", "can81")) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
@@ -252,7 +250,7 @@ files <- data.frame(path = list.files(file.path(root, "output", "tuning"), patte
                     file = list.files(file.path(root, "output", "tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5))) |> 
-  dplyr::filter(spp %in% sppuse)
+  dplyr::filter(spp %in% sppuse$species_code)
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
