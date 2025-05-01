@@ -47,7 +47,7 @@ rd1 <- rast("C:/Users/elly/Documents/BAM/QPAD/qpad-offsets/data/seedgrow.tif")
 
 #3. Source functions----
 # adapted from https://github.com/borealbirds/qpad-offsets
-source("analysis/00.QPADfunctions.R")
+# source("analysis/00.QPADfunctions.R")
 
 #B. PREP DATA####
 
@@ -167,7 +167,7 @@ for (i in 1:length(spp)) {
   
   #5. Update design matrices to match the coefs ----
   Xp2 <- Xp[,names(cfi$sra), drop=FALSE]
-  if("DSLS" %in% colnames(Xp2)){OKp <- is.na(Xp2[,"DSLS"])} else {OKp <- rowSums(is.na(Xp2))}
+  if("DSLS" %in% colnames(Xp2)){OKp <- !is.na(Xp2[,"DSLS"])} else {OKp <- rowSums(is.na(Xp2))}
   Xq2 <- Xq[,names(cfi$edr), drop=FALSE]
   OKq <- rowSums(is.na(Xq2)) == 0
   
