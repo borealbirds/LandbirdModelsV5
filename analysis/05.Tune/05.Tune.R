@@ -52,15 +52,19 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
-#3. Set nodes for local vs cluster----
-if(cc){ nodes <- 32}
-if(!cc | test){ nodes <- 6}
+#3. Set cores for local vs cluster----
+if(cc){
+  nodes <- strsplit(Sys.getenv("NODESLIST"), split=" ")[[1]]
+  cores <- rep(nodes, each=48)}
+if(!cc | test){ cores <- 4}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
-cl <- makePSOCKcluster(nodes, type="PSOCK")
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+clusterCall(cl, function() Sys.info()[c("nodename", "machine")])
 
 #5. Set root path----
 print("* Setting root file path *")
@@ -81,8 +85,7 @@ print("* Loading data on master *")
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Set species subset----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-  dplyr::filter(rerun==1)
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))
 
 #9. Load data objects----
 print("* Loading data on workers *")
@@ -183,11 +186,11 @@ brt_tune <- function(i){
                        time = (proc.time()-t0)[3])) |> 
       mutate(lr = lr.i)
     
-    if(!(file.exists(file.path(root, "output", "tuning", spp.i)))){
-      dir.create(file.path(root, "output", "tuning", spp.i))
+    if(!(file.exists(file.path(root, "output", "05_tuning", spp.i)))){
+      dir.create(file.path(root, "output", "05_tuning", spp.i))
     }
     
-    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
     
   } else {
     
@@ -206,16 +209,16 @@ brt_tune <- function(i){
       mutate(lr = lr.i)
     
     #12. Save model----
-    if(!(file.exists(file.path(root, "output", "fullmodels", spp.i)))){
-      dir.create(file.path(root, "output", "fullmodels", spp.i))
+    if(!(file.exists(file.path(root, "output", "05_fullmodels", spp.i)))){
+      dir.create(file.path(root, "output", "05_fullmodels", spp.i))
     }
     
-    if(!(file.exists(file.path(root, "output", "tuning", spp.i)))){
-      dir.create(file.path(root, "output", "tuning", spp.i))
+    if(!(file.exists(file.path(root, "output", "05_tuning", spp.i)))){
+      dir.create(file.path(root, "output", "05_tuning", spp.i))
     }
     
-    write.csv(out.i, file=file.path(file.path(root, "output", "tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
-    save(m.i, file=file.path(root, "output", "fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata")))
+    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    save(m.i, file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata")))
     
   }
   
@@ -233,8 +236,7 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::filter(spp %in% sppuse$species_code,
-                bcr %in% c("can71", "can81")) |> 
+  dplyr::filter(spp %in% sppuse$species_code) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
@@ -246,8 +248,8 @@ print("* Loading covariate list on workers *")
 tmpcl <- clusterExport(cl, c("bcr.cov"))
 
 #3. Get list of models already run----
-files <- data.frame(path = list.files(file.path(root, "output", "tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
-                    file = list.files(file.path(root, "output", "tuning"), pattern="*.csv", recursive = TRUE)) |> 
+files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
   mutate(lr = as.numeric(str_sub(lr, -100, -5))) |> 
   dplyr::filter(spp %in% sppuse$species_code)
@@ -288,7 +290,7 @@ if(nrow(files) > 0){
     anti_join(done) |> 
     anti_join(redo)
   
-  write.csv(norun, file.path(root, "output", "tuning", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
+  write.csv(norun, file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
   
   #9. Make dataframe of models to run----
   #Full combinations, take out done models and redo models, then add redo models back in
@@ -312,7 +314,7 @@ if(nrow(files)==0){
 }
 
 #For testing
-if(test) {loop <- loop[1:nodes,]}
+if(test) {loop <- loop[1:cores,]}
 
 print("* Loading model loop on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
