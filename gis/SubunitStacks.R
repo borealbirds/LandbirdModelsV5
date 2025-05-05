@@ -31,7 +31,7 @@ library(tidyterra) #raster plotting
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data packages with covariate lookup table----
-load(file.path(root, "Data", "04_NM5.0_data_stratify.R"))
+load(file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
 
 #4. Set options to not write the .aux.xml file----
 rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
