@@ -58,3 +58,9 @@ gf<-focalWeight(roughness, 200, "circle", fillNA=TRUE) #~200m radius circle
 roughness <- focal(roughness, w=gf, fun=mean, na.rm=T)
 roughness_test1km<-project(roughness,r, method="near") #1km
 writeRaster(roughness_test1km,"roughness_focalweightresampled.tif")
+
+# LED - original layer by BEACONS, requires downsampling only
+
+led <- terra::rast(file.path(root, "CovariateRasters", "Wetland", "led_250.tif"))
+led_1k <- project(led, r, method="near")
+writeRaster(led_1k, file.path(root, "PredictionRasters", "Wetland", "LakeEdge_1km.tif"))
