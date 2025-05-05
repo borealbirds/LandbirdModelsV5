@@ -23,7 +23,7 @@
 #2. set cc to true (test on compute canada)
 #3. set test to false (run full model set on compute canada)
 
-#The script is set to inventory the models already run and remove them from the to-do list ("loop" object) every time the script is run. This means you can submit it as a [relatively] small job on compute canada instead of requesting enough resources for the entire list of models (which is a lot). Just make sure you keep the "results" folder with all the output in it until you are finished running everything, because this is what is being used to inventory the models already run.
+#The script is set to inventory the models already run and remove them from the to-do list ("loop" object) every time the script is run. Make sure you keep the "results" folder with all the output in it until you are finished running everything, because this is what is being used to inventory the models already run. Note this script can only one on one 48-core node at a time due to the inability to distribute tasks across multiple nodes due to ssh limitations.
 
 #The steps for running on compute canada (for this and other scripts are):
 #1. Transfer this script and your data object between local computer and compute canada's servers using Globus Connect.
@@ -55,16 +55,13 @@ test <- FALSE
 cc <- TRUE
 
 #3. Set cores for local vs cluster----
-if(cc){
-  nodes <- strsplit(Sys.getenv("NODESLIST"), split=" ")[[1]]
-  cores <- rep(nodes, each=48)}
-if(!cc | test){ cores <- 4}
+if(cc){ cores <- 48 }
+if(!cc | test){ cores <- 2}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
 print(table(cores))
 cl <- makePSOCKcluster(cores, type="PSOCK")
-clusterCall(cl, function() Sys.info()[c("nodename", "machine")])
 
 #5. Set root path----
 print("* Setting root file path *")
@@ -85,7 +82,8 @@ print("* Loading data on master *")
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Set species subset----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
+  dplyr::filter(rerun==1)
 
 #9. Load data objects----
 print("* Loading data on workers *")
