@@ -188,7 +188,7 @@ brt_tune <- function(i){
       dir.create(file.path(root, "output", "05_tuning", spp.i))
     }
     
-    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
+    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, ".csv"))), row.names = FALSE)
     
   } else {
     
@@ -215,8 +215,8 @@ brt_tune <- function(i){
       dir.create(file.path(root, "output", "05_tuning", spp.i))
     }
     
-    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, "_", lr.i, ".csv"))), row.names = FALSE)
-    save(m.i, file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata")))
+    write.csv(out.i, file=file.path(file.path(root, "output", "05_tuning", spp.i, paste0("ModelTuning_", spp.i, "_", bcr.i, ".csv"))), row.names = FALSE)
+    save(m.i, file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata")))
     
   }
   
