@@ -31,7 +31,8 @@ crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +el
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #4. Read in buffered and merged region shapefile----
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp")) |> 
+  mutate(bcr = paste0(country, subUnit))
 
 #OVERLAP#######
 
@@ -99,7 +100,7 @@ for(i in 1:nrow(bcr)){
   #10. Save----
   writeRaster(dist_raster, file.path(root, "gis", "edgeweights", paste0(bcr.i$bcr, ".tif")), overwrite=TRUE)
   
-  cat("Finished", i, "of", nrow(bcr.country), "BCRs \n")
+  cat("Finished", i, "of", nrow(bcr), "BCRs \n")
   
 }
 
@@ -111,4 +112,3 @@ check <- list.files(file.path(root, "gis", "edgeweights"), full.names = TRUE)[-c
 plot(check)
 
 ###################### END OF CODE #####################################
-                
