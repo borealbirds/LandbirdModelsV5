@@ -31,10 +31,10 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set cores for local vs cluster----
-if(cc){ cores <- parallel::detectCores() }
+if(cc){ cores <- 48 }
 if(!cc | test){ cores <- 2}
 
 #4. Create and register clusters----
@@ -71,130 +71,80 @@ tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "bo
 
 brt_boot <- function(i){
   
-  #1. Get model settings----
-  bcr.i <- loop$bcr[i]
-  spp.i <- loop$spp[i]
-  lr.i <- loop$lr[i]
-  trees.i <- loop$trees[i]
-  tuned.i <- loop$tuned[i]
+  t0 <- proc.time()
   
-  #2. Load full model----
-  if(tuned.i==TRUE){
-    trymod <- try(load(file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, "_", lr.i, ".Rdata"))))
-    
-    if(inherits(trymod, "try-error")){ return(NULL) }
-    
-    #3. Make the new covlist if already tuned----
-    #make sure to retain method and year
-    covsnew.i <- m.i[["contributions"]] |> 
-      dplyr::filter(rel.inf >= 0.1 |
-                      var %in% c("year", "method"))
-    
-    #remove the model
-    rm(m.i)
-    
-  }
-
-  #4. Make the new covlist if not tuned----
-  if(tuned.i==FALSE){
-    
-    covsnew.i <- covlist |> 
-      dplyr::filter(bcr==bcr.i) |> 
-      pivot_longer(-bcr, names_to="var", values_to="use") |> 
-      dplyr::filter(use==TRUE)
-    
-  }
+  #6. Get visits to include----
+  visit.i <- bcrlist[bcrlist[,bcr.i]>0, c("id", bcr.i)] |> 
+    dplyr::filter(id %in% bootlist[[i + 2]])
   
-  #5. Set up bootstrap loop ----
-  b.list <- list()
-  out.list <- list()
-  for(j in 1:boots){
-    
-    t0 <- proc.time()
-    
-    #6. Get visits to include----
-    visit.i <- bcrlist[bcrlist[,bcr.i]>0, c("id", bcr.i)] |> 
-      dplyr::filter(id %in% bootlist[[j+2]])
-    
-    #7. Get response data (bird data)----
-    bird.i <- bird[as.character(visit.i$id), spp.i]
-    
-    #8. Get covariates and remove the nonsignificant ones----
-    cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew.i$var]
-    
-    #9. Add year----
-    year.i <- visit[visit$id %in% visit.i$id, "year"]
-    
-    #10. Put together data object----
-    dat.i <- cbind(bird.i, year.i, cov.i) |> 
-      rename(count = bird.i)
-    
-    #11. Get offsets----
-    off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
-    
-    #12. Clean up to save space----
-    rm(bird.i, year.i, cov.i)
-    
-    #13. Run model----
-    set.seed(j)
-    b.list[[j]] <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
-                        data = dat.i[, -1],
-                        n.trees = trees.i,
-                        interaction.depth = 3,
-                        shrinkage = lr.i,
-                        distribution="poisson",
-                        keep.data = FALSE,
-                        n.cores=1))
-    
-    if(inherits(b.list[[j]], "try-error")){ return(NULL) }
-    
-    #14. Get performance metrics----
-    out.list[[j]] <- loop[i,] |> 
-      dplyr::select(-time) |> 
-      cbind(data.frame(n = nrow(dat.i),
-                       ncount = nrow(dplyr::filter(dat.i, count > 0)),
-                       time = (proc.time()-t0)[3]))
-  }
+  #7. Get response data (bird data)----
+  bird.i <- bird[as.character(visit.i$id), spp.i]
   
-  #15. Collapse output list----
-  out <- do.call(rbind, out.list)
+  #8. Get covariates and remove the nonsignificant ones----
+  cov.i <- cov[cov$id %in% visit.i$id, colnames(cov) %in% covsnew.i$var]
   
-  #15. Save model----
-  if(!(file.exists(file.path(root, "output", "06_bootstraps", spp.i)))){
-    dir.create(file.path(root, "output", "06_bootstraps", spp.i))
-    }
-    
-    save(b.list, out, file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata")))
-    
-    
+  #9. Add year----
+  year.i <- visit[visit$id %in% visit.i$id, "year"]
+  
+  #10. Put together data object----
+  dat.i <- cbind(bird.i, year.i, cov.i) |> 
+    rename(count = bird.i)
+  
+  #11. Get offsets----
+  off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
+  
+  #12. Clean up to save space----
+  rm(bird.i, year.i, cov.i)
+  
+  #13. Run model----
+  set.seed(i)
+  b.i <- try(gbm::gbm(dat.i$count ~ . + offset(off.i),
+                      data = dat.i[, -1],
+                      n.trees = trees.i,
+                      interaction.depth = 3,
+                      shrinkage = lr.i,
+                      distribution="poisson",
+                      keep.data = FALSE,
+                      n.cores=1))
+  
+  if(inherits(b.i, "try-error")){ return(NULL) }
+  
+  #14. Add performance as attributes----
+  attr(b.i, "bcr") <- bcr.i
+  attr(b.i, "spp") <- spp.i
+  attr(b.i, "time") <- (proc.time()-t0)[3]
+  attr(b.i, "n") <- nrow(dat.i)
+  attr(b.i, "ncount") <- nrow(dplyr::filter(dat.i, count > 0))
+  
+  return(b.i)
 }
 
 #16. Export to clusters----
 print("* Loading function on workers *")
 tmpcl <- clusterExport(cl, c("brt_boot"))
 
-#RUN MODELS###############
+#GET INVENTORY###############
 
 #1. Get list of models that are tuned----
 tuned <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
                     file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive=TRUE)) |> 
-  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5)))  |> 
-  dplyr::select(-step) |> 
+  dplyr::filter(file!="SpeciesBCRCombos_NotTuned.csv") |> 
+  separate(file, into=c("step", "spp", "bcr"), sep="_", remove=FALSE) |> 
+  dplyr::select(-step) |>
+  mutate(bcr = str_remove(bcr, ".csv")) |> 
   inner_join(data.frame(file = list.files(file.path(root, "output", "05_fullmodels"), pattern="*.Rdata", recursive=TRUE)) |> 
-               separate(file, into=c("folder", "bcr", "lr"), sep="_", remove=TRUE) |> 
+               separate(file, into=c("folder", "bcr"), sep="_", remove=TRUE) |> 
                separate(folder, into=c("folder", "spp")) |> 
-               mutate(lr = as.numeric(str_sub(lr, -100, -7))) |> 
-               dplyr::select(-folder))
+               dplyr::select(-folder) |> 
+               mutate(bcr = str_remove(bcr, ".Rdata")),
+             by=c("spp", "bcr"))
 
 #2. Get learning rates----
 perf <- map_dfr(read.csv, .x=tuned$path) |> 
-  dplyr::filter(trees >= 1000 & trees < 10000)
+  dplyr::filter(trees >= 1000 & trees < 10000) |> 
+  mutate(path = tuned$path)
 
-#3. Set number of bootstraps----
-boots <- ncol(bootlist) - 2
-
-#4. Get the list of ones that need forcing----
+#3. Get the list of ones that need forcing----
 notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv")) |> 
   dplyr::select(bcr, spp) |> 
   mutate(lr = 1e-05,
@@ -202,11 +152,11 @@ notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotT
          time = mean(perf$time),
          tuned = FALSE)
 
-#5. Get the species list----
+#4. Get the species list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
   dplyr::filter(rerun==1)
 
-#6. Create to do list----
+#5. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf |> 
   dplyr::select(bcr, spp, lr, trees, time) |> 
@@ -216,13 +166,13 @@ todo <- perf |>
   unique() |> 
   dplyr::filter(spp %in% sppuse$species_code)
 
-#7. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive=TRUE),
-                   file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot", "filetype"), remove=FALSE) |>
-  mutate(boot = as.numeric(boot))
+#RUN MODELS############
 
-#6. Create final to do list----
+#1. Determine which are already done----
+done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE)
+
+#2. To do list----
 if(nrow(done) > 0){
   
   loop <- todo |> 
@@ -230,7 +180,9 @@ if(nrow(done) > 0){
   
 } else { loop <- todo }
 
-#7. Shut down if nothing left to do----
+if(test) {loop <- arrange(loop, time)[1:2,]}
+
+#3. Shut down if nothing left to do----
 if(nrow(loop)==0){
   print("* Shutting down clusters *")
   stopCluster(cl)
@@ -238,17 +190,68 @@ if(nrow(loop)==0){
   if(cc){ q() }
 }
 
-#For testing - take the shortest duration models
-if(test) {loop <- arrange(loop, time)[1:2,]}
-
-print("* Loading model loop on workers *")
-tmpcl <- clusterExport(cl, c("loop", "boots"))
-
-#9. Run BRT function in parallel----
-print("* Fitting models *")
-mods <- parLapply(cl,
-                  X=1:nrow(loop),
-                  fun=brt_boot)
+#4. Otherwise set up while loop ----
+while(nrow(loop) > 0){
+  
+  #5. Get model settings----
+  bcr.i <- loop$bcr[1]
+  spp.i <- loop$spp[1]
+  lr.i <- loop$lr[1]
+  trees.i <- loop$trees[1]
+  tuned.i <- loop$tuned[1]
+  
+  #6. Load full model----
+  if(tuned.i==TRUE){
+    trymod <- try(load(file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
+    
+    if(inherits(trymod, "try-error")){ return(NULL) }
+    
+    #7. Make the new covlist if already tuned----
+    #make sure to retain method and year
+    covsnew.i <- m.i[["contributions"]] |> 
+      dplyr::filter(rel.inf >= 0.1 |
+                      var %in% c("year", "method"))
+    
+    #remove the model
+    rm(m.i)
+    
+  }
+  
+  #8. Make the new covlist if not tuned----
+  if(tuned.i==FALSE){
+    
+    covsnew.i <- covlist |> 
+      dplyr::filter(bcr==bcr.i) |> 
+      pivot_longer(-bcr, names_to="var", values_to="use") |> 
+      dplyr::filter(use==TRUE)
+    
+  }
+  
+  #9. Export loop info to cores ----
+  print("* Loading model loop info on workers *")
+  tmpcl <- clusterExport(cl, c("bcr.i", "spp.i", "lr.i", "trees.i", "tuned.i", "covsnew.i"))
+  
+  #10. Run the models ----
+  print("* Fitting models *")
+  b.list <- parLapply(cl,
+                      X=1:cores,
+                      fun=brt_boot)
+  
+  #11. Save model----
+  if(!(file.exists(file.path(root, "output", "06_bootstraps", spp.i)))){
+    dir.create(file.path(root, "output", "06_bootstraps", spp.i))
+  }
+  
+  save(b.list, file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata")))
+  
+  #16. Update the list ----
+  done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
+    separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE)
+  
+  loop <- loop |> 
+    anti_join(done)
+  
+}
 
 #CONCLUDE####
 
