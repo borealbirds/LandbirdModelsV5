@@ -8,17 +8,15 @@
 
 #This script uses the model output from 06.Tune.R to determine the best learning rate and number of trees for the gbm function. It reads in the summary output from those models and selects the best parameters for each bcr*spp model. It also eliminates bcr*spp models that did not have enough data to achieve at least 1000 trees with a sufficiently high learning rate (lr.stop >= 1e-6 from the previous script).
 
-#This script also uses the model output from 06.Tune.R to remove covariates that explained < 0.1% of the deviation in the model as part of the effort to continue to simplify the models to improve efficiency of the prediction step.
+#This script also uses the model output from 05.Tune.R to remove covariates that explained < 0.1% of the deviation in the model as part of the effort to continue to simplify the models to improve efficiency of the prediction step.
 
-# The script then builds a to-do list for all the combinations of bcr and spp and the requested number of bootstraps and runs the simpler gbm::gbm() function using the selected learning rate and number of trees.
+# The script then builds a to-do list for all the tuned combinations of bcr and spp and runs the simpler gbm::gbm() function using the selected learning rate and number of trees.
 
-#The script checks the combinations of bcr, spp, and bootstrap that have already been run prior to building the to-do list so that it can be run multiple times.
+#The script checks the combinations of bcr & spp that have already been run prior to building the to-do list so that it can be run multiple times.
 
-#The output is an R object with the raw model, a record of the bcr, spp, bootstrap, parameters, and runtime, and a list of the visits that were included for that bootstrap.
+#The output is an Rdata object with a list of the raw models and a dataframe  of the bcr, spp, bootstrap, parameters, and runtime for each bootstrap.
 
-#The list of visits in the output is crucial for determining the training and testing data when we do model evaluation.
-
-#Although the `gbm.fit` function might provided faster performance, we use `gbm` here to ensure the model terms match the terms in the prediction raster stack. The prediction and extrapolation scripts are by far the most time-intensive steps in the model building process, and so we prioritize redundancy over speed in the `06.Bootstrap.R` script to ensure predictions are correct. Otherwise, the order of variables in the raster stacks must match those in the model building.
+#Although the `gbm.fit` function might provide faster performance, we use `gbm` here to ensure the model terms match the terms in the prediction raster stack. The prediction and extrapolation scripts are by far the most time-intensive steps in the model building process, and so we prioritize redundancy over speed in the `06.Bootstrap.R` script to ensure predictions are correct. Otherwise, the order of variables in the raster stacks must match those in the model building.
 
 #TO DO FOR V6: Consider the most efficient place to reduce the models by filtering out covs < 0.01 relative influence
 
@@ -32,14 +30,12 @@ library(parallel)
 library(Matrix)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
+test <- FALSE
 cc <- FALSE
 
 #3. Set cores for local vs cluster----
-if(cc){
-  nodes <- strsplit(Sys.getenv("NODESLIST"), split=" ")[[1]]
-  cores <- rep(nodes, each=48)}
-if(!cc | test){ cores <- 4}
+if(cc){ cores <- parallel::detectCores() }
+if(!cc | test){ cores <- 2}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -206,16 +202,21 @@ notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotT
          time = mean(perf$time),
          tuned = FALSE)
 
-#5. Create to do list----
+#5. Get the species list----
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
+  dplyr::filter(rerun==1)
+
+#6. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf |> 
   dplyr::select(bcr, spp, lr, trees, time) |> 
   mutate(tuned = TRUE) |> 
   rbind(notune) |> 
   arrange(-time) |> 
-  unique()
+  unique() |> 
+  dplyr::filter(spp %in% sppuse$species_code)
 
-#6. Determine which are already done----
+#7. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive=TRUE),
                    file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
   separate(file, into=c("folder", "spp", "bcr", "boot", "filetype"), remove=FALSE) |>

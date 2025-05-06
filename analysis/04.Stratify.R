@@ -179,7 +179,7 @@ visit.grid <- visit.use |>
 length(unique(visit.grid$cell))
 
 #3. Set number of bootstraps ----
-boots <- 32
+boots <- 48
 
 #4. Get list of unique grid cells & years ----
 samples <- visit.grid |> 
