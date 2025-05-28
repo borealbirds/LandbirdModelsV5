@@ -76,7 +76,11 @@ visit_r <- terra::extract(rlcc, visit_v, bind=TRUE) |>
   st_drop_geometry() |> 
   left_join(lcclevs) |> 
   rename(datetime = date) |> 
-  mutate(date = as.Date(datetime))
+  mutate(date = as.Date(datetime),
+         tree = tree/100,
+         tree = case_when(tree < 0 ~ 0,
+                          tree > 1 ~ 0,
+                          !is.na(tree) ~ tree))
 
 #5. Get time zones ----
 #look up timezones with lutz package
