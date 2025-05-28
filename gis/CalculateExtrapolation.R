@@ -19,10 +19,6 @@
 # 2) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
 # -------------------
 
-#TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
-
-#TO DO FOR V6: There are some covariates that are functionally zero across the BCR that are making it into the bootstrap stage of the model, likely because the model fit is so poor that they don't fall below the 0.1% threshold for exclusion. These variables cause the extrapolation anaysis to fail, but likely also slow down the modelling process. They should be removed after VIF in the stratify script.
-
 #PREAMBLE####
 
 #1. Load packages----
@@ -32,34 +28,10 @@ library(tidyverse)
 library(terra)
 library(parallel)
 
-#2. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- FALSE
-
-#3. Set nodes for local vs cluster----
-if(cc){ nodes <- 32}
-if(!cc | test){ nodes <- 4}
-
-#4. Create and register clusters----
-print("* Creating clusters *")
-cl <- makePSOCKcluster(nodes, type="PSOCK")
-
-#5. Set root path----
-print("* Setting root file path *")
-if(cc){root <- "/scratch/ecknight/NationalModels"}
-if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
-
-tmpcl <- clusterExport(cl, c("root"))
-
-#6. Load packages on clusters----
-print("* Loading packages on workers *")
-tmpcl <- clusterEvalQ(cl, library(sf))
-tmpcl <- clusterEvalQ(cl, library(tidyverse))
-tmpcl <- clusterEvalQ(cl, library(terra))
+#2. Set root path----
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 #7. Load data package----
-print("* Loading data on master *")
-
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(bird, covlist, bcrlist, offsets, visit, gridlist)
 
