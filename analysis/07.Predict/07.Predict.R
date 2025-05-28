@@ -23,7 +23,6 @@ print("* Loading packages on master *")
 library(tidyverse)
 library(gbm)
 library(parallel)
-#library(future)
 library(Matrix)
 library(terra)
 
@@ -32,13 +31,14 @@ test <- FALSE
 cc <- FALSE
 
 #3. Set nodes for local vs cluster----
-if(cc){ nodes <- 48}
-if(!cc | test){ nodes <- 2}
+if(cc){ cores <- 32}
+if(!cc | test){ cores <- 2}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
-cl <- makePSOCKcluster(nodes, type="PSOCK")
-#plan(multisession, workers = nodes)
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 
 #5. Set root path----
 print("* Setting root file path *")
@@ -47,7 +47,11 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
-#6. Load packages on clusters----
+#6. Get the species list----
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
+  dplyr::filter(rerun==1)
+
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
@@ -58,66 +62,62 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 
 brt_predict <- function(i){
   
-  #1. Get model settings---
-  bcr.i <- loop$bcr[i]
-  spp.i <- loop$spp[i]
-  boot.i <- loop$boot[i]
-  year.i <- loop$year[i]
+  #1. Get the model----
+  b.i <- b.list[[i]]
   
-  #2. Load model----
-  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".Rdata"))))
-  if(inherits(load.i, "try-error")){ return(NULL)}
+  #2. Load the raster stack----
+  #Apparently faster than exporting, gets around requirement to wrap & unwrap
+  stack <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
+  if(inherits(stack, "try-error")){ return(NULL) }
   
-  #3. Load raster stack----
-  stack.i <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
-  if(inherits(stack.i, "try-error")){ return(NULL) }
-  stack.i$meth.i <- stack.i$method
-
-  #4. Predict----
+  #3. Reduce to just the required layers----
+  #to save RAM
+  stack.i <- stack[[b.i$var.names]]
+  rm(stack)
+  
+  #3. Predict----
   pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
-
-  #7. Save----
-  if(!(file.exists(file.path(root, "output", "predictions", spp.i)))){
-    dir.create(file.path(root, "output", "predictions", spp.i))
-  }
-  if(inherits(pred.i, "SpatRaster")){
-    writeRaster(pred.i, file=file.path(root, "output", "predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=TRUE)
-  }
+  if(inherits(pred.i, "try-error")){ return(NULL)}
+  
+  #4. Write to a temp file for wrapping----
+  #We do this instead of using terra::wrap() so that our output is a terra stack and not a list of individually wrapped rasters
+  tf <- tempfile(fileext = ".tif")
+  writeRaster(pred.i, tf, overwrite=TRUE)
+  return(tf)
   
 }
 
 #8. Export to clusters----
 print("* Loading function on workers *")
-
 tmpcl <- clusterExport(cl, c("brt_predict"))
 
-#RUN MODELS#########
+#GET INVENTORY###############
 
 #1. Set desired years----
 years <- seq(1985, 2020, 5)
 
 #2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive = TRUE),
-                    file = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", recursive = TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
-  mutate(boot = as.numeric(boot))
+booted <- data.frame(path = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive = TRUE),
+                    file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "file"), remove=FALSE)
 
 #3. Create to do list----
-#currently set to prioritize 
-todo <- booted |> 
-  dplyr::select(bcr, spp, boot) |> 
-  expand_grid(year=years) |> 
-  arrange(spp, boot, year, bcr)
+#currently set to prioritize
+todo <- booted |>
+  dplyr::select(bcr, spp) |>
+  expand_grid(year=years) |>
+  arrange(spp, year, bcr) |> 
+  dplyr::filter(spp %in% sppuse$species_code)
 
-#4. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
-                   file = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         boot = as.numeric(boot)) |> 
+#RUN MODELS#########
+
+#1. Determine which are already done----
+done <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
   dplyr::select(-folder, -file)
 
-#5. Create final to do list----
+#2. Create final to do list----
 if(nrow(done) > 0){
   
   loop <- todo |> 
@@ -125,20 +125,69 @@ if(nrow(done) > 0){
   
 } else { loop <- todo }
 
-#For testing - take the shortest duration models
+#For testing
 if(test) {loop <- loop[1:2,]}
 
-print("* Loading model loop on workers *")
-tmpcl <- clusterExport(cl, c("loop"))
+#3. Shut down if nothing left to do----
+if(nrow(loop)==0){
+  print("* Shutting down clusters *")
+  stopCluster(cl)
+  
+  if(cc){ q() }
+}
 
-#6. Run BRT function in parallel----
-print("* Making predictions *")
-# mods <- future_lapply(X=1:nrow(loop),
-#                   FUN=brt_predict)
-
-mods <- parLapply(cl,
-                  X=1:nrow(loop),
-                  fun = brt_predict)
+#4. Otherwise set up while loop ----
+while(nrow(loop) > 0){
+  
+  #5. Get model settings----
+  bcr.i <- loop$bcr[1]
+  spp.i <- loop$spp[1]
+  year.i <- loop$year[1]
+  
+  #6. Load bootstraps----
+  trymod <- try(load(file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
+  if(inherits(trymod, "try-error")){ return(NULL) }
+  
+  #7. Export to cores ----
+  print("* Loading model loop info on workers *")
+  tmpcl <- clusterExport(cl, c("bcr.i", "spp.i", "year.i", "b.list"))
+  
+  #tidy
+  boots <- length(b.list)
+  rm(b.list)
+  
+  #8. Run the models ----
+  print("* Making predictions *")
+  if(test){file.list <- parLapply(cl,
+                                    X=1:cores,
+                                    fun=brt_predict)}
+  if(!test){file.list <- parLapply(cl,
+                                     X=1:boots,
+                                     fun=brt_predict)}
+  
+  #9. Read in the temp files and name----
+  pred <- terra::rast(unlist(file.list))
+  names(pred) <- paste0("b", seq(1:length(file.list)))
+  
+  #10. Save model----
+  print("* Saving predictions *")
+  if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
+    dir.create(file.path(root, "output", "07_predictions", spp.i))
+  }
+  
+  terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
+                     overwrite=TRUE)
+  
+  #11. Update the list ----
+  done <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+    separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |>  
+    mutate(year = as.numeric(year)) |> 
+    dplyr::select(-folder, -file)
+  
+  loop <- loop |> 
+    anti_join(done, by=c("bcr", "spp", "year"))
+  
+}
 
 #CONCLUDE####
 
