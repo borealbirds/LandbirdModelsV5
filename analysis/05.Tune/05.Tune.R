@@ -17,13 +17,12 @@
 #Tuning process is only run once using bootstrap #1, assuming that tuning parameters are relatively insensitive to bootstrap.
 
 #This script is written to be run on the compute canada cluster in parallel. Messages are therefore printed in the output for each step in the script to help with debugging. Use the .sh object to run the script on the cluster.
-
 #There are two object at the beginning of the script that can be set to TRUE if running tests. One controls whether you are running on a subset of model iterations (i.e., testing), and one controls whether you are running on your local machine or compute canada. Ideally you would:
 #1. set test to true and cc to false (test on local)
 #2. set cc to true (test on compute canada)
 #3. set test to false (run full model set on compute canada)
 
-#The script is set to inventory the models already run and remove them from the to-do list ("loop" object) every time the script is run. Make sure you keep the "results" folder with all the output in it until you are finished running everything, because this is what is being used to inventory the models already run. Note this script can only one on one 48-core node at a time due to the inability to distribute tasks across multiple nodes due to ssh limitations.
+#The script is set to inventory the models already run and remove them from the to-do list ("loop" object) every time the script is run. Make sure you keep the "results" folder with all the output in it until you are finished running everything, because this is what is being used to inventory the models already run. Note this script can only one on one 48-core node at a time due to the inability to distribute tasks across multiple nodes due to ssh limitations. If you want to run more than that at a time, batch your species list into chunks and run different chunks of the species list concurrently.
 
 #The steps for running on compute canada (for this and other scripts are):
 #1. Transfer this script and your data object between local computer and compute canada's servers using Globus Connect.
@@ -52,11 +51,11 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set cores for local vs cluster----
 if(cc){ cores <- 48 }
-if(!cc | test){ cores <- 2}
+if(!cc | test){ cores <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -83,7 +82,8 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #8. Set species subset----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-  dplyr::filter(rerun==1)
+  rename(spp = species_code) |> 
+  dplyr::select(spp, rerun)
 
 #9. Load data objects----
 print("* Loading data on workers *")
@@ -144,7 +144,7 @@ brt_tune <- function(i){
                          learning.rate = lr.i,
                          family="poisson"))
   
-  trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
+  trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
   
   #rerun if lr too high (small sample size e.g., can3)
   #stop at a certain lr and remove that model from the to-do list
@@ -163,12 +163,12 @@ brt_tune <- function(i){
                                learning.rate = lr.i,
                                family="poisson"))
     
-    trees.i <- ifelse(class(m.i)=="NULL", 0, m.i$n.trees)
+    trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
     
   }
   
   #11. Get performance metrics----
-  if(class(m.i)=="NULL"){
+  if(class(m.i) %in% c("NULL", "try-error")){
     
     out.i <- loop[i,] |> 
       cbind(data.frame(trees = NA,
@@ -234,7 +234,6 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::filter(spp %in% sppuse$species_code) |> 
   dplyr::select(-use)
 
 #2. Reformat covariate list----
@@ -249,8 +248,7 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
                     file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5))) |> 
-  dplyr::filter(spp %in% sppuse$species_code)
+  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
@@ -300,7 +298,8 @@ if(nrow(files) > 0){
     rbind(redo |> 
             dplyr::select(spp, bcr, lr.next) |> 
             rename(lr = lr.next)) |> 
-    arrange(spp, bcr)
+    arrange(spp, bcr) |> 
+    inner_join(sppuse)
   
 }
 
