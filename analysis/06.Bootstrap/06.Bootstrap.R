@@ -14,7 +14,7 @@
 
 #The script checks the combinations of bcr & spp that have already been run prior to building the to-do list so that it can be run multiple times.
 
-#The output is an Rdata object with a list of the raw models and a dataframe  of the bcr, spp, bootstrap, parameters, and runtime for each bootstrap.
+#The output is an Rdata object with a list of the bootstrapped raw models for each bcr & spp combination and a dataframe of model paramters for all bootstaps.
 
 #Although the `gbm.fit` function might provide faster performance, we use `gbm` here to ensure the model terms match the terms in the prediction raster stack. The prediction and extrapolation scripts are by far the most time-intensive steps in the model building process, and so we prioritize redundancy over speed in the `06.Bootstrap.R` script to ensure predictions are correct. Otherwise, the order of variables in the raster stacks must match those in the model building.
 
@@ -31,17 +31,17 @@ library(Matrix)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #3. Set cores for local vs cluster----
-if(cc){ cores <- 48 }
+if(cc){ cores <- 32 }
 if(!cc | test){ cores <- 2}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
 print(table(cores))
 cl <- makePSOCKcluster(cores, type="PSOCK")
-clusterCall(cl, function() Sys.info()[c("nodename", "machine")])
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 
 #5. Set root path----
 print("* Setting root file path *")
@@ -50,19 +50,25 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
-#6. Load packages on clusters----
+#6. Get the species list----
+sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
+#  dplyr::filter(rerun==1) |> 
+  rename(spp = species_code) |> 
+  dplyr::select(spp, rerun)
+
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(stats))
 
-#7. Load data package----
+#8. Load data package----
 print("* Loading data on master *")
 
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
-#8. Load data objects----
+#9. Load data objects----
 print("* Loading data on workers *")
 
 tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "bootlist", "visit"))
@@ -137,12 +143,12 @@ tuned <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
                separate(folder, into=c("folder", "spp")) |> 
                dplyr::select(-folder) |> 
                mutate(bcr = str_remove(bcr, ".Rdata")),
-             by=c("spp", "bcr"))
+             by=c("spp", "bcr")) |> 
+  inner_join(sppuse)
 
 #2. Get learning rates----
 perf <- map_dfr(read.csv, .x=tuned$path) |> 
-  dplyr::filter(trees >= 1000 & trees < 10000) |> 
-  mutate(path = tuned$path)
+  dplyr::filter(trees >= 1000 & trees < 10000)
 
 #3. Get the list of ones that need forcing----
 notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv")) |> 
@@ -152,11 +158,7 @@ notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotT
          time = mean(perf$time),
          tuned = FALSE)
 
-#4. Get the species list----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-  dplyr::filter(rerun==1)
-
-#5. Create to do list----
+#4. Create to do list----
 #Sort longest to shortest duration to get the big models going first
 todo <- perf |> 
   dplyr::select(bcr, spp, lr, trees, time) |> 
@@ -164,13 +166,14 @@ todo <- perf |>
   rbind(notune) |> 
   arrange(-time) |> 
   unique() |> 
-  dplyr::filter(spp %in% sppuse$species_code)
+  inner_join(sppuse)
 
 #RUN MODELS############
 
 #1. Determine which are already done----
 done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE)
+  separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE) |> 
+  inner_join(sppuse )
 
 #2. To do list----
 if(nrow(done) > 0){
@@ -244,7 +247,7 @@ while(nrow(loop) > 0){
   
   save(b.list, file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata")))
   
-  #16. Update the list ----
+  #12. Update the list ----
   done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
     separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE)
   
