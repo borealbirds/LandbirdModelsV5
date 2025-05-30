@@ -36,7 +36,6 @@ cores <- 4
 print("* Creating clusters *")
 print(table(cores))
 cl <- makePSOCKcluster(cores, type="PSOCK")
-length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 
 #4. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -44,6 +43,7 @@ tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
+tmpcl <- clusterEvalQ(cl, library(dsmextra))
 
 #5. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -104,7 +104,7 @@ calc_extrapolation <- function(i){
   #3. Create target dataframe of prediction raster values----
   target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
     as.data.frame(xy=TRUE) |> 
-    dplyr::select(c("x", "y", all_of(colnames(sample_all)))) |> 
+    dplyr::select(c("x", "y", all_of(covlist.i$cov))) |> 
     data.frame()
   
   #4. Set up bootstrap list ----
