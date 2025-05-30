@@ -247,8 +247,8 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 #3. Get list of models already run----
 files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
                     file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive = TRUE)) |> 
-  separate(file, into=c("step", "spp", "bcr", "lr"), sep="_", remove=FALSE) |> 
-  mutate(lr = as.numeric(str_sub(lr, -100, -5)))
+  separate(file, into=c("step", "spp", "bcr"), sep="_", remove=FALSE) |> 
+  mutate(bcr = str_sub(bcr, -100, -5))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
