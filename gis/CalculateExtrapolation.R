@@ -6,7 +6,7 @@
 
 #NOTES################################
 
-# Extrapolation analysis is run for each species-BCR-bootstrap. Because of time-varying
+# Extrapolation analysis is run for each BCR-bootstrap. Because of time-varying
 # prediction rasters (e.g. biomass variables), year needs to be specified as well.
 
 #------------------------------------------------
@@ -27,35 +27,65 @@ library(sf)
 library(tidyverse)
 library(terra)
 library(parallel)
+library(dsmextra)
 
-#2. Set root path----
+#2. Set nodes for local vs cluster----
+cores <- 4
+
+#3. Create and register clusters----
+print("* Creating clusters *")
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
+
+#4. Load packages on clusters----
+print("* Loading packages on workers *")
+tmpcl <- clusterEvalQ(cl, library(gbm))
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
+tmpcl <- clusterEvalQ(cl, library(Matrix))
+tmpcl <- clusterEvalQ(cl, library(terra))
+
+#5. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-#7. Load data package----
+#6. Load data package----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
-rm(bird, covlist, bcrlist, offsets, visit, gridlist)
+rm(bird, offsets, visit, birdlist)
 
-#8. Get list of covariates to include----
-cov_clean <- cov |> 
-  dplyr::select(where(is.numeric))
-cov_clean <- cov_clean[names(cov_clean)!="hli3cl_1km"] #remove hli - it is categorical
-
-#9. Set crs----
+#7. Set crs----
 #NAD83(NSRS2007)/Conus Albers projection (epsg:5072)
 crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
-#10. Load data objects----
-print("* Loading data on workers *")
+#8. Export objects to clusters ----
+tmpcl <- clusterExport(cl, c("root", "crs", "cov", "bootlist", "bcrlist", "covlist"))
 
-tmpcl <- clusterExport(cl, c("birdlist", "crs", "cov_clean"))
+#INVENTORY#########
 
-#12. Load the dsmextra functions----
-print("* Loading dsmextra *")
-if(cc){source("/project/6006982/ecknight/NationalModels/dsmextra_fn.R")
-  tmpcl <- clusterExport(cl, c("addLegend_decreasing", "check_crs", "compute_extrapolation", "compute_nearby", "ExDet", "make_X", "map_extrapolation", "n_and_p", "proj_rasters", "rescale_cov", "summarise_extrapolation", "whatif", "whatif.opt"))}
+#1. Set desired years----
+years <- seq(1985, 2020, 5)
 
-if(!cc){library(dsmextra)
-  tmpcl <- clusterEvalQ(cl, library(dsmextra))}
+#2. Create to do list----
+todo <- data.frame(bcr = colnames(bcrlist[,-1])) |> 
+  expand_grid(year=years) |> 
+  arrange(-year, bcr)
+
+#3. Determine which are already done----
+done <- data.frame(path = list.files(file.path(root, "MosaicWeighting", "Extrapolation"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "MosaicWeighting", "Extrapolation"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("bcr", "year", "file"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
+  dplyr::select(-file)
+
+#4. Create final to do list----
+if(nrow(done) > 0){
+  
+  loop <- todo |> 
+    anti_join(done)
+  
+} else { loop <- todo }
+
+print("* Loading model loop on workers *")
+tmpcl <- clusterExport(cl, c("loop"))
 
 #WRITE FUNCTION##########
 
@@ -63,49 +93,46 @@ calc_extrapolation <- function(i){
   
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
-  spp.i <- loop$spp[i]
-  boot.i <- loop$boot[i]
   year.i <- loop$year[i]
   
-  #2. Load model----
-  load.i <- try(load(file.path(root, "output", "bootstraps", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, ".Rdata"))))
-  if(inherits(load.i, "try-error")){ return(NULL) }
-  if(inherits(b.i, "try-error")){ return(NULL) }
+  #2. Determine the covs for that bcr ----
+  covlist.i <- covlist |> 
+    dplyr::filter(bcr==bcr.i) |> 
+    pivot_longer(-bcr, names_to="cov", values_to="use") |> 
+    dplyr::filter(use==TRUE) 
   
-  #3. Get list of covariates used----
-  Variables <- b.i$var.names[b.i$var.names %in% names(cov_clean)]
+  #3. Create target dataframe of prediction raster values----
+  target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
+    as.data.frame(xy=TRUE) |> 
+    dplyr::select(c("x", "y", all_of(colnames(sample_all)))) |> 
+    data.frame()
   
-  if(!inherits(b.i, "try-error")){
+  #4. Set up bootstrap list ----
+  for(j in 1:32){
     
-    #4. Get training data for that bootstrap----
-    sample_all <- cov_clean |> 
-      dplyr::filter(id %in% visit.i$id) |> 
-      dplyr::select(all_of(Variables)) |> 
+    #5. Get visits to include----
+    sample_all <- bcrlist[bcrlist[,bcr.i]>0, c("id", bcr.i)] |> 
+      dplyr::filter(id %in% bootlist[[j + 2]]) |> 
+      dplyr::select(id) |> 
+      left_join(cov) |> 
+      dplyr::select(all_of(covlist.i$cov)) |> 
+      dplyr::select(where(is.numeric)) |> 
       data.frame()
     
-    #5. Remove variables that are all zero----
+    #6. Remove variables that are all zero----
     sample <- sample_all[,colSums(sample_all, na.rm = TRUE)!=0]
-    
-    #tidy
-    rm(b.i, visit.i)
-    
-    #6. Create target dataframe of prediction raster values----
-    target <- rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))) |> 
-      as.data.frame(xy=TRUE) |> 
-      dplyr::select(c("x", "y", all_of(Variables))) |> 
-      data.frame()
     
     #7. Compute extrapolation----
     Extrapol <- try(compute_extrapolation(samples = sample,
-                                      covariate.names = names(sample),
-                                      prediction.grid = target,
-                                      coordinate.system = crs,
-                                      verbose=F))
+                                          covariate.names = names(sample),
+                                          prediction.grid = target,
+                                          coordinate.system = crs,
+                                          verbose=F))
+    
+    #tidy
+    rm(sample, target)
     
     if(!inherits(Extrapol, "try-error")){
-      
-      #tidy
-      rm(sample, target)
       
       #8. Produce binary raster of extrapolation area----
       raster <- as(Extrapol$rasters$mic$all, "SpatRaster")
@@ -115,65 +142,28 @@ calc_extrapolation <- function(i){
       #tidy
       rm(Extrapol)
       
-      #9. Write raster----
-      if(!(file.exists(file.path(root, "output", "extrapolation", spp.i)))){
-        dir.create(file.path(root, "output", "extrapolation", spp.i))
-      }
-      writeRaster(raster, file.path(root, "output", "extrapolation", spp.i, paste0(spp.i, "_", bcr.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+      #9. Add to output list ----
+      if(j==1){out <- raster} else {out <- c(out, raster)}
       
     }
     
   }
   
+  #9. Fix names---
+  names(out) <- paste0("b", seq(1:dim(out)[3]))
+  
+  #10. Write raster----
+  writeRaster(out, file.path(root, "MosaicWeighting", "Extrapolation", paste0(bcr.i, "_", year.i, ".tif")), overwrite=T)
+  
 }
 
-#10. Export to clusters----
+#11. Export to clusters----
 print("* Loading function on workers *")
-
 tmpcl <- clusterExport(cl, c("calc_extrapolation"))
 
 #RUN EXTRAPOLATION###############
 
-#1. Set desired years----
-years <- seq(1985, 2020, 5)
-
-#2. Get list of models that are bootstrapped----
-booted <- data.frame(path = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", full.names=TRUE, recursive=TRUE),
-                     file = list.files(file.path(root, "output", "bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot", "file"), remove=FALSE) |> 
-  mutate(boot = as.numeric(boot))
-
-#3. Create to do list----
-#currently set to prioritize 
-todo <- booted |> 
-  dplyr::select(bcr, spp, boot) |> 
-  expand_grid(year=years) |> 
-  arrange(bcr, spp, boot)
-
-#4. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
-                   file = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         boot = as.numeric(boot)) |> 
-    dplyr::select(-folder, -file)
-
-#5. Create final to do list----
-if(nrow(done) > 0){
-  
-  loop <- todo |> 
-    anti_join(done) |> 
-    dplyr::filter(str_sub(bcr, 1, 3)=="can")
-  
-} else { loop <- todo }
-
-#For testing - take the shortest duration models
-if(test) {loop <- loop[1:2,]}
-
-print("* Loading model loop on workers *")
-tmpcl <- clusterExport(cl, c("loop"))
-
-#6. Run function in parallel----
+#1. Run function in parallel----
 print("* Calculating extrapolation *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
