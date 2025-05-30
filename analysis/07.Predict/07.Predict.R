@@ -28,7 +28,7 @@ library(terra)
 
 #2. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -45,7 +45,7 @@ print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
-tmpcl <- clusterExport(cl, c("root"))
+tmpcl <- clusterExport(cl, c("root", "cc"))
 
 #6. Get the species list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
@@ -75,14 +75,15 @@ brt_predict <- function(i){
   stack.i <- stack[[b.i$var.names]]
   rm(stack)
   
-  #3. Predict----
-  pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
-  if(inherits(pred.i, "try-error")){ return(NULL)}
+  #3. Set prediction file path ----
+  #We write to a temp file because it is apparently most efficient and avoids having to wrap, plus it returns a list of file paths, which we can read in and save as a multiband raster
+  #We use scratch on the cluster to avoid blowing out the RAM
+  if(cc){tf <- paste0("/scratch/ecknight/NationalModels/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")}
+  if(!cc){tf <- tempfile(fileext = ".tif")}
   
-  #4. Write to a temp file for wrapping----
-  #We do this instead of using terra::wrap() so that our output is a terra stack and not a list of individually wrapped rasters
-  tf <- tempfile(fileext = ".tif")
-  writeRaster(pred.i, tf, overwrite=TRUE)
+  #4. Predict----
+  pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response", filename=tf, overwrite=TRUE))
+  if(inherits(pred.i, "try-error")){ return(NULL)}
   return(tf)
   
 }
@@ -165,7 +166,11 @@ while(nrow(loop) > 0){
                                      X=1:boots,
                                      fun=brt_predict)}
   
+  #8. Tidy up----
+  gc()
+  
   #9. Read in the temp files and name----
+  print("* Stacking predictions *")
   pred <- terra::rast(unlist(file.list))
   names(pred) <- paste0("b", seq(1:length(file.list)))
   
