@@ -6,8 +6,7 @@
 
 #NOTES################################
 
-# Extrapolation analysis is run for each species-BCR-bootstrap. Because of time-varying
-# prediction rasters (e.g. biomass variables), year needs to be specified as well.
+# Extrapolation analysis is run for each species-BCR-bootstrap. Because of time-varying prediction rasters (e.g. biomass variables), year needs to be specified as well.
 
 #------------------------------------------------
 # This code does the following:
@@ -59,62 +58,35 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 #INVENTORY####
 
 #1. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
-                        file.pred = list.files(file.path(root, "output", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file.pred, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         boot = as.numeric(boot)) |> 
-  dplyr::select(-folder, -file) |> 
-  dplyr::filter(str_sub(bcr, 1, 3)=="can")
+predicted <- data.frame(path = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
+                        file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
+  mutate(year = as.numeric(year)) |> 
+  dplyr::select(-folder, -file)
 
-#2. Get list of extrapolations----
-extrapolated <- data.frame(path.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", full.names=TRUE, recursive=TRUE),
-                           file.extrap = list.files(file.path(root, "output", "extrapolation"), pattern="*.tiff", recursive = TRUE)) |> 
-    separate(file.extrap, into=c("folder", "spp", "bcr", "boot", "year", "file"), remove=FALSE) |>  
-    mutate(year = as.numeric(year),
-           boot = as.numeric(boot)) |> 
-    dplyr::select(-folder, -file) |> 
-  dplyr::filter(str_sub(bcr, 1, 3)=="can")
+#2. Get list of mosaics completed----
+mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE),
+                        file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
+  separate(file.mosaic, into=c("spp", "year"), sep="_", remove=FALSE) |> 
+  mutate(year = as.numeric(str_sub(year, -100, -5)))
 
-#3. Get list of mosaics completed----
-mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE),
-                        file.mosaic = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff")) |> 
-  separate(file.mosaic, into=c("spp", "boot", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)),
-         boot = as.numeric(boot))
-
-#4. Figure out which spp*boot*year*bcr are predicted and mosaicked----
-all <- inner_join(predicted, extrapolated)
-
-#5. Make the to-do list----
+#3. Make the to-do list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE, spp %in% sppuse,
                 str_sub(bcr, 1, 3)=="can") |> 
-  expand_grid(year = seq(1985, 2020, 5),
-              boot = seq(1, 10, 1))
+  expand_grid(year = seq(1985, 2020, 5))
 
-#6. Remove spp*boot*year combinations that don't have all BCRs----
-loop <- full_join(all, todo) |> 
-    mutate(na = ifelse(is.na(file.pred), 1, 0)) |>
-    group_by(spp, boot, year) |>
+#4. Remove spp*boot*year combinations that don't have all BCRs----
+loop <- full_join(predicted, todo) |> 
+    mutate(na = ifelse(is.na(path), 1, 0)) |> 
+    group_by(spp, year) |>
     summarize(nas = sum(na)) |> 
-    ungroup() |>
+    ungroup()
     dplyr::filter(nas==0) |> 
     anti_join(mosaicked)
-
-#7. Not done----
-missing <- full_join(all, todo) |> 
-  mutate(na = ifelse(is.na(file.pred), 1, 0)) |>
-  group_by(spp, boot, year) |>
-  summarize(nas = sum(na)) |> 
-  ungroup() |>
-  dplyr::filter(nas>0)
-
-notextrap <- predicted |> 
-  anti_join(extrapolated)
 
 #MOSAIC####
 
@@ -134,12 +106,10 @@ for(i in 1:nrow(loop)){
   
   #4. Loop settings----
   spp.i <- loop$spp[i]
-  boot.i <- loop$boot[i]
   year.i <- loop$year[i]
   
   #5. Loop file lists----
-  predicted.i <- dplyr::filter(predicted, spp==spp.i, boot==boot.i, year==year.i)
-  extrapolated.i <- dplyr::filter(extrapolated, spp==spp.i, boot==boot.i, year==year.i)
+  predicted.i <- dplyr::filter(predicted, spp==spp.i, year==year.i)
   
   #6. Skip loop if rows don't match-----
   if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
@@ -156,8 +126,7 @@ for(i in 1:nrow(loop)){
             mutate(path.extrap = path.pred,
                    spp = spp.i,
                    boot = boot.i,
-                   year = year.i)) |> 
-    dplyr::filter(str_sub(bcr, 1, 3)=="can")
+                   year = year.i))
     
   #9. Import, mosaic, and sum extrapolation rasters-------
   f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
@@ -177,7 +146,7 @@ for(i in 1:nrow(loop)){
   Extrapolation <- Overlay
   Extrapolation[Extrapolation < 1] <- 0
   Extrapolation[Extrapolation > 0] <- 1
-  writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+  writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
   
   #13. Produce correction raster----
   Correction <- Overlay
@@ -252,7 +221,7 @@ for(i in 1:nrow(loop)){
     mask(st_transform(bcr, crs(CANwideSp)))
   
   #25. Save-----
-  writeRaster(FinalOut, file.path(root, "output", "mosaics", "predictions", paste0(spp.i, "_", boot.i, "_", year.i, ".tiff")), overwrite=T)
+  writeRaster(FinalOut, file.path(root, "output", "mosaics", "predictions", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
   
   duration <- Sys.time() - start
   
