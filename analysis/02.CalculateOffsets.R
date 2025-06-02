@@ -26,7 +26,6 @@ library(sf) #coordinate projection
 library(lutz) #timezone lookup
 library(suncalc) #required for QPAD for time since sunrise calculation
 library(data.table) #collapse list to dataframe
-
 library(maptools)
 library(intrval)
 library(raster)
