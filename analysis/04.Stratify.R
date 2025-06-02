@@ -89,13 +89,13 @@ for(i in 1:nrow(bcr.buff)){
     mutate(bcr = ifelse(!is.na(subUnit), TRUE, FALSE))
   
   #7. Wrangle to 3 classes: 0 = exclude from model, 1 = use in model, 2 = use in validation
-  bcr.use <- bcr_buff.out |> 
+  bcr.status <- bcr_buff.out |> 
     mutate(bcr = bcr.out$bcr) |> 
     mutate(use = case_when(buff==FALSE & bcr==FALSE ~ 0,
                            bcr==FALSE & buff==TRUE ~ 2,
                            buff==TRUE ~ 1))
   
-  bcr.df[,(i+1)] <- bcr.use$use
+  bcr.df[,(i+1)] <- bcr.status$use
   
   print(paste0("Finished bcr ", i, " of ", nrow(bcr.buff)))
   
@@ -120,9 +120,7 @@ maxday <- 196 #July 15
 
 #2. Remove points outside study area
 bcr.in <- bcr.df |> 
-  column_to_rownames("id") |> 
-  dplyr::filter(rowSums(across(everything())) > 0) |> 
-  rownames_to_column("id") |> 
+  dplyr::filter(rowSums(across(-id)) > 0) |> 
   mutate(id = as.integer(id))
 
 #3. Filter visits----
