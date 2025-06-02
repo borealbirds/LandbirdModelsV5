@@ -35,7 +35,7 @@
 #1. Load packages----
 
 library(tidyverse) #basic data wrangling
-library(wildRtrax) #to download data from wildtrax
+library(wildrtrax) #to download data from wildtrax
 library(data.table) #for binding lists into dataframes
 library(lubridate) #date wrangling
 library(auk) #eBird wrangling
@@ -151,13 +151,13 @@ save(raw.wt, projects, error.log, file=paste0(root, "/wildtrax_raw_", Sys.Date()
 #Note: loop currently has to be run by hand because auk_set_ebd_path() requires restarting the session after running the command
 
 #1. Get list of ebd objects to process----
-ebd.files <- list.files(file.path(root, "ebd_raw"), pattern="ebd_*")
+ebd.files <- list.files(file.path(root, "data", "eBird", "ebd_raw"), pattern="ebd_*")
 
 #2. Set up loop----
 for(i in 1:length(ebd.files)){
   
   #3. Set ebd path----
-  auk_set_ebd_path(file.path(root, "ebd_raw", ebd.files[i]), overwrite=TRUE)
+  auk_set_ebd_path(file.path(root, "data", "eBird", "ebd_raw", ebd.files[i]), overwrite=TRUE)
   
   #4. Define filters----
   filters <- auk_ebd(paste0(ebd.files[i], ".txt")) %>% 
@@ -182,7 +182,7 @@ colnms <- c("source", "organization", "project", "sensor", "tagMethod", "equipme
 
 #2. Wrangle wildtrax data-----
 
-load(file.path(root,"WildTrax/", "wildtrax_raw_2023-01-20.Rdata"))
+load(file.path(root, "Data", "WildTrax/", "wildtrax_raw_2023-01-20.Rdata"))
 
 #2a. A bit of prep----
 dat.wt <- raw.wt %>% 
@@ -288,13 +288,13 @@ use.wt <- aru.wt %>%
 #Note this assumes observations with "X" individuals are 1s
 #Remove hotspot data
 
-ebd.files.done <- list.files(file.path(root, "eBird", "ebd_filtered"), pattern="ebd_*", full.names=TRUE)
+ebd.files.done <- list.files(file.path(root, "data", "eBird", "ebd_filtered"), pattern="ebd_*", full.names=TRUE)
 
 #Note this next line takes a long time to run (couple hours)
 raw.ebd <- purrr::map(.x=ebd.files.done, .f=~read_ebd(.)) %>% 
   rbindlist()
 
-tax.wt <- read.csv(file.path(root, "Lookups/", "lu_species.csv")) %>% 
+tax.wt <- read.csv(file.path(root, "data", "Lookups", "lu_species.csv")) %>% 
   mutate(scientific_name = paste(species_genus, species_name)) %>% 
   rename(species = species_code) %>% 
   dplyr::select(scientific_name, species)
@@ -338,7 +338,7 @@ loc <- use %>%
 #3. Clip by study area----
 
 #3a. Read in study area----
-sa <- read_sf("G:/Shared drives/BAM_NationalModels/NationalModels5.0/Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp")
+sa <- read_sf(file.path(root, "Regions/GEE_BufferedNatMod/GEE_BufferedNatMod.shp"))
 
 #3v. Create raster (much faster than from polygon)
 r <- rast(ext(sa), resolution=1000)
@@ -450,7 +450,7 @@ visit <- dat %>%
 #2. Tidy bird data----
 
 #2a. Get list of species from qpad----
-load_BAM_QPAD(4)
+load_BAM_QPAD(3)
 spp <- getBAMspecieslist()
 
 #2b. Filter----
