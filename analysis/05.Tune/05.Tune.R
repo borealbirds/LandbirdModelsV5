@@ -40,6 +40,8 @@
 
 #BAM has previously used the Graham cluster; however, we hit major obstacles with innaccessibility of the scratch space during V5 and moved our work to Cedar.
 
+#Although this and the subsequent scripts for the cluster are written to run on more than one node at once, it is typically fastest to request one node for 24 hours at a time. Instead, we use a lookup table (e.g., sppuse below) with subgroupings to run more than group per modelling step at a time, each on a single node.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -49,43 +51,47 @@ library(dismo)
 library(parallel)
 library(Matrix)
 
-#2. Determine if testing and on local or cluster----
+#2. Set species subset ----
+set <- c(1:5)
+
+#3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
-#3. Set cores for local vs cluster----
-if(cc){ cores <- 48 }
-if(!cc | test){ cores <- 6}
+#4. Set cores for local vs cluster----
+if(cc){ cores <- 20 }
+if(!cc | test){ cores <- 4}
 
-#4. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 print(table(cores))
 cl <- makePSOCKcluster(cores, type="PSOCK")
 
-#5. Set root path----
+#6. Set root path----
 print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root"))
 
-#6. Load packages on clusters----
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(dismo))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#7. Load data package----
+#8. Load data package----
 print("* Loading data on master *")
 
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
-#8. Set species subset----
+#9. Set species subset----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
   rename(spp = species_code) |> 
-  dplyr::select(spp, rerun)
+  dplyr::select(spp, rerun) |> 
+  dplyr::filter(rerun %in% set)
 
-#9. Load data objects----
+#10. Load data objects----
 print("* Loading data on workers *")
 
 tmpcl <- clusterExport(cl, c("bird", "offsets", "cov", "covlist", "bcrlist", "bootlist", "visit"))
@@ -248,7 +254,8 @@ tmpcl <- clusterExport(cl, c("bcr.cov"))
 files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", full.names=TRUE, recursive = TRUE),
                     file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr"), sep="_", remove=FALSE) |> 
-  mutate(bcr = str_sub(bcr, -100, -5))
+  mutate(bcr = str_sub(bcr, -100, -5)) |> 
+  dplyr::filter(!is.na(bcr))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
@@ -269,51 +276,35 @@ if(nrow(files) > 0){
     dplyr::select(spp, bcr) |> 
     unique()
   
-  #7. Determine learning rate for those that need rerunning----
-  redo <- perf |> 
-    anti_join(done) |> 
-    group_by(spp, bcr) |> 
-    mutate(last = ifelse(trees==10000, max(lr), min(lr))) |> 
-    dplyr::filter(lr == last,
-                  lr > lr.min,
-                  lr < lr.max) |> 
-    mutate(lr.next = case_when(trees == 10000 ~ lr*10,
-                               trees < 1000 ~ lr/10)) |> 
-    ungroup()
-  
-  #8. Determine those that won't run----
+  #7. Determine those that won't run----
   norun <- perf |> 
-    anti_join(done) |> 
-    anti_join(redo)
+    anti_join(done)
   
   write.csv(norun, file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
   
-  #9. Make dataframe of models to run----
-  #Full combinations, take out done models and redo models, then add redo models back in
+  #8. Make dataframe of models to run----
+  #Full combinations, take out done models
   loop <- bcr.spp |> 
     anti_join(done) |> 
-    anti_join(redo) |> 
     anti_join(norun) |> 
     mutate(lr = 0.001) |> 
-    rbind(redo |> 
-            dplyr::select(spp, bcr, lr.next) |> 
-            rename(lr = lr.next)) |> 
     arrange(spp, bcr) |> 
     inner_join(sppuse)
   
 }
 
-#10. Make dataframe of models to run if there are no files yet----
+#9. Make dataframe of models to run if there are no files yet----
 if(nrow(files)==0){
   loop <- bcr.spp |> 
     mutate(lr = 0.001) |> 
-    arrange(spp, bcr)
+    arrange(spp, bcr) |> 
+    inner_join(sppuse)
 }
 
 #For testing
 if(test) {loop <- loop[1:cores,]}
 
-print("* Loading model loop on workers *")
+cat("* Loading model loop of", nrow(loop), "rows on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
 #10. Run BRT function in parallel----
