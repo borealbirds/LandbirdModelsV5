@@ -26,7 +26,6 @@
 
 #To consider for V6:
 #stratification across years for year-specific validation.
-#variable to indicate training data in buffer vs in subunit to speed up validation process.
 #Explore tidy models
 
 #PREAMBLE############################
@@ -177,7 +176,7 @@ visit.grid <- visit.use |>
 length(unique(visit.grid$cell))
 
 #3. Set number of bootstraps ----
-boots <- 48
+boots <- 32
 
 #4. Get list of unique grid cells & years ----
 samples <- visit.grid |> 
@@ -367,6 +366,17 @@ bird <- bird.use |>
 
 offsets <- offsets.use
 bcrlist <- bcr.use
+
+#2. Some checks ----
+
+#Site IDs
+sites <- bcrlist |> 
+  pivot_longer(-id, names_to="bcr", values_to="use") |> 
+  dplyr::filter(use==TRUE) |> 
+  left_join(visit |> dplyr::select(id, lat, lon))
+
+ggplot(sites |> sample_n(100000)) +
+  geom_point(aes(x=lon, y=lat, colour=bcr))
 
 #3. Save----
 save(visit, cov, bird, offsets, covlist, birdlist, bcrlist, bootlist, file=file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
