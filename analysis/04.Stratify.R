@@ -178,12 +178,7 @@ length(unique(visit.grid$cell))
 #3. Set number of bootstraps ----
 boots <- 32
 
-#4. Get list of unique grid cells & years ----
-samples <- visit.grid |> 
-  dplyr::select(year, cell) |> 
-  unique()
-
-#5. Make the bootstrap list ----
+#4. Make the bootstrap list ----
 #Choose one sample id for each unique grid cell & year ----
 for(i in 1:boots){
   
@@ -209,7 +204,7 @@ for(i in 1:boots){
 
 }
 
-#6. Fix column names ----
+#5. Fix column names ----
 colnames(bootlist) <- c("cell", "year", paste0("b", seq(1:boots)))
 
 #UPDATE BIRD LIST BY BCR##############
