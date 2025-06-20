@@ -52,7 +52,7 @@ tmpcl <- clusterExport(cl, c("root"))
 
 #6. Get the species list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-#  dplyr::filter(rerun==1) |> 
+  dplyr::filter(rerun==2) |> 
   rename(spp = species_code) |> 
   dplyr::select(spp, rerun)
 
@@ -194,6 +194,7 @@ if(nrow(loop)==0){
 }
 
 #4. Otherwise set up while loop ----
+cat("* Starting modelling for", nrow(loop), "rows *")
 while(nrow(loop) > 0){
   
   #5. Get model settings----
@@ -237,7 +238,7 @@ while(nrow(loop) > 0){
   #10. Run the models ----
   print("* Fitting models *")
   b.list <- parLapply(cl,
-                      X=1:cores,
+                      X=1:32,
                       fun=brt_boot)
   
   #11. Save model----
