@@ -26,32 +26,37 @@ library(parallel)
 library(Matrix)
 library(terra)
 
-#2. Determine if testing and on local or cluster----
+#2. Set species subset ----
+set <- c(1:5)
+
+#3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
-#3. Set nodes for local vs cluster----
+#4. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc | test){ cores <- 2}
+if(!cc | test){ cores <- 10}
 
-#4. Create and register clusters----
+#5. Create and register clusters----
 print("* Creating clusters *")
 print(table(cores))
 cl <- makePSOCKcluster(cores, type="PSOCK")
 length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 
-#5. Set root path----
+#6. Set root path----
 print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 tmpcl <- clusterExport(cl, c("root", "cc"))
 
-#6. Get the species list----
+#7. Get the species list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-  dplyr::filter(rerun==1)
+  rename(spp = species_code) |> 
+  dplyr::select(spp, rerun) |> 
+  dplyr::filter(rerun %in% set)
 
-#7. Load packages on clusters----
+#8. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
@@ -108,7 +113,8 @@ todo <- booted |>
   dplyr::select(bcr, spp) |>
   expand_grid(year=years) |>
   arrange(spp, year, bcr) |> 
-  dplyr::filter(spp %in% sppuse$species_code)
+  inner_join(sppuse |> 
+               dplyr::select(spp, rerun))
 
 #RUN MODELS#########
 
@@ -122,7 +128,8 @@ done <- data.frame(file = list.files(file.path(root, "output", "07_predictions")
 if(nrow(done) > 0){
   
   loop <- todo |> 
-    anti_join(done)
+    anti_join(done) |> 
+    dplyr::filter(rerun==1, bcr=="can61")
   
 } else { loop <- todo }
 

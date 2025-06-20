@@ -56,11 +56,11 @@ set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set cores for local vs cluster----
 if(cc){ cores <- 20 }
-if(!cc | test){ cores <- 4}
+if(!cc | test){ cores <- 2}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
