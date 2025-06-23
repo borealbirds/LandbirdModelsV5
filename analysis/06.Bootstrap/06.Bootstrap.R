@@ -30,14 +30,14 @@ library(parallel)
 library(Matrix)
 
 #2. Set species subset ----
-set <- c(1:5)
+set <- c(1)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
 cc <- FALSE
 
 #4. Set cores for local vs cluster----
-if(cc){ cores <- 32 }
+if(cc){ cores <- 24 }
 if(!cc | test){ cores <- 2}
 
 #5. Create and register clusters----
@@ -150,8 +150,7 @@ tuned <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
   inner_join(sppuse)
 
 #2. Get learning rates----
-perf <- map_dfr(read.csv, .x=tuned$path) |> 
-  dplyr::filter(trees >= 1000 & trees < 10000)
+perf <- map_dfr(read.csv, .x=tuned$path)
 
 #3. Get the list of ones that need forcing----
 notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv")) |> 
