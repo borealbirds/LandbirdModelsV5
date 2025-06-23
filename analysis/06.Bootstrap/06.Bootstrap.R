@@ -34,10 +34,10 @@ set <- c(1)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #4. Set cores for local vs cluster----
-if(cc){ cores <- 24 }
+if(cc){ cores <- 16 }
 if(!cc | test){ cores <- 2}
 
 #5. Create and register clusters----
@@ -153,6 +153,7 @@ tuned <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
 perf <- map_dfr(read.csv, .x=tuned$path)
 
 #3. Get the list of ones that need forcing----
+#low and slow
 notune <- read.csv(file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv")) |> 
   dplyr::select(bcr, spp) |> 
   mutate(lr = 1e-05,
@@ -168,7 +169,8 @@ todo <- perf |>
   rbind(notune) |> 
   arrange(-time) |> 
   unique() |> 
-  inner_join(sppuse)
+  inner_join(sppuse) |> 
+  dplyr::filter(spp=="OSFL" | bcr=="can61")
 
 #RUN MODELS############
 
@@ -180,8 +182,10 @@ done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"),
 #2. To do list----
 if(nrow(done) > 0){
   
+  #do the fast ones first
   loop <- todo |> 
-    anti_join(done)
+    anti_join(done) |> 
+    arrange(time)
   
 } else { loop <- todo }
 
