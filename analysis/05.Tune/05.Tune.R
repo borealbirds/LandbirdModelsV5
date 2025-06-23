@@ -259,7 +259,7 @@ files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-10
-lr.max <- 0.5
+lr.max <- 0.01
 
 print("* Loading stop threshold on workers *")
 tmpcl <- clusterExport(cl, c("lr.min", "lr.max"))
