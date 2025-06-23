@@ -30,12 +30,12 @@ library(terra)
 set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
-test <- FALSE
+test <- TRUE
 cc <- FALSE
 
 #4. Set nodes for local vs cluster----
-if(cc){ cores <- 32}
-if(!cc | test){ cores <- 10}
+if(cc){ cores <- 16}
+if(!cc | test){ cores <- 2}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -47,8 +47,6 @@ length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
-
-tmpcl <- clusterExport(cl, c("root", "cc"))
 
 #7. Get the species list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
@@ -67,34 +65,48 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 
 brt_predict <- function(i){
   
-  #1. Get the model----
-  b.i <- b.list[[i]]
+  #1. Load bootstraps----
+  trymod <- try(load(file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
+  if(inherits(trymod, "try-error")){ return(NULL) }
   
-  #2. Load the raster stack----
+  #2. Get the model----
+  b.i <- b.list[[i]]
+  remove(b.list)
+  
+  #3. Load the raster stack----
   #Apparently faster than exporting, gets around requirement to wrap & unwrap
   stack <- try(rast(file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif"))))
   if(inherits(stack, "try-error")){ return(NULL) }
-  
-  #3. Reduce to just the required layers----
+
+  #4. Reduce to just the required layers----
   #to save RAM
   stack.i <- stack[[b.i$var.names]]
   rm(stack)
-  
-  #3. Set prediction file path ----
+
+  #5. Set prediction file path ----
   #We write to a temp file because it is apparently most efficient and avoids having to wrap, plus it returns a list of file paths, which we can read in and save as a multiband raster
   #We use scratch on the cluster to avoid blowing out the RAM
   if(cc){tf <- paste0("/scratch/ecknight/NationalModels/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")}
-  if(!cc){tf <- tempfile(fileext = ".tif")}
-  
-  #4. Predict----
-  pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response", filename=tf, overwrite=TRUE))
+  if(!cc){tf <- file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif"))}
+
+  #6. Predict----
+  if(cc){
+    pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response", filename=tf, overwrite=TRUE))
+  }
+
+  if(!cc){
+    pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
+    if(!inherits(pred.i, "try-error")){
+      terra::writeRaster(pred.i, filename=file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")))
+    }
+  }
   if(inherits(pred.i, "try-error")){ return(NULL)}
+  
+  #7. Get output----
   return(tf)
   
 }
 
-#8. Export to clusters----
-print("* Loading function on workers *")
 tmpcl <- clusterExport(cl, c("brt_predict"))
 
 #GET INVENTORY###############
@@ -152,17 +164,9 @@ while(nrow(loop) > 0){
   spp.i <- loop$spp[1]
   year.i <- loop$year[1]
   
-  #6. Load bootstraps----
-  trymod <- try(load(file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
-  if(inherits(trymod, "try-error")){ return(NULL) }
-  
   #7. Export to cores ----
-  print("* Loading model loop info on workers *")
-  tmpcl <- clusterExport(cl, c("bcr.i", "spp.i", "year.i", "b.list"))
-  
-  #tidy
-  boots <- length(b.list)
-  rm(b.list)
+  print("* Loading function requirements on workers *")
+  tmpcl <- clusterExport(cl, c("loop", "brt_predict", "bcr.i", "spp.i", "year.i", "cc", "root", "cores"))
   
   #8. Run the models ----
   print("* Making predictions *")
@@ -170,7 +174,7 @@ while(nrow(loop) > 0){
                                     X=1:cores,
                                     fun=brt_predict)}
   if(!test){file.list <- parLapply(cl,
-                                     X=1:boots,
+                                     X=1:32,
                                      fun=brt_predict)}
   
   #8. Tidy up----
