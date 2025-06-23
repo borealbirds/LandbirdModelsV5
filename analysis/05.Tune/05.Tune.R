@@ -258,7 +258,7 @@ files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
   dplyr::filter(!is.na(bcr))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
-lr.min <- 1e-10
+lr.min <- 1e-5
 lr.max <- 0.01
 
 print("* Loading stop threshold on workers *")
