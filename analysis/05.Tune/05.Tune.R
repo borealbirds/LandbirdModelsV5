@@ -52,11 +52,11 @@ library(parallel)
 library(Matrix)
 
 #2. Set species subset ----
-set <- c(1:5)
+set <- c(1,3)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #4. Set cores for local vs cluster----
 if(cc){ cores <- 20 }
@@ -270,30 +270,22 @@ if(nrow(files) > 0){
   
   perf <- map_dfr(read.csv, .x=files$path)
   
-  #6. Determine which ones are done or won't run----
-  done <- perf |> 
-    dplyr::filter((trees >= 1000 & trees < 10000)) |> 
-    dplyr::select(spp, bcr) |> 
-    unique()
-  
-  #7. Determine those that won't run----
-  norun <- perf |> 
-    anti_join(done)
+  #6. Determine those that won't run----
+  norun <- dplyr::filter(perf, is.na(trees))
   
   write.csv(norun, file.path(root, "output", "05_tuning", "SpeciesBCRCombos_NotTuned.csv"), row.names = FALSE)
   
-  #8. Make dataframe of models to run----
+  #7. Make dataframe of models to run----
   #Full combinations, take out done models
   loop <- bcr.spp |> 
-    anti_join(done) |> 
-    anti_join(norun) |> 
+    anti_join(perf) |> 
     mutate(lr = 0.001) |> 
     arrange(spp, bcr) |> 
     inner_join(sppuse)
   
 }
 
-#9. Make dataframe of models to run if there are no files yet----
+#8. Make dataframe of models to run if there are no files yet----
 if(nrow(files)==0){
   loop <- bcr.spp |> 
     mutate(lr = 0.001) |> 
@@ -307,7 +299,7 @@ if(test) {loop <- loop[1:cores,]}
 cat("* Loading model loop of", nrow(loop), "rows on workers *")
 tmpcl <- clusterExport(cl, c("loop"))
 
-#10. Run BRT function in parallel----
+#9. Run BRT function in parallel----
 print("* Fitting models *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
