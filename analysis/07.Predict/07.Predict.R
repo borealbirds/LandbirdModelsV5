@@ -27,11 +27,11 @@ library(Matrix)
 library(terra)
 
 #2. Set species subset ----
-set <- c(1:5)
+set <- c(1)
 
 #3. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #4. Set nodes for local vs cluster----
 if(cc){ cores <- 16}
@@ -97,9 +97,10 @@ brt_predict <- function(i){
   if(!cc){
     pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
     if(!inherits(pred.i, "try-error")){
-      terra::writeRaster(pred.i, filename=file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")))
+      terra::writeRaster(pred.i, filename=file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")), overwrite=TRUE)
     }
   }
+  
   if(inherits(pred.i, "try-error")){ return(NULL)}
   
   #7. Get output----
@@ -158,6 +159,16 @@ if(nrow(loop)==0){
 
 #4. Otherwise set up while loop ----
 while(nrow(loop) > 0){
+  
+  trymod <- try(load(file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
+  
+  if(inherits(trymod, "try-error")){
+    loop <- loop[-1,]
+    next}
+  
+  if(is.null(b.list[[25]])){
+    loop <- loop[-1,]
+    next}
   
   #5. Get model settings----
   bcr.i <- loop$bcr[1]
