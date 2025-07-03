@@ -30,7 +30,7 @@ library(parallel)
 library(dsmextra)
 
 #2. Set nodes for local vs cluster----
-cores <- 4
+cores <- 8
 
 #3. Create and register clusters----
 print("* Creating clusters *")
@@ -130,7 +130,7 @@ calc_extrapolation <- function(i){
                                           verbose=F))
     
     #tidy
-    rm(sample, target)
+    rm(sample)
     
     if(!inherits(Extrapol, "try-error")){
       
