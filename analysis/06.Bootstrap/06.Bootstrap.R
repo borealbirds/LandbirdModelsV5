@@ -30,11 +30,11 @@ library(parallel)
 library(Matrix)
 
 #2. Set species subset ----
-set <- c(1)
+set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set cores for local vs cluster----
 if(cc){ cores <- 16 }
@@ -169,8 +169,7 @@ todo <- perf |>
   rbind(notune) |> 
   arrange(-time) |> 
   unique() |> 
-  inner_join(sppuse) |> 
-  dplyr::filter(spp=="OSFL" | bcr=="can61")
+  inner_join(sppuse)
 
 #RUN MODELS############
 
@@ -214,7 +213,7 @@ while(nrow(loop) > 0){
   if(tuned.i==TRUE){
     trymod <- try(load(file=file.path(root, "output", "05_fullmodels", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
     
-    if(inherits(trymod, "try-error")){ return(NULL) }
+    if(inherits(trymod, "try-error")){ next }
     
     #7. Make the new covlist if already tuned----
     #make sure to retain method and year
