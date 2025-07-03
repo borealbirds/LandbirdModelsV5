@@ -58,9 +58,9 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 #INVENTORY####
 
 #1. Get list of predictions----
-predicted <- data.frame(path = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
-                        file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
+predicted <- data.frame(path.pred = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
+                        file.pred = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file.pred, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
   mutate(year = as.numeric(year)) |> 
   dplyr::select(-folder, -file)
 
@@ -81,20 +81,20 @@ todo <- birdlist |>
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
 loop <- full_join(predicted, todo) |> 
-    mutate(na = ifelse(is.na(path), 1, 0)) |> 
+    mutate(na = ifelse(is.na(path.pred), 1, 0)) |> 
     group_by(spp, year) |>
     summarize(nas = sum(na)) |> 
-    ungroup()
+    ungroup() |> 
     dplyr::filter(nas==0) |> 
     anti_join(mosaicked)
 
 #MOSAIC####
 
 #1. Get the full list of zeroed bcr raster----
-zeros <- data.frame(path = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
-                    file = list.files(file.path(root, "gis", "zeros"))) |>
-  separate(file, into=c("bcr", "tif")) |> 
-  dplyr::select(path, bcr)
+zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
+                    file.zero = list.files(file.path(root, "gis", "zeros"))) |>
+  separate(file.zero, into=c("bcr", "tif")) |> 
+  dplyr::select(path.zero, bcr)
 
 #2. Make an object to catch corrupt file errors----
 corrupt <- data.frame()
@@ -111,25 +111,22 @@ for(i in 1:nrow(loop)){
   #5. Loop file lists----
   predicted.i <- dplyr::filter(predicted, spp==spp.i, year==year.i)
   
-  #6. Skip loop if rows don't match-----
-  if(nrow(predicted.i)!=nrow(extrapolated.i)){ next } 
-  
   #7. Determine required blank predictions for unmodelled BCRs----
   zeros.i <- zeros |> 
     anti_join(predicted.i)
   
   #8. Add zero files to available files----
-  loop.i <- full_join(predicted.i, extrapolated.i) |> 
-    dplyr::select(-file.pred, -file.extrap) |> 
+  loop.i <- predicted.i |> 
+    dplyr::select(-file.pred) |> 
+    mutate(path.extrap = file.path(root, "MosaicWeighting", "Extrapolation", paste0(bcr, "_", year.i, ".tif"))) |> 
     rbind(zeros.i |> 
-            rename(path.pred = path) |> 
+            rename(path.pred = path.zero) |> 
             mutate(path.extrap = path.pred,
                    spp = spp.i,
-                   boot = boot.i,
                    year = year.i))
     
   #9. Import, mosaic, and sum extrapolation rasters-------
-  f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
+  f.mosaic <- lapply(loop.i$path.extrap, rast) 
     sprc() |> 
     mosaic(fun="sum") |> 
     crop(ext(MosaicOverlap))
