@@ -52,15 +52,15 @@ library(parallel)
 library(Matrix)
 
 #2. Set species subset ----
-set <- c(1,3)
+set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set cores for local vs cluster----
-if(cc){ cores <- 20 }
-if(!cc | test){ cores <- 2}
+if(cc){ cores <- 24 }
+if(!cc | test){ cores <- 1}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -154,11 +154,11 @@ brt_tune <- function(i){
   
   #rerun if lr too high (small sample size e.g., can3)
   #stop at a certain lr and remove that model from the to-do list
-  while((trees.i < 1000 & lr.i >= lr.min) |
-        (trees.i==10000 & lr.i <= lr.max)){
+  while((trees.i < 1000 & lr.i > lr.min) |
+        (trees.i==10000 & lr.i < lr.max)){
     
     if(trees.i < 1000){ lr.i <- lr.i/10}
-    if(trees.i==10000 & lr.i < 0.1){ lr.i <- lr.i*10}
+    if(trees.i==10000 & lr.i < lr.max){ lr.i <- lr.i*10}
     
     set.seed(1234)
     m.i <- try(dismo::gbm.step(data=dat.i,
