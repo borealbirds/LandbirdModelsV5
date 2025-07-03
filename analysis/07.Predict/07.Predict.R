@@ -28,14 +28,15 @@ library(terra)
 
 #2. Set species subset ----
 set <- c(1)
+set_sp <- "TEWA"
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set nodes for local vs cluster----
 if(cc){ cores <- 16}
-if(!cc | test){ cores <- 2}
+if(!cc | test){ cores <- 1}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -80,32 +81,21 @@ brt_predict <- function(i){
 
   #4. Reduce to just the required layers----
   #to save RAM
-  stack.i <- stack[[b.i$var.names]]
+  stack.i <- try(stack[[b.i$var.names]])
+  if(inherits(stack.i, "try-error")){ return(NULL)}
   rm(stack)
 
   #5. Set prediction file path ----
   #We write to a temp file because it is apparently most efficient and avoids having to wrap, plus it returns a list of file paths, which we can read in and save as a multiband raster
   #We use scratch on the cluster to avoid blowing out the RAM
-  if(cc){tf <- paste0("/scratch/ecknight/NationalModels/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")}
-  if(!cc){tf <- file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif"))}
-
+  tf <- file.path(root, "tempfiles", paste0("pred_", spp.i, "_", bcr.i, "_", year.i, "_", i, ".tif"))
+  
   #6. Predict----
-  if(cc){
-    pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response", filename=tf, overwrite=TRUE))
-  }
-
-  if(!cc){
-    pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response"))
-    if(!inherits(pred.i, "try-error")){
-      terra::writeRaster(pred.i, filename=file.path(root, paste0("output/tempfiles/pred_", spp.i, "_", bcr.i, "_", i, ".tif")), overwrite=TRUE)
-    }
-  }
+  pred.i <- try(terra::predict(model=b.i, object=stack.i, type="response", filename = tf, overwrite=TRUE))
   
-  if(inherits(pred.i, "try-error")){ return(NULL)}
-  
-  #7. Get output----
+  #8. Return output
   return(tf)
-  
+
 }
 
 tmpcl <- clusterExport(cl, c("brt_predict"))
@@ -142,7 +132,7 @@ if(nrow(done) > 0){
   
   loop <- todo |> 
     anti_join(done) |> 
-    dplyr::filter(rerun==1, bcr=="can61")
+    dplyr::filter(spp==set_sp)
   
 } else { loop <- todo }
 
@@ -160,20 +150,15 @@ if(nrow(loop)==0){
 #4. Otherwise set up while loop ----
 while(nrow(loop) > 0){
   
-  trymod <- try(load(file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata"))))
-  
-  if(inherits(trymod, "try-error")){
-    loop <- loop[-1,]
-    next}
-  
-  if(is.null(b.list[[25]])){
-    loop <- loop[-1,]
-    next}
-  
-  #5. Get model settings----
+  #5. Get model settings ----
   bcr.i <- loop$bcr[1]
   spp.i <- loop$spp[1]
   year.i <- loop$year[1]
+  
+  #6. Some error handling ----
+  if(inherits(trymod, "try-error")){
+    loop <- loop[-1,]
+    next}
   
   #7. Export to cores ----
   print("* Loading function requirements on workers *")
@@ -185,18 +170,18 @@ while(nrow(loop) > 0){
                                     X=1:cores,
                                     fun=brt_predict)}
   if(!test){file.list <- parLapply(cl,
-                                     X=1:32,
+                                     X=c(1:32),
                                      fun=brt_predict)}
   
-  #8. Tidy up----
+  #9. Tidy up----
   gc()
   
-  #9. Read in the temp files and name----
+  #10. Read in the temp files and name----
   print("* Stacking predictions *")
   pred <- terra::rast(unlist(file.list))
   names(pred) <- paste0("b", seq(1:length(file.list)))
   
-  #10. Save model----
+  #11. Save model----
   print("* Saving predictions *")
   if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
     dir.create(file.path(root, "output", "07_predictions", spp.i))
@@ -205,7 +190,7 @@ while(nrow(loop) > 0){
   terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
                      overwrite=TRUE)
   
-  #11. Update the list ----
+  #12. Update the list ----
   done <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
     separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |>  
     mutate(year = as.numeric(year)) |> 
