@@ -169,6 +169,22 @@ brt_tune <- function(i){
                                learning.rate = lr.i,
                                family="poisson"))
     
+    # divide lr by 2 if stuck in eternal loop of 10000 and < 1000 
+    if(trees.i==10000 & m.i$n.trees < 1000){
+      
+      lr.i <- lr.i/2
+      
+      set.seed(1234)
+      m.i <- try(dismo::gbm.step(data=dat.i,
+                                 gbm.x=c(2:ncol(dat.i)),
+                                 gbm.y=1,
+                                 offset=off.i,
+                                 tree.complexity = id.i,
+                                 learning.rate = lr.i,
+                                 family="poisson"))
+      
+    }
+    
     trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
     
   }
