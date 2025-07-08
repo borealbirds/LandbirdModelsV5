@@ -29,13 +29,14 @@ library(terra)
 #2. Set species subset ----
 set <- c(1)
 set_sp <- "TEWA"
+set_yr <- 2020
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #4. Set nodes for local vs cluster----
-if(cc){ cores <- 16}
+if(cc){ cores <- 8}
 if(!cc | test){ cores <- 1}
 
 #5. Create and register clusters----
@@ -132,7 +133,8 @@ if(nrow(done) > 0){
   
   loop <- todo |> 
     anti_join(done) |> 
-    dplyr::filter(spp==set_sp)
+    dplyr::filter(spp == set_sp)
+#    dplyr::filter(year == set_yr)
   
 } else { loop <- todo }
 
@@ -155,16 +157,11 @@ while(nrow(loop) > 0){
   spp.i <- loop$spp[1]
   year.i <- loop$year[1]
   
-  #6. Some error handling ----
-  if(inherits(trymod, "try-error")){
-    loop <- loop[-1,]
-    next}
-  
-  #7. Export to cores ----
+  #6. Export to cores ----
   print("* Loading function requirements on workers *")
   tmpcl <- clusterExport(cl, c("loop", "brt_predict", "bcr.i", "spp.i", "year.i", "cc", "root", "cores"))
   
-  #8. Run the models ----
+  #7. Run the models ----
   print("* Making predictions *")
   if(test){file.list <- parLapply(cl,
                                     X=1:cores,
@@ -173,22 +170,35 @@ while(nrow(loop) > 0){
                                      X=c(1:32),
                                      fun=brt_predict)}
   
-  #9. Tidy up----
+  #8. Tidy up----
   gc()
   
-  #10. Read in the temp files and name----
-  print("* Stacking predictions *")
-  pred <- terra::rast(unlist(file.list))
-  names(pred) <- paste0("b", seq(1:length(file.list)))
-  
-  #11. Save model----
-  print("* Saving predictions *")
-  if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
-    dir.create(file.path(root, "output", "07_predictions", spp.i))
+  #9. Error handling ----
+  if(is.null(file.list[[1]])){
+    
+    if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
+      dir.create(file.path(root, "output", "07_predictions", spp.i))
+    }
+    
+    write.csv(loop[1,], file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, "_fail.csv")), row.names = FALSE)
+    
+  } else {
+    
+    #10. Read in the temp files and name----
+    print("* Stacking predictions *")
+    pred <- terra::rast(unlist(file.list))
+    names(pred) <- paste0("b", seq(1:length(file.list)))
+    
+    #11. Save model----
+    print("* Saving predictions *")
+    if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
+      dir.create(file.path(root, "output", "07_predictions", spp.i))
+    }
+    
+    terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
+                       overwrite=TRUE)
+    
   }
-  
-  terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
-                     overwrite=TRUE)
   
   #12. Update the list ----
   done <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
