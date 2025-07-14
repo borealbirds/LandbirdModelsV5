@@ -4,7 +4,7 @@
 # created: December 2022       #
 #------------------------------#
 
-# mTPI is a multi-scale topographic position value. Based upon the Global SRTM mTPI on GEE which does not cover northern Canada
+# mTPI is a multi-scale topographic position value. Based upon the Global SRTM mTPI calculation on GEE (which was not used as it does not cover northern Canada)
 # Values represent the absolute maximum difference between a pixel and the surrounding area at 5 radii (r=1.5km-115.5km)
 # uses 1km resolution Earth Env median elevation layer. Based on USGS GMTED 2010 layer
 #Citation: Amatulli, G., Domisch, S., Tuanmu, M.-N., Parmentier, B., Ranipeta, A., Malczyk, J., and Jetz, W. (2018) A suite of global, 
