@@ -22,8 +22,7 @@
 # 1) Downloading the "dsmextra" package from https://github.com/densitymodelling/dsmextra
 # 2) USA/CAN BCR overlap rasters and individual BCR weighting rasters produced 
 # in "gis/WeightingRasters.R"
-# 3) Buffered BCR subunit shapefile produced in "gis/BufferedSubunits.R"
-# 4) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
+# 3) Zeroed BCR subunit predictions tifs produced in "gis/ZeroPredictions.R"
 # -------------------
 
 # This script collects a list of prediction model objects that will not load and deletes them at the end of the script. The prediction script will need to be rerun for those files.
@@ -45,15 +44,17 @@ crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +el
 #3. Set file paths ----
 root <- "G:/Shared drives/BAM_NationalModels5"
 
-#4. Buffered region shapefile----
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp")) |> 
-  mutate(bcr = paste0(country, subUnit))
-
-#5. Get overlap raster----
+#4. Get overlap raster----
 MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
 
-#6. Data package----
+#5. Data package----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
+
+rm(offsets, cov, bcrlist, visit, bird)
+
+#6. BCR perimeter ----
+bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
+  mutate(bcr = paste0(country, subUnit))
 
 #INVENTORY####
 
@@ -126,7 +127,7 @@ for(i in 1:nrow(loop)){
                    year = year.i))
     
   #9. Import, mosaic, and sum extrapolation rasters-------
-  f.mosaic <- lapply(loop.i$path.extrap, rast) 
+  f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
     sprc() |> 
     mosaic(fun="sum") |> 
     crop(ext(MosaicOverlap))
@@ -143,7 +144,7 @@ for(i in 1:nrow(loop)){
   Extrapolation <- Overlay
   Extrapolation[Extrapolation < 1] <- 0
   Extrapolation[Extrapolation > 0] <- 1
-  writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
+  # writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
   
   #13. Produce correction raster----
   Correction <- Overlay
@@ -204,21 +205,30 @@ for(i in 1:nrow(loop)){
     
   }
   
-  #23. Sum the two stacks----
+  #23. Clean up ----
+  rm(f.mosaic, overlap.i, Overlay, Extrapolation, Correction, w, p)
+  gc()
+  
+  #24. Sum the two stacks----
   CANwideW <- MosaicStack |> 
     sprc()|>
-    mosaic(fun="sum") #sum weighting (divisor)
+    mosaic(fun="sum")  #sum weighting (divisor)
   
   CANwideSp <- SppStack |> 
     sprc()|>
     mosaic(fun="sum") # sum weighted predictions
   
-  #24. Correct the weighting ----
-  FinalOut <- CANwideSp/(CANwideW) |> 
-    mask(st_transform(bcr, crs(CANwideSp)))
+  #25. Correct the weighting ----
+  Weighted <- CANwideSp/(CANwideW)
   
-  #25. Save-----
-  writeRaster(FinalOut, file.path(root, "output", "mosaics", "predictions", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
+  #26. Fill in NAs----
+  #some from hard border transition
+  FinalOut <- cover(Weighted, focal(Weighted, w=9, fun=mean, na.policy="only", na.rm=TRUE)) |> 
+    mask(st_transform(bcr, crs(CANwideSp)))
+  #remaining NAs are waterbodies that will be masked out anyway
+  
+  #27. Save----- 
+  writeRaster(FinalOut, file.path(root, "output", "08_mosaics",paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
   
   duration <- Sys.time() - start
   
