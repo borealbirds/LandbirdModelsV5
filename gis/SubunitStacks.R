@@ -18,6 +18,8 @@
 
 #WARNING: This script searches the "PredictionRasters" folder of the working google drive to inventory the available years of prediction layers for each covariate. That folder must be perfectly maintained with no duplicates to ensure this script runs as intended. 
 
+#For V6: Add snap==TRUE to crop and touches = TRUE to mask to avoid NAs along the border in mosaiced product
+
 #PREAMBLE############################
 
 #1. Load packages----
