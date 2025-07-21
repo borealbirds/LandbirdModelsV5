@@ -27,17 +27,17 @@ library(Matrix)
 library(terra)
 
 #2. Set species subset ----
-set <- c(1)
+set <- c(1:5)
 set_sp <- "TEWA"
 set_yr <- 2020
 
 #3. Determine if testing and on local or cluster----
-test <- FALSE
-cc <- TRUE
+test <- TRUE
+cc <- FALSE
 
 #4. Set nodes for local vs cluster----
-if(cc){ cores <- 8}
-if(!cc | test){ cores <- 1}
+if(cc){ cores <- 32}
+if(!cc | test){ cores <- 4}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -132,14 +132,14 @@ done <- data.frame(file = list.files(file.path(root, "output", "07_predictions")
 if(nrow(done) > 0){
   
   loop <- todo |> 
-    anti_join(done) |> 
-    dplyr::filter(spp == set_sp)
+    anti_join(done)
+#    dplyr::filter(spp == set_sp)
 #    dplyr::filter(year == set_yr)
   
 } else { loop <- todo }
 
 #For testing
-if(test) {loop <- loop[1:2,]}
+#if(test) {loop <- loop[1:2,]}
 
 #3. Shut down if nothing left to do----
 if(nrow(loop)==0){
@@ -150,12 +150,12 @@ if(nrow(loop)==0){
 }
 
 #4. Otherwise set up while loop ----
-while(nrow(loop) > 0){
+for(i in 1:nrow(loop)){
   
   #5. Get model settings ----
-  bcr.i <- loop$bcr[1]
-  spp.i <- loop$spp[1]
-  year.i <- loop$year[1]
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  year.i <- loop$year[i]
   
   #6. Export to cores ----
   print("* Loading function requirements on workers *")
@@ -187,28 +187,29 @@ while(nrow(loop) > 0){
     #10. Read in the temp files and name----
     print("* Stacking predictions *")
     pred <- terra::rast(unlist(file.list))
-    names(pred) <- paste0("b", seq(1:length(file.list)))
-    
-    #11. Save model----
-    print("* Saving predictions *")
-    if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
-      dir.create(file.path(root, "output", "07_predictions", spp.i))
+    if(length(pred)!=length(file.list)){
+      
+      if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
+        dir.create(file.path(root, "output", "07_predictions", spp.i))
+      }
+      
+      write.csv(loop[1,], file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, "_fail.csv")), row.names = FALSE)
+      
+    } else {
+      
+      names(pred) <- paste0("b", seq(1:length(file.list)))
+      
+      #11. Save model----
+      print("* Saving predictions *")
+      if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
+        dir.create(file.path(root, "output", "07_predictions", spp.i))
+      }
+      
+      terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
+                         overwrite=TRUE)
+      
     }
-    
-    terra::writeRaster(pred, file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")),
-                       overwrite=TRUE)
-    
   }
-  
-  #12. Update the list ----
-  done <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
-    separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |>  
-    mutate(year = as.numeric(year)) |> 
-    dplyr::select(-folder, -file)
-  
-  loop <- loop |> 
-    anti_join(done, by=c("bcr", "spp", "year"))
-  
 }
 
 #CONCLUDE####
