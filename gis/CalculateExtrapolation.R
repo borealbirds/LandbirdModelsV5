@@ -120,7 +120,7 @@ calc_extrapolation <- function(i){
       data.frame()
     
     #6. Remove variables that are all zero----
-    sample <- sample_all[,colSums(sample_all, na.rm = TRUE)!=0]
+    sample <- sample_all[,colSums(sample_all, na.rm = TRUE)>0]
     
     #7. Compute extrapolation----
     Extrapol <- try(compute_extrapolation(samples = sample,
@@ -174,5 +174,3 @@ mods <- parLapply(cl,
 #1. Close clusters----
 print("* Shutting down clusters *")
 stopCluster(cl)
-
-if(cc){ q() }
