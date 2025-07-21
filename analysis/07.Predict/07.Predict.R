@@ -27,17 +27,17 @@ library(Matrix)
 library(terra)
 
 #2. Set species subset ----
-set <- c(1:5)
+set <- c(1)
 set_sp <- "TEWA"
 set_yr <- 2020
 
 #3. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #4. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc | test){ cores <- 4}
+if(!cc | test){ cores <- 2}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -187,13 +187,13 @@ for(i in 1:nrow(loop)){
     #10. Read in the temp files and name----
     print("* Stacking predictions *")
     pred <- terra::rast(unlist(file.list))
-    if(length(pred)!=length(file.list)){
+    if(dim(pred)[3]!=length(file.list)){
       
       if(!(file.exists(file.path(root, "output", "07_predictions", spp.i)))){
         dir.create(file.path(root, "output", "07_predictions", spp.i))
       }
       
-      write.csv(loop[1,], file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, "_fail.csv")), row.names = FALSE)
+      write.csv(loop[1,], file=file.path(root, "output", "07_predictions", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, "_fail2.csv")), row.names = FALSE)
       
     } else {
       
