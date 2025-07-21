@@ -60,9 +60,6 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 #6. NAD83(NSRS2007)/Conus Albers projection (epsg:5072) ----
 crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
 
-#7. Get overlap raster----
-MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
-
 #8. Data package----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(offsets, cov, bcrlist, visit, bird)
@@ -85,6 +82,9 @@ brt_mosaic <- function(i){
   #2. Loop settings----
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
+  
+  #7. Get overlap raster----
+  MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
   
   #3. Loop file lists----
   predicted.i <- dplyr::filter(predicted, spp==spp.i, year==year.i)
@@ -247,7 +247,7 @@ zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full
 #MOSAIC####
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "zeros", "predicted", "MosaicOverlap", "bcr", "crs", "brt_mosaic", "root"))
+tmpcl <- clusterExport(cl, c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root"))
 
 #2. Run BRT function in parallel----
 print("* Fitting models *")
