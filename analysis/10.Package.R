@@ -153,6 +153,15 @@ for(i in 1:nrow(loop)){
   
   if(inherits(stack.i, "try-error")) {next}
   
+  # #26. Truncate to 99.9% -----
+  # for(j in 1:dim(Weighted)[3]){
+  #   q995 <- stats::quantile(Weighted[[j]], 0.995, na.rm=TRUE)
+  #   if(j==1){Truncated <- clamp(Weighted[[j]], upper=q995, values=TRUE)} else {
+  #     Truncated <- c(Truncated, clamp(Weighted[[j]], upper=q995, values=TRUE))
+  #   }
+  #   cat(j, "  ")
+  # }
+  
   #5. Truncate to 99.9% quantile----
   q99 <- global(stack.i, fun=function(x) quantile(x, 0.999, na.rm=TRUE))
   

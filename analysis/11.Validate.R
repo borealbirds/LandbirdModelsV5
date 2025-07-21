@@ -93,29 +93,27 @@ colnames(bcrdf) <- c("id", paste0(bcr.country$country, bcr.country$subUnit))
 
 #1. Get list of sets that have been mosaicked----
 #We use the mosaics as input because we know they have all subunits, and the mosaics and extrapolation complete at the bootstrap level
-mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
-                      file = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file, into=c("spp", "boot", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         boot = as.numeric(boot))
+mosaics <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
+                      file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tiff", recursive = TRUE)) |> 
+  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year))
 
 #2. Make the todo list----
 #remove spp*boot combinations that don't have all years
 todo <- mosaics |> 
-  dplyr::select(spp, boot) |> 
+  dplyr::select(spp) |> 
   unique() |> 
   expand_grid(year = seq(1985, 2020, 5)) |> 
   full_join(mosaics) |> 
   mutate(na = ifelse(is.na(path), 1, 0)) |>
-  group_by(spp, boot) |>
+  group_by(spp) |>
   summarize(nas = sum(na)) |> 
   ungroup() |>
   dplyr::filter(nas==0)
 
 #3. Check which have been run----
-done <- data.frame(file.mean = list.files(file.path(root, "output", "validation"), pattern="*.Rdata"))  |> 
-  separate(file.mean, into=c("spp", "boot", "filetype"), remove=FALSE) |> 
-  mutate(boot = as.numeric(boot))
+done <- data.frame(file.mean = list.files(file.path(root, "output", "09_validation"), pattern="*.Rdata"))  |> 
+  separate(file.mean, into=c("spp", "filetype"), remove=FALSE)
 
 #4. Make the todo list----
 loop <- anti_join(todo, done)
