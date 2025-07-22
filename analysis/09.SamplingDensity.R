@@ -6,52 +6,59 @@
 
 #NOTES################################
 
-# This script uses the test data from each bootstrap to visualize the detections included in the models.
+# This script uses the test data from each bootstrap to average distance to the nearest detection in the models.
 
 #PREAMBLE############################
 
 #1. Load packages----
+print("* Loading packages on master *")
 library(tidyverse)
 library(terra)
 library(sf)
+library(parallel)
+library(Matrix)
 
-#2. Set root path----
-root <- "G:/Shared drives/BAM_NationalModels5"
+#2. Determine if testing and on local or cluster----
+cc <- FALSE
 
-#3. Subunit polygons----
+#3. Set nodes for local vs cluster----
+if(cc){ cores <- 16}
+if(!cc){ cores <- 2}
+
+#4. Create and register clusters----
+print("* Creating clusters *")
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
+
+#5. Set root path----
+print("* Setting root file path *")
+if(cc){root <- "/scratch/ecknight/NationalModels"}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
+
+#6. Subunit polygons----
 bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
   mutate(bcr= paste0(country, subUnit)) |> 
   st_transform(crs="ESRI:102001")
 
-#4. Mosaic polygon----
+#7. Mosaic polygon----
 bcr.all <- st_union(bcr.country)
 
-#5. Data package ----
+#8. Data package ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
+rm(cov, covlist, offsets)
 
-#INVENTORY#########
+#9. Load packages on clusters----
+print("* Loading packages on workers *")
+tmpcl <- clusterEvalQ(cl, library(sf))
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
+tmpcl <- clusterEvalQ(cl, library(terra))
+tmpcl <- clusterEvalQ(cl, library(Matrix))
 
-#1. Get list of sets that have been mosaiced----
-mosaiced <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE),
-                        file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
-  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year))
-
-#2. Check which have been run----
-done <- data.frame(file.mean = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive=TRUE)) |> 
-  separate(file.mean, into=c("folder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
-  mutate(year = as.numeric(year)) |> 
-  dplyr::filter(bcr=="mosaic") |> 
-  dplyr::select(spp, year) |> 
-  unique()
-
-#4. Make the todo list----
-loop <- anti_join(mosaiced, done)
-
-#PLOT SAMPLING DENSITY###########
+#FUNCTION####
 
 #1. Set up loop----
-for(i in 1:nrow(loop)){
+brt_sampling <- function(i){
   
   #2. Get the loop settings----
   spp.i <- loop$spp[i]
@@ -162,3 +169,33 @@ for(i in 1:nrow(loop)){
   cat("Species and year", i, "of", nrow(loop), "\n")
   
 }
+
+#INVENTORY#########
+
+#1. Get list of sets that have been mosaiced----
+mosaiced <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE),
+                       file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
+  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year))
+
+#2. Check which have been run----
+done <- data.frame(file.mean = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file.mean, into=c("folder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
+  mutate(year = as.numeric(year)) |> 
+  dplyr::filter(bcr=="mosaic") |> 
+  dplyr::select(spp, year) |> 
+  unique()
+
+#4. Make the todo list----
+loop <- anti_join(mosaiced, done)
+
+#RUN#####
+
+#1. Export objects to clusters----
+tmpcl <- clusterExport(cl, c("loop", "bcr.all", "bcr.country", "brt_sampling", "root", "visit", "bird", "bcrlist", "birdlist", "bootlist"))
+
+#2. Run BRT function in parallel----
+print("* Calculating sampling *")
+sampling <- parLapply(cl,
+                     X=1:nrow(loop),
+                     fun=brt_sampling)
