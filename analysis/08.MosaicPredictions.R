@@ -39,12 +39,12 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-test <- TRUE
-cc <- FALSE
+test <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
-if(cc){ cores <- 32}
-if(!cc | test){ cores <- 1}
+if(cc){ cores <- 48}
+if(!cc | test){ cores <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -65,7 +65,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(offsets, cov, bcrlist, visit, bird)
 
 #9. BCR perimeter ----
-bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
+bcr <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
   mutate(bcr = paste0(country, subUnit))
 
 #10. Load packages on clusters----
@@ -96,7 +96,7 @@ brt_mosaic <- function(i){
   #5. Add zero files to available files----
   loop.i <- predicted.i |> 
     dplyr::select(-file.pred) |> 
-    mutate(path.extrap = file.path(root, "MosaicWeighting", "Extrapolation", paste0(bcr, "_", year.i, ".tif"))) |> 
+    mutate(path.extrap = file.path(root, "gis", "extrapolation", paste0(bcr, "_", year.i, ".tif"))) |> 
     rbind(zeros.i |> 
             rename(path.pred = path.zero) |> 
             mutate(path.extrap = path.pred,
@@ -208,25 +208,24 @@ brt_mosaic <- function(i){
 #INVENTORY####
 
 #1. Get list of predictions----
-predicted <- data.frame(path.pred = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
-                        file.pred = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+predicted <- data.frame(file.pred = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
   separate(file.pred, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
-  mutate(year = as.numeric(year)) |> 
+  mutate(year = as.numeric(year),
+         path.pred = file.path(root, "output", "07_predictions", file.pred)) |> 
   dplyr::select(-folder, -file)
 
 #2. Get list of mosaics completed----
-mosaicked <- data.frame(path.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE),
-                        file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
+mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
   separate(file.mosaic, into=c("spp", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)))
+  mutate(year = as.numeric(str_sub(year, -100, -5)),
+         path.mosaic = file.path(root, "output", "08_mosaics", file.mosaic))
 
 #3. Make the to-do list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE, spp %in% sppuse,
-                str_sub(bcr, 1, 3)=="can") |> 
+  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
   expand_grid(year = seq(1985, 2020, 5))
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
@@ -236,7 +235,7 @@ loop <- full_join(predicted, todo) |>
   summarize(nas = sum(na)) |> 
   ungroup() |> 
   dplyr::filter(nas==0) |> 
-  anti_join(mosaicked)
+  anti_join(mosaiced)
 
 #5. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
