@@ -39,12 +39,11 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-test <- FALSE
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
-if(cc){ cores <- 48}
-if(!cc | test){ cores <- 6}
+if(cc){ cores <- 16}
+if(!cc){ cores <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -249,7 +248,7 @@ zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full
 tmpcl <- clusterExport(cl, c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root"))
 
 #2. Run BRT function in parallel----
-print("* Fitting models *")
+print("* Mosaicing predictions *")
 mosaics <- parLapply(cl,
                   X=1:nrow(loop),
                   fun=brt_mosaic)
