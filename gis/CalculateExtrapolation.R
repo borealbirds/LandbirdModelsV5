@@ -70,8 +70,8 @@ todo <- data.frame(bcr = colnames(bcrlist[,-1])) |>
   arrange(-year, bcr)
 
 #3. Determine which are already done----
-done <- data.frame(path = list.files(file.path(root, "MosaicWeighting", "Extrapolation"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
-                   file = list.files(file.path(root, "MosaicWeighting", "Extrapolation"), pattern="*.tif", recursive = TRUE)) |> 
+done <- data.frame(path = list.files(file.path(root, "gis", "extrapolation"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
+                   file = list.files(file.path(root, "gis", "extrapolation"), pattern="*.tif", recursive = TRUE)) |> 
   separate(file, into=c("bcr", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year)) |> 
   dplyr::select(-file)
@@ -153,7 +153,7 @@ calc_extrapolation <- function(i){
   names(out) <- paste0("b", seq(1:dim(out)[3]))
   
   #10. Write raster----
-  writeRaster(out, file.path(root, "MosaicWeighting", "Extrapolation", paste0(bcr.i, "_", year.i, ".tif")), overwrite=T)
+  writeRaster(out, file.path(root, "gis", "extrapolation", paste0(bcr.i, "_", year.i, ".tif")), overwrite=T)
   
 }
 
