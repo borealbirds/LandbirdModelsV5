@@ -74,7 +74,7 @@ for(i in 1:length(years)){
     mask(water, inverse=TRUE)
   
   #8. Save
-  writeRaster(Extrap.mn, file.path(root, "output",  paste0("Extrapolation_", years[i], ".tif")), overwrite=T)
+  writeRaster(Extrap.mn, file.path(root, "output", "10_packaged", "extrapolation", paste0("Extrapolation_", years[i], ".tif")), overwrite=T)
   
   cat(i, "  ")
   
