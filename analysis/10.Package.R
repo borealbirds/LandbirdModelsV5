@@ -35,13 +35,13 @@ library(sf)
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Get the water layer----
-water <- read_sf(file.path(root, "Regions", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
+water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
   dplyr::filter(TYPE %in% c(16, 18)) |> 
   st_transform(crs="ESRI:102001") |> 
   vect()
 
 #4. Subunit polygons----
-bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
+bcr.country <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
   mutate(bcr= paste0(country, subUnit)) |> 
   st_transform(crs="ESRI:102001")
 
@@ -53,58 +53,33 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #INVENTORY#########
 
-#1. Get list of sets that have been mosaicked----
-#We use the mosaics as input because we know they have all subunits and the mosaics and extrapolation complete
+#1. Get the list of sampling layers----
 #remove 1985 - we're not providing those predictions
-mosaics <- data.frame(path = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
-                        file = list.files(file.path(root, "output", "mosaics", "predictions"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file, into=c("spp", "boot", "year", "filetype"), remove=FALSE) |>  
+sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
-         boot = as.numeric(boot)) |> 
-  dplyr::filter(year!=1985) |> 
-  dplyr::select(-filetype)
-
-#2. Get the list of sampling layers----
-sampled <- data.frame(path = list.files(file.path(root, "output", "sampling"), pattern="*.tiff", full.names=TRUE, recursive = TRUE),
-                      file = list.files(file.path(root, "output", "sampling"), pattern="*.tiff", recursive = TRUE)) |> 
-  separate(file, into=c("spf", "spp", "bcr", "boot", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         boot = as.numeric(boot)) |> 
+         path = file.path(root, "output", "09_sampling", file)) |> 
   dplyr::filter(year!=1985) |> 
   dplyr::select(-filetype, -path, -file, -spf)
 
-#2. Make the todo list----
-#Add all 10 bootstraps
-todo <- inner_join(mosaics, sampled) |> 
-  group_by(spp, year, bcr) |> 
-  summarize(boots = n()) |> 
-  ungroup() |> 
-  dplyr::filter(boots==10)
-
-missing <- inner_join(mosaics, sampled) |> 
-  group_by(spp, year, bcr) |> 
-  summarize(boots = n()) |> 
-  ungroup() |> 
-  dplyr::filter(boots < 10) |> 
-  dplyr::filter(bcr %in% c("can71", "can81"))
-
-#3. Check which have been run----
-done <- data.frame(file = list.files(file.path(root, "output", "packaged"), pattern="*.tiff", recursive=TRUE))  |> 
+#2. Check which have been run----
+done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
   separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
   mutate(year = as.numeric(year)) |> 
-  dplyr::select(-filetype) |> 
-  dplyr::filter(bcrfolder!="old")
+  dplyr::select(-filetype)
 
-#4. Make the todo list----
-loop <- anti_join(todo, done) |> 
+#3. Make the todo list----
+loop <- sampled |> 
+  anti_join(done) |> 
   dplyr::filter(bcr %in% c("mosaic"),
-                year==2020,
-                spp %in% c("TEWA", "OSFL"))
+                year==2020)
 
 #PACKAGE###########
 
 #1. Set up the loop----
 for(i in 1:nrow(loop)){
+  
+  start <- Sys.time()
   
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
@@ -128,12 +103,10 @@ for(i in 1:nrow(loop)){
     files.i <- mosaics |> 
       dplyr::filter(spp==spp.i,
                     year==year.i) |> 
-      mutate(predpath = file.path(root, "output", "predictions", spp,
-                                  paste0(spp, "_", bcr.i, "_", boot, "_", year, ".tiff")),
-             extrappath = file.path(root, "output", "extrapolation", spp,
-                                    paste0(spp, "_", bcr.i, "_", boot, "_", year, ".tiff")),
-             samplepath = file.path(root, "output", "sampling", spp, 
-                                    paste0(spp, "_", bcr.i, "_", boot, "_", year, ".tiff")))
+      mutate(predpath = file.path(root, "output", "07_predictions", spp,
+                                  paste0(spp, "_", bcr.i, "_", year, ".tif")),
+             samplepath = file.path(root, "output", "09_sampling", spp, 
+                                    paste0(spp, "_", bcr.i, "_", year, ".tif")))
     
   } else {
     
@@ -141,9 +114,8 @@ for(i in 1:nrow(loop)){
       dplyr::filter(spp==spp.i,
                     year==year.i) |> 
       rename(predpath = path) |> 
-      mutate(extrappath = file.path(root, "output", "mosaics", "extrapolation", file),
-             samplepath = file.path(root, "output", "sampling", spp, 
-                                    paste0(spp, "_", bcr.i, "_", boot, "_", year, ".tiff")))
+      mutate(samplepath = file.path(root, "output", "09_sampling", spp, 
+                                    paste0(spp, "_", bcr.i, "_", year, ".tif")))
     
   }
   
@@ -153,17 +125,9 @@ for(i in 1:nrow(loop)){
   
   if(inherits(stack.i, "try-error")) {next}
   
-  # #26. Truncate to 99.9% -----
-  # for(j in 1:dim(Weighted)[3]){
-  #   q995 <- stats::quantile(Weighted[[j]], 0.995, na.rm=TRUE)
-  #   if(j==1){Truncated <- clamp(Weighted[[j]], upper=q995, values=TRUE)} else {
-  #     Truncated <- c(Truncated, clamp(Weighted[[j]], upper=q995, values=TRUE))
-  #   }
-  #   cat(j, "  ")
-  # }
-  
-  #5. Truncate to 99.9% quantile----
-  q99 <- global(stack.i, fun=function(x) quantile(x, 0.999, na.rm=TRUE))
+  #5. Truncate to 99.8% quantile----
+  #99.9% still gives Inf for some species
+  q99 <- global(stack.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
   
   truncate.i <- stack.i
   for(k in 1:nlyr(truncate.i)){
@@ -183,46 +147,34 @@ for(i in 1:nrow(loop)){
   #8. Calculate cv----
   cv.i <- sd.i/mean.i
   
-  #9. Read in the extrapolations----
-  extrap.i <- try(rast(files.i$extrappath) |> 
-                    project("ESRI:102001"))
-  
-  if(inherits(extrap.i, "try-error")) {next}
-  
-  #10. Calculate mean extrapolation----
-  extrapmn.i <- mean(extrap.i, na.rm=TRUE) |> 
-    resample(mean.i) |>  
-    crop(sf.i, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
-  
-  #11. Read in the sampling distance layers----
+  #10. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath) |> 
                     project("ESRI:102001"))
   
   if(inherits(sample.i, "try-error")) {next}
   
-  #12. Calculate mean sampling distance----
+  #11. Calculate mean sampling distance----
   samplemn.i <- mean(sample.i, na.rm=TRUE) |> 
     resample(mean.i) |>  
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #13. Read in range limit shp----
+  #12. Read in range limit shp----
   range.i <- try(read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |> 
     dplyr::filter(Limit=="0.1% limit") |> 
     st_transform(crs="ESRI:102001"))
   
   if(inherits(range.i, "try-error")) {next}
   
-  #14. Zero out mean prediction outside range----
+  #13. Zero out mean prediction outside range----
   mask.i <- mask(mean.i, range.i)
   mask.i[is.na(mask.i)] <- 0
   range.i <- crop(mask.i, sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #15. Stack----
-  out.i <- c(mean.i, cv.i, extrapmn.i, samplemn.i, range.i)
-  names(out.i) <- c("mean", "cv", "extrapolation", "detections", "range-limited mean")
+  #14. Stack----
+  out.i <- c(range.i, mean.i, cv.i, samplemn.i)
+  names(out.i) <- c( "range-limited mean", "mean", "cv", "detections")
   
   #16. Add some attributes----
   attr(out.i, "species") <- spp.i
@@ -230,17 +182,20 @@ for(i in 1:nrow(loop)){
   attr(out.i, "year") <- year.i
   
   #17. Make folders as needed-----
-  if(!(file.exists(file.path(root, "output", "packaged", spp.i)))){
-    dir.create(file.path(root, "output", "packaged", spp.i))
+  if(!(file.exists(file.path(root, "output", "10_packaged", spp.i)))){
+    dir.create(file.path(root, "output", "10_packaged", spp.i))
   }
   
-  if(!(file.exists(file.path(root, "output", "packaged", spp.i, bcr.i)))){
-    dir.create(file.path(root, "output", "packaged", spp.i, bcr.i))
+  if(!(file.exists(file.path(root, "output", "10_packaged", spp.i, bcr.i)))){
+    dir.create(file.path(root, "output", "10_packaged", spp.i, bcr.i))
   }
   
   #18. Save----
-  writeRaster(out.i, filename = file.path(root, "output", "packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tiff")), overwrite=TRUE)
+  writeRaster(out.i, filename = file.path(root, "output", "10_packaged", "extrapolation", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  
+  end <- Sys.time()
   
   cat("FINISHED", i, "of", nrow(loop), "PACKAGES\n")
+  difftime(end, start)
   
 }
