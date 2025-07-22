@@ -8,8 +8,6 @@
 
 # This script uses the test data from each bootstrap to visualize the detections included in the models.
 
-# The script works by using the test data saved from the model validation script (`10.Validate.R`).
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -28,65 +26,27 @@ bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffe
 #4. Mosaic polygon----
 bcr.all <- st_union(bcr.country)
 
-#BLANK RASTERS#######################
-
-#1. Set up loop----
-rasts <- list()
-for(i in 1:nrow(bcr.country)){
-  
-  #2. Load the raster stack----
-  rast.i <- rast(file.path(root, "gis", "stacks", paste0(bcr.country$bcr[i], "_2000.tif")))
-  
-  #3. Get the BCR boundary----
-  sf.i <- bcr.country |> 
-    dplyr::filter(bcr==bcr.country$bcr[i]) |> 
-    st_transform(crs=crs(rast.i)) |> 
-    vect()
-  
-  #4. Crop to BCR boundary----
-  rasts[[i]] <- rast.i$method |> 
-    crop(sf.i, mask=TRUE)
-  
-  #5. Set non NAs to zero----
-  rasts[[i]] <- ifel(!is.na(rasts[[i]]), 0, NA)
-  
-  cat("Finished raster", i, "of", nrow(bcr.country), "\n")
-    
-}
-
-#6. Names----
-names(rasts) <- bcr.country$bcr
-
-#7. Load a mosaic raster----
-rast.mosaic <- rast(file.path(root, "output", "mosaics", "predictions", "OVEN_1_2020.tiff"))
-
-#8. Add it to the list----
-rasts[["mosaic"]] <- ifel(!is.na(rast.mosaic), 0, NA)
+#5. Data package ----
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #INVENTORY#########
 
-#1. Get list of sets that have been validated----
-#We use the validated datasets because we can pull the training data out of the output easily
-validated <- data.frame(path = list.files(file.path(root, "output", "validation"), pattern="*.Rdata", full.names=TRUE),
-                        file = list.files(file.path(root, "output", "validation"), pattern="*.Rdata")) |> 
-  separate(file, into=c("spp", "boot", "filetype"), remove=FALSE) |>  
-  mutate(boot = as.numeric(boot))
+#1. Get list of sets that have been mosaiced----
+mosaiced <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE),
+                        file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
+  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year))
 
-#2. Make the todo list----
-todo <- validated |> 
-  dplyr::select(spp, boot) |> 
-  unique()
-
-#3. Check which have been run----
-done <- data.frame(file.mean = list.files(file.path(root, "output", "sampling"), pattern="*.tiff", recursive=TRUE)) |> 
-  separate(file.mean, into=c("folder", "spp", "bcr", "boot", "year", "filetype"), remove=FALSE) |> 
-  mutate(boot = as.numeric(boot)) |> 
+#2. Check which have been run----
+done <- data.frame(file.mean = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file.mean, into=c("folder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
+  mutate(year = as.numeric(year)) |> 
   dplyr::filter(bcr=="mosaic") |> 
-  dplyr::select(spp, boot) |> 
+  dplyr::select(spp, year) |> 
   unique()
 
 #4. Make the todo list----
-loop <- anti_join(todo, done)
+loop <- anti_join(mosaiced, done)
 
 #PLOT SAMPLING DENSITY###########
 
@@ -95,22 +55,24 @@ for(i in 1:nrow(loop)){
   
   #2. Get the loop settings----
   spp.i <- loop$spp[i]
-  boot.i <- loop$boot[i]
+  year.i <- loop$year[i]
   
-  #3. Load the validation object----
-  load(file.path(root, "output", "validation",
-                 paste0(spp.i, "_", boot.i, ".Rdata")))
+  #3. Get the list of subunits----
+  bcr.i <- birdlist |> 
+    pivot_longer(-bcr, names_to="spp", values_to="use") |> 
+    dplyr::filter(use==TRUE, spp==spp.i) |> 
+    dplyr::select(-use) |> 
+    rbind(data.frame(bcr="mosaic", spp=spp.i))
   
-  #4. Set up the bootstrap loop----
-  for(j in 1:length(train)){
+  for(j in 1:nrow(bcr.i)){
     
-    #5. Get the bcr----
-    bcr.j <- names(train)[j]
+    #4. Get the BCR ----
+    bcr.j <- bcr.i$bcr[j]
     
-    #6. Get the blank raster----
-    rast.j <- rasts[[bcr.j]]
+    #5. Get the template raster ----
+    rast.j <- rast(file.path(root, "gis", "blanks", paste0(bcr.j, ".tif")))
     
-    #7. Get the BCR boundary----
+    #5. Get the BCR boundary----
     if(bcr.j!="mosaic"){
       sf.j <- bcr.country |> 
         dplyr::filter(bcr==bcr.j) |> 
@@ -122,59 +84,81 @@ for(i in 1:nrow(loop)){
         vect()
     }
     
-    #8. Get the training data----
-    train.j <- train[[j]]
-    
-    #9. Round to nearest year and take detections only----
-    detections.j <- train.j |> 
-      rename(year1 = year) |> 
-      mutate(year = round(year1/5)*5,
-             year = ifelse(year==1980, 1985, year)) |> 
-      dplyr::filter(count > 0)
-    
-    #10. Set up year loop----
-    years <- seq(1990, 2020, 5)
-    for(k in 1:length(years)){
+    #6. Set up bootstrap list ----
+    for(k in 1:32){
       
-      #11. Get the year----
-      year.k <- years[k]
+      #7. Get visits to include----
+      if(bcr.j!="mosaic"){
+        visit.k <- bcrlist[bcrlist[,bcr.j]>0, c("id", bcr.j)] |> 
+          dplyr::filter(id %in% bootlist[[k + 2]])
+      } else {
+        bcrs <- bcr.i[bcr.i$bcr!="mosaic",]$bcr
+        
+        visit.k <- bcrlist |> 
+          dplyr::select(all_of(c("id", bcrs))) |> 
+          pivot_longer(-id, names_to="bcr", values_to="use") |> 
+          dplyr::filter(use > 0) |> 
+          dplyr::select(id) |> 
+          unique() |> 
+          arrange(id)
+      }
       
-      #12. Filter the detections to year----
-      detections.k <- detections.j |> 
-        dplyr::filter(year==year.k)
+      #8. Get year & coords ----
+      year.k <- visit[visit$id %in% visit.k$id, c("year", "lon", "lat")]
       
-      #13. If there's no detections, make a blank raster----
+      #9. Get response data (bird data)----
+      bird.k <- bird[as.character(visit.k$id), spp.i]
+      
+      #10. Filter ----
+      detections.k <- cbind(bird.k, year.k) |> 
+        rename(count = bird.k,
+               year1 = year) |> 
+        mutate(year = round(year1/5)*5,
+               year = ifelse(year==1980, 1985, year)) |> 
+        dplyr::filter(count > 0,
+                      year==year.i)
+      
+      #11. If there's no detections, make a blank raster----
       if(nrow(detections.k)==0){
         
-        rast.out <- rasts[[bcr.j]]
+        rast.k <- rast.j
         
       } else {
         
-        #14. Convert points to a spatial vector----
+        #12. Convert points to a spatial vector----
         pts.k <- detections.k |> 
           st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
           st_transform(crs(rast.j)) |> 
           vect()
         
-        #15. Caculate distance to nearest----
-        rast.out <- distance(rast.j, pts.k, unit="km") |> 
+        #13. Caculate distance to nearest----
+        rast.k <- distance(rast.j, pts.k, unit="km") |> 
           crop(sf.j, mask=TRUE)
-        
+      
       }
       
-      #16. Save raster----
-      if(!(file.exists(file.path(root, "output", "sampling", spp.i)))){
-        dir.create(file.path(root, "output", "sampling", spp.i))
-      }
-      
-      writeRaster(rast.out, filename = file.path(root, "output", "sampling", spp.i, paste0(spp.i, "_", bcr.j, "_", boot.i, "_", year.k, ".tiff")), overwrite=TRUE)
-      
-      cat("Year", year.k, "of bcr", j, "of", length(train), "\n")
-      
+      #14. Make a stack ----
+      if(k==1){ rast.out <- rast.k} else { rast.out <- c(rast.out, rast.k) }
+    
     }
+    
+    #15. Name the rasters ----
+    names(rast.out) <- paste0("b", seq(1:32))
+    
+    #16. Drop the sources----
+    rast.save <- rast(rast.out[])
+    
+    #16. Save raster----
+    if(!(file.exists(file.path(root, "output", "09_sampling", spp.i)))){
+      dir.create(file.path(root, "output", "09_sampling", spp.i))
+    }
+    
+    writeRaster(rast.out, filename = file.path(root, "output", "09_sampling", spp.i, paste0(spp.i, "_", bcr.j, "_", year.i, ".tif")), overwrite=TRUE)
+    
+    cat("BCR ", j, "of", nrow(bcr.i), "\n")
     
   }
   
-  cat("FINISHED BOOTSTRAP", i, "OF", nrow(loop), "\n")
+  cat("Species and year", i, "of", nrow(loop), "\n")
   
 }
