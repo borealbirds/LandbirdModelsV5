@@ -6,11 +6,11 @@
 
 #NOTES################################
 
-# This script calculates means and coefficients of variation (CV) across bootstraps of model predictions, limits the predictions by range limits calculated from the dataset, and packages with other existing layers (sampling & extrapolation)
+# This script calculates means and coefficients of variation (CV) across bootstraps of model predictions, limits the predictions by range limits calculated from the dataset, and packages with the sampling distance layer.
 
 # Means and cvs are calculated for two extents:
 #1. Subunit: this the output of `07.Predict.R` run on compute canada, with the predictions trimmed to the BCR boundary.
-#2. Mosaic: this is the output of `09.MosaicPredictions.R`
+#2. Mosaic: this is the output of `08.MosaicPredictions.R`
 
 # Range limitation is done using the output of `gis/Probable_Range_Extent.R`
 
@@ -22,64 +22,56 @@
 
 # Products from 1985 are excluded from packaging for 3 reasons: 1) There are very few sampling points in the dataset prior to 1993, the 1985 SCANFI products used for prediction are less reliable, 3) there are very few covariate layers that are available for those years of prediction
 
-#TO DO: PARALLELIZE
-
 #PREAMBLE############################
 
 #1. Load packages----
+print("* Loading packages on master *")
 library(tidyverse)
 library(terra)
 library(sf)
+library(parallel)
 
-#2. Set root path----
-root <- "G:/Shared drives/BAM_NationalModels5"
+#2. Determine if testing and on local or cluster----
+cc <- TRUE
 
-#3. Get the water layer----
+#3. Set nodes for local vs cluster----
+if(cc){ cores <- 24}
+if(!cc){ cores <- 1}
+
+#4. Create and register clusters----
+print("* Creating clusters *")
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
+
+#5. Set root path----
+print("* Setting root file path *")
+if(cc){root <- "/scratch/ecknight/NationalModels"}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
+
+#6. Get the water layer----
 water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
   dplyr::filter(TYPE %in% c(16, 18)) |> 
-  st_transform(crs="ESRI:102001") |> 
-  vect()
+  st_transform(crs="ESRI:102001")
 
-#4. Subunit polygons----
+#7. Subunit polygons----
 bcr.country <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
   mutate(bcr= paste0(country, subUnit)) |> 
   st_transform(crs="ESRI:102001")
 
-#5. Mosaic polygon----
+#8. Mosaic polygon----
 bcr.all <- st_union(bcr.country)
 
-#6. Data package----
-load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
+#9. Load packages on clusters----
+print("* Loading packages on workers *")
+tmpcl <- clusterEvalQ(cl, library(sf))
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
+tmpcl <- clusterEvalQ(cl, library(terra))
 
-#INVENTORY#########
-
-#1. Get the list of sampling layers----
-#remove 1985 - we're not providing those predictions
-sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         path = file.path(root, "output", "09_sampling", file)) |> 
-  dplyr::filter(year!=1985) |> 
-  dplyr::select(-filetype, -path, -file, -spf)
-
-#2. Check which have been run----
-done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
-  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
-  mutate(year = as.numeric(year)) |> 
-  dplyr::select(-filetype)
-
-#3. Make the todo list----
-loop <- sampled |> 
-  anti_join(done) |> 
-  dplyr::filter(bcr %in% c("mosaic"),
-                year==2020)
-
-#PACKAGE###########
+#FUNCTION###########
 
 #1. Set up the loop----
-for(i in 1:nrow(loop)){
-  
-  start <- Sys.time()
+brt_package <- function(i){
   
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
@@ -100,9 +92,10 @@ for(i in 1:nrow(loop)){
   #3. Get list of predictions, extrapolations, sampling layers----
   if(bcr.i!="mosaic"){
     
-    files.i <- mosaics |> 
+    files.i <- sampled |> 
       dplyr::filter(spp==spp.i,
-                    year==year.i) |> 
+                    year==year.i,
+                    bcr==bcr.i) |> 
       mutate(predpath = file.path(root, "output", "07_predictions", spp,
                                   paste0(spp, "_", bcr.i, "_", year, ".tif")),
              samplepath = file.path(root, "output", "09_sampling", spp, 
@@ -110,12 +103,13 @@ for(i in 1:nrow(loop)){
     
   } else {
     
-    files.i <- mosaics |> 
+    files.i <- sampled |> 
       dplyr::filter(spp==spp.i,
-                    year==year.i) |> 
-      rename(predpath = path) |> 
-      mutate(samplepath = file.path(root, "output", "09_sampling", spp, 
-                                    paste0(spp, "_", bcr.i, "_", year, ".tif")))
+                    year==year.i,
+                    bcr==bcr.i) |> 
+      rename(samplepath = path) |> 
+      mutate(predpath = file.path(root, "output", "08_mosaics", 
+                                    paste0(spp, "_", year, ".tif")))
     
   }
   
@@ -123,7 +117,7 @@ for(i in 1:nrow(loop)){
   stack.i <- try(rast(files.i$predpath) |> 
                    project("ESRI:102001"))
   
-  if(inherits(stack.i, "try-error")) {next}
+  if(inherits(stack.i, "try-error")){return(NULL)}
   
   #5. Truncate to 99.8% quantile----
   #99.9% still gives Inf for some species
@@ -151,7 +145,7 @@ for(i in 1:nrow(loop)){
   sample.i <- try(rast(files.i$samplepath) |> 
                     project("ESRI:102001"))
   
-  if(inherits(sample.i, "try-error")) {next}
+  if(inherits(sample.i, "try-error")){return(NULL)}
   
   #11. Calculate mean sampling distance----
   samplemn.i <- mean(sample.i, na.rm=TRUE) |> 
@@ -164,7 +158,7 @@ for(i in 1:nrow(loop)){
     dplyr::filter(Limit=="0.1% limit") |> 
     st_transform(crs="ESRI:102001"))
   
-  if(inherits(range.i, "try-error")) {next}
+  if(inherits(range.i, "try-error")){return(NULL)}
   
   #13. Zero out mean prediction outside range----
   mask.i <- mask(mean.i, range.i)
@@ -191,11 +185,43 @@ for(i in 1:nrow(loop)){
   }
   
   #18. Save----
-  writeRaster(out.i, filename = file.path(root, "output", "10_packaged", "extrapolation", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
   end <- Sys.time()
   
-  cat("FINISHED", i, "of", nrow(loop), "PACKAGES\n")
-  difftime(end, start)
-  
 }
+
+#INVENTORY#########
+
+#1. Get the list of sampling layers----
+#remove 1985 - we're not providing those predictions
+sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year),
+         path = file.path(root, "output", "09_sampling", file)) |> 
+  dplyr::filter(year!=1985) |> 
+  dplyr::select(-filetype, -file, -spf)
+
+#2. Check which have been run----
+done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
+  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
+  mutate(year = as.numeric(year)) |> 
+  dplyr::select(-filetype) |> 
+  dplyr::filter(sppfolder!="extrapolation")
+
+#3. Make the todo list----
+loop <- sampled |> 
+  anti_join(done) |> 
+  dplyr::filter(bcr %in% c("mosaic"),
+                year==2020)
+
+#PACKAGE########
+
+#1. Export objects to clusters----
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.all", "bcr.country", "brt_package", "root", "water"))
+
+#2. Run BRT function in parallel----
+print("* Packaging *")
+packaged <- parLapply(cl,
+                      X=1:nrow(loop),
+                      fun=brt_package)
