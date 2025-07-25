@@ -6,7 +6,7 @@
 
 #NOTES################################
 
-# This script uses the test data from each bootstrap to average distance to the nearest detection in the models.
+# This script uses the test data from each bootstrap to average distance to the nearest detection in the models. The mean output from this script is provided in the packaged raster stacks to inform interpretation of the models.
 
 #PREAMBLE############################
 
@@ -22,8 +22,8 @@ library(Matrix)
 cc <- FALSE
 
 #3. Set nodes for local vs cluster----
-if(cc){ cores <- 16}
-if(!cc){ cores <- 2}
+if(cc){ cores <- 32}
+if(!cc){ cores <- 4}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
