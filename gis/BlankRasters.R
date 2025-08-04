@@ -54,7 +54,7 @@ for(i in 1:nrow(bcr.country)){
 rast.mosaic <- rast(file.path(root, "output", "08_mosaics", "OSFL_2020.tif"))
 
 #7. Add it to the list----
-blanks.m <- ifel(!is.na(rast.mosaic), 0, NA)
+blanks.m <- ifel(!is.na(rast.mosaic[[1]]), 0, NA)
 
 #9. Save it ----
-terra::writeRaster(blanks.i, file.path(root, "gis", "blanks", "mosaic.tif"), overwrite=TRUE)
+terra::writeRaster(blanks.m, file.path(root, "gis", "blanks", "mosaic.tif"), overwrite=TRUE)
