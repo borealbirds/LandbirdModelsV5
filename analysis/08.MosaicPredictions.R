@@ -39,11 +39,11 @@ library(terra)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 16}
-if(!cc){ cores <- 6}
+if(!cc){ cores <- 1} #ca't one on more than 1 local core without swamping RAM
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -166,8 +166,7 @@ brt_mosaic <- function(i){
     
     #18. Weight the prediction----
     SppStack[[j]] <- p*w  #apply weighting to the predictions
-    
-    cat("Finished BCR", j, "of", nrow(loop.i), "\n")
+
   }
   
   #19. Skip to next if there were corrupt files----
@@ -234,7 +233,8 @@ loop <- full_join(predicted, todo) |>
   summarize(nas = sum(na)) |> 
   ungroup() |> 
   dplyr::filter(nas==0) |> 
-  anti_join(mosaiced)
+  anti_join(mosaiced) |> 
+  arrange(-year)
 
 #5. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
