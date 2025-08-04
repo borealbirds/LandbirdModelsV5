@@ -38,7 +38,7 @@ cc <- FALSE
 
 #4. Set cores for local vs cluster----
 if(cc){ cores <- 16 }
-if(!cc | test){ cores <- 2}
+if(!cc | test){ cores <- 8}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -200,14 +200,14 @@ if(nrow(loop)==0){
 
 #4. Otherwise set up while loop ----
 cat("* Starting modelling for", nrow(loop), "rows *")
-while(nrow(loop) > 0){
+for(i in 1:nrow(loop)){
   
   #5. Get model settings----
-  bcr.i <- loop$bcr[1]
-  spp.i <- loop$spp[1]
-  lr.i <- loop$lr[1]
-  trees.i <- loop$trees[1]
-  tuned.i <- loop$tuned[1]
+  bcr.i <- loop$bcr[i]
+  spp.i <- loop$spp[i]
+  lr.i <- loop$lr[i]
+  trees.i <- loop$trees[i]
+  tuned.i <- loop$tuned[i]
   
   #6. Load full model----
   if(tuned.i==TRUE){
@@ -252,13 +252,6 @@ while(nrow(loop) > 0){
   }
   
   save(b.list, file=file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.i, ".Rdata")))
-  
-  #12. Update the list ----
-  done <- data.frame(file = list.files(file.path(root, "output", "06_bootstraps"), pattern="*.Rdata", recursive=TRUE)) |> 
-    separate(file, into=c("folder", "spp", "bcr", "filetype"), remove=FALSE)
-  
-  loop <- loop |> 
-    anti_join(done)
   
 }
 
