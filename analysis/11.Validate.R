@@ -162,8 +162,15 @@ for(i in 1:nrow(loop)){
     } else {
       
       #10. If it is the mosaic loop, bind all the other bcrs together----
-      train.j <- do.call(rbind, train)
-      test.j <- do.call(rbind, test)
+      train.j <- lapply(1:32, function(k){
+        dfs <- lapply(train, function(x) x[[j]])
+        do.call(rbind, dfs)
+      })
+      
+      test.j <- lapply(1:32, function(k){
+        dfs <- lapply(test, function(x) x[[j]])
+        do.call(rbind, dfs)
+      })
       
     }
     
@@ -186,7 +193,7 @@ for(i in 1:nrow(loop)){
         rast.k <- try(rast(file.path(root, "output", "07_predictions", spp.i,
                                  paste0(spp.i, "_", bcr.j, "_", year.k, ".tif"))))
       } else {
-        rast.k <- try(rast(file.path(root, "output", "08_mosaics", "predictions",
+        rast.k <- try(rast(file.path(root, "output", "08_mosaics", 
                                  paste0(spp.i, "_", year.k, ".tif"))))
       }
       
@@ -231,11 +238,13 @@ for(i in 1:nrow(loop)){
     })
     
     #2. Get total training residual deviance----
-    load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata")))
-    
-    train.resid.i <- c()
-    for(k in 1:length(train.j)){
-      train.resid.i <- c(train.resid.i, mean(b.list[[k]]$train.error^2))
+    if(bcr.j!="mosaic"){
+      load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata")))
+      
+      train.resid.i <- c()
+      for(k in 1:length(train.j)){
+        train.resid.i <- c(train.resid.i, mean(b.list[[k]]$train.error^2))
+      }
     }
     
     #2. Determine whether can evaluate----  
@@ -318,27 +327,48 @@ for(i in 1:nrow(loop)){
       data.frame()
     
     #9. Put together----
-    eval[[j]] <- data.frame(spp=spp.i,
-                            bcr=bcr.j,
-                            boot=c(1:32),
-                            trees = b.list[[1]]$n.trees,
-                            n.train = sapply(b.list, function(m) m$nTrain),
-                            n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
-                            n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
-                            total.dev = totaldev.i,
-                            train.resid = train.resid.i,
-                            train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                            n.test.p = sapply(test.j, function(df) sum(df$p)),
-                            n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)),
-                            auc = sapply(eval.i, function(x) x@auc),
-                            cor = sapply(eval.i, function(x) x@cor),
-                            cor.spearman = cor.spearman.i,
-                            cor.pearson = cor.pearson.i,
-                            accuracy = accuracy.i,
-                            precision = precision.i,
-                            discrim.intercept = sapply(lm.i, function(x) x$coefficients[1]),
-                            discrim.slope = sapply(lm.i, function(x) x$coefficients[2]),
-                            pseudor2 = r2.i$R2adj)
+    if(bcr.j!="mosaic"){
+      eval[[j]] <- data.frame(spp=spp.i,
+                              bcr=bcr.j,
+                              boot=c(1:32),
+                              trees = b.list[[1]]$n.trees,
+                              n.train = sapply(b.list, function(m) m$nTrain),
+                              n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
+                              n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
+                              total.dev = totaldev.i,
+                              train.resid = train.resid.i,
+                              train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
+                              n.test.p = sapply(test.j, function(df) sum(df$p)),
+                              n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)),
+                              auc = sapply(eval.i, function(x) x@auc),
+                              cor = sapply(eval.i, function(x) x@cor),
+                              cor.spearman = cor.spearman.i,
+                              cor.pearson = cor.pearson.i,
+                              accuracy = accuracy.i,
+                              precision = precision.i,
+                              discrim.intercept = sapply(lm.i, function(x) x$coefficients[1]),
+                              discrim.slope = sapply(lm.i, function(x) x$coefficients[2]),
+                              pseudor2 = r2.i$R2adj)
+    } else {
+      eval[[j]] <- data.frame(spp=spp.i,
+                              bcr=bcr.j,
+                              boot=c(1:32),
+                              n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
+                              n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
+                              total.dev = totaldev.i,
+                              train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
+                              n.test.p = sapply(test.j, function(df) sum(df$p)),
+                              n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)),
+                              auc = sapply(eval.i, function(x) x@auc),
+                              cor = sapply(eval.i, function(x) x@cor),
+                              cor.spearman = cor.spearman.i,
+                              cor.pearson = cor.pearson.i,
+                              accuracy = accuracy.i,
+                              precision = precision.i,
+                              discrim.intercept = sapply(lm.i, function(x) x$coefficients[1]),
+                              discrim.slope = sapply(lm.i, function(x) x$coefficients[2]),
+                              pseudor2 = r2.i$R2adj)
+    }
     
     train[[j]] <- train.j
     test[[j]] <- prediction.j
@@ -356,12 +386,12 @@ for(i in 1:nrow(loop)){
   names(eval) <- loop.i$bcr
   
   #16. Save the data----
-  save(test, train, eval, file = file.path(root, "output", "validation",
-                                                          paste0(spp.i, "_", boot.i, ".Rdata")))
+  save(test, train, eval, file = file.path(root, "output", "11_validation",
+                                                          paste0(spp.i, ".Rdata")))
   
   end.i <- Sys.time()
   
-  cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="mins"), "minutes\n")
+  cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="hours"), "hours\n")
   
 }
 
