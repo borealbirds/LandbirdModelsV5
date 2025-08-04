@@ -1,5 +1,5 @@
 # ---
-# title: National Models 5.0 - calculate means
+# title: National Models 5.0 - package predictions
 # author: Elly Knight
 # created: April 29, 2024
 # ---
@@ -35,8 +35,8 @@ library(parallel)
 cc <- TRUE
 
 #3. Set nodes for local vs cluster----
-if(cc){ cores <- 24}
-if(!cc){ cores <- 1}
+if(cc){ cores <- 32}
+if(!cc){ cores <- 8}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -50,16 +50,19 @@ if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Get the water layer----
+print("* Getting water layer *")
 water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
   dplyr::filter(TYPE %in% c(16, 18)) |> 
   st_transform(crs="ESRI:102001")
 
 #7. Subunit polygons----
+print("* Getting bcrs *")
 bcr.country <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
   mutate(bcr= paste0(country, subUnit)) |> 
   st_transform(crs="ESRI:102001")
 
 #8. Mosaic polygon----
+print("* Mosaicing bcrs *")
 bcr.all <- st_union(bcr.country)
 
 #9. Load packages on clusters----
@@ -119,6 +122,8 @@ brt_package <- function(i){
   
   if(inherits(stack.i, "try-error")){return(NULL)}
   
+  write.csv(loop, file.path(root, "output", "10_packaged", "04_READ.csv"), row.names = FALSE)
+  
   #5. Truncate to 99.8% quantile----
   #99.9% still gives Inf for some species
   q99 <- global(stack.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
@@ -128,47 +133,66 @@ brt_package <- function(i){
     truncate.i[[k]][values(truncate.i[[k]]) > q99[k,1]] <- q99[k,1]
   }
   
+  write.csv(loop, file.path(root, "output", "10_packaged", "05_TRUNCATED.csv"), row.names = FALSE)
+  
   #6. Calculate mean----
   mean.i <- mean(truncate.i, na.rm=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
   #7. Calculate sd----
+  #FIX DIVISION BY ZERO
   sd.i <- stdev(truncate.i, na.rm=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
   #8. Calculate cv----
-  cv.i <- sd.i/mean.i
+  cv.i <- sd.i/(mean.i+0.0000001)
   
-  #10. Read in the sampling distance layers----
-  sample.i <- try(rast(files.i$samplepath) |> 
-                    project("ESRI:102001"))
+  write.csv(loop, file.path(root, "output", "10_packaged", "08_SUMMARISED.csv"), row.names = FALSE)
   
-  if(inherits(sample.i, "try-error")){return(NULL)}
-  
-  #11. Calculate mean sampling distance----
-  samplemn.i <- mean(sample.i, na.rm=TRUE) |> 
-    resample(mean.i) |>  
-    crop(sf.i, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
+  # #10. Read in the sampling distance layers----
+  # sample.i <- try(rast(files.i$samplepath) |> 
+  #                   project("ESRI:102001"))
+  # 
+  # if(inherits(sample.i, "try-error")){return(NULL)}
+  # 
+  # #11. Calculate mean sampling distance----
+  # samplemn.i <- mean(sample.i, na.rm=TRUE) |> 
+  #   resample(mean.i) |>  
+  #   crop(sf.i, mask=TRUE) |> 
+  #   mask(water, inverse=TRUE)
   
   #12. Read in range limit shp----
-  range.i <- try(read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |> 
-    dplyr::filter(Limit=="0.1% limit") |> 
-    st_transform(crs="ESRI:102001"))
+  limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
   
-  if(inherits(range.i, "try-error")){return(NULL)}
+  if(spp.i %in% limit){
+    limit.i <- try(read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |>
+                     dplyr::filter(Limit=="0.1% limit") |>
+                     st_transform(crs="ESRI:102001"))
+    
+    if(inherits(range.i, "try-error")){return(NULL)}
+    
+    #13. Zero out mean prediction outside range----
+    mask.i <- mask(mean.i, limit.i)
+    mask.i[is.na(mask.i)] <- 0
+    mean.i <- crop(mask.i, sf.i, mask=TRUE) |>
+      mask(water, inverse=TRUE)
+  }
   
-  #13. Zero out mean prediction outside range----
-  mask.i <- mask(mean.i, range.i)
-  mask.i[is.na(mask.i)] <- 0
-  range.i <- crop(mask.i, sf.i, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
-  
+  write.csv(loop, file.path(root, "output", "10_packaged", "13_LIMITED.csv"), row.names = FALSE)
+
   #14. Stack----
-  out.i <- c(range.i, mean.i, cv.i, samplemn.i)
-  names(out.i) <- c( "range-limited mean", "mean", "cv", "detections")
+  out.i <- c(mean.i, cv.i)
+  names(out.i) <- c("mean", "cv")
+  
+  # out.i <- c(range.i, mean.i, cv.i)
+  # names(out.i) <- c( "range-limited mean", "mean", "cv")
+  
+  # out.i <- c(range.i, mean.i, cv.i, samplemn.i)
+  # names(out.i) <- c( "range-limited mean", "mean", "cv", "detections")
+  
+  write.csv(loop, file.path(root, "output", "10_packaged", "14_STACKED.csv"), row.names = FALSE)
   
   #16. Add some attributes----
   attr(out.i, "species") <- spp.i
@@ -187,7 +211,7 @@ brt_package <- function(i){
   #18. Save----
   writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
-  end <- Sys.time()
+  write.csv(loop, file.path(root, "output", "10_packaged", "18_SAVED.csv"), row.names = FALSE)
   
 }
 
@@ -195,12 +219,28 @@ brt_package <- function(i){
 
 #1. Get the list of sampling layers----
 #remove 1985 - we're not providing those predictions
-sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
+# sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |> 
+#   separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
+#   mutate(year = as.numeric(year),
+#          path = file.path(root, "output", "09_sampling", file)) |> 
+#   dplyr::filter(year!=1985) |> 
+#   dplyr::select(-filetype, -file, -spf)
+
+predicted <-data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
+  mutate(year = as.numeric(year),
+         path = file.path(root, "output", "07_predictions", file)) |> 
+  dplyr::select(-folder, -file)
+
+mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          path = file.path(root, "output", "09_sampling", file)) |> 
   dplyr::filter(year!=1985) |> 
-  dplyr::select(-filetype, -file, -spf)
+  dplyr::select(-filetype, -file) |> 
+  mutate(bcr="mosaic")
+
+sampled <- rbind(predicted, mosaiced)
 
 #2. Check which have been run----
 done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
@@ -210,10 +250,13 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
   dplyr::filter(sppfolder!="extrapolation")
 
 #3. Make the todo list----
+#remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-  dplyr::filter(bcr %in% c("mosaic"),
-                year==2020)
+  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
+  dplyr::filter(str_sub(bcr, 1, 3)=="can") |> 
+#  dplyr::filter(bcr=="mosaic") |> 
+  arrange(-year, spp, bcr)
 
 #PACKAGE########
 
