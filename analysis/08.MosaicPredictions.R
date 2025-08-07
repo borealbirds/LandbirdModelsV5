@@ -27,7 +27,7 @@
 
 # This script collects a list of prediction model objects that will not load and deletes them at the end of the script. The prediction script will need to be rerun for those files.
 
-#TO DO FOR V6: Fix crs as EPSG:5072. Is not perfectly consistent with CRS used in previous scripts.
+#TO DO FOR V6: Fix crs. Is not perfectly consistent with CRS used in previous scripts.
 
 #PREAMBLE####
 
@@ -43,7 +43,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 16}
-if(!cc){ cores <- 1} #ca't one on more than 1 local core without swamping RAM
+if(!cc){ cores <- 1} #can't run on more than 1 local core without swamping RAM
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -64,8 +64,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(offsets, cov, bcrlist, visit, bird)
 
 #9. BCR perimeter ----
-bcr <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
-  mutate(bcr = paste0(country, subUnit))
+bcr <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
 
 #10. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -81,9 +80,6 @@ brt_mosaic <- function(i){
   #2. Loop settings----
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
-  
-  #7. Get overlap raster----
-  MosaicOverlap <- rast(file.path(root, "gis", "ModelOverlap.tif"))
   
   #3. Loop file lists----
   predicted.i <- dplyr::filter(predicted, spp==spp.i, year==year.i)
@@ -102,85 +98,37 @@ brt_mosaic <- function(i){
                    spp = spp.i,
                    year = year.i))
   
-  #6. Import, mosaic, and sum extrapolation rasters-------
-  f.mosaic <- lapply(loop.i$path.extrap, rast) |> 
-    sprc() |> 
-    mosaic(fun="sum") |> 
-    crop(ext(MosaicOverlap))
-  
-  #7. Fix extent of overlap raster----
-  overlap.i <- crop(MosaicOverlap, ext(f.mosaic))
-  
-  #8. Divide extrapolation layers by available layers to determine if alternate exists-----
-  # If == 1 there is no potential raster, if == 0.25-0.75 then a potential raster exists
-  Overlay <- f.mosaic/overlap.i
-  
-  #9. Produce region-wide extrapolation raster----
-  #Areas we retain extrapolation because we have no alternative == 1
-  Extrapolation <- Overlay
-  Extrapolation[Extrapolation < 1] <- 0
-  Extrapolation[Extrapolation > 0] <- 1
-  # writeRaster(Extrapolation, file.path(root, "output", "mosaics", "extrapolation", paste0(spp.i, "_", boot.i, "_", year.i, ".tif")), overwrite=T)
-  
-  #10. Produce correction raster----
-  Correction <- Overlay
-  Correction[Correction==1] <- 0 #ignore areas where nothing *or* everything is missing 
-  Correction[Correction>0] <- 1 #flag areas where non-extrapolated predictions exist in any layer
-  
-  #11. Set up bcr loop to correct rasters----
-  MosaicStack<-list() # hold the weighting rasters
-  SppStack<-list() #hold the species prediction rasters
-  
+  #6. Set up bcr loop to correct rasters----
+  SppStack <- list() #hold the species prediction rasters
+  MosaicStack <- list() #hold the weighting rasters
   for(j in c(1:nrow(loop.i))){
     
-    #12. Read in masking raster----
-    mask.j <- try(rast(loop.i$path.extrap[j])|>
-                    crop(Correction)) #correct edges (Newfoundland is off)
+    #7. Get the edge weighting raster----
+    w <- rast(file.path(root, "gis", "edgeweights", paste0(loop.i$bcr[j], ".tif")))
+
+    #Add to the list for division
+    MosaicStack[[j]] <- w
     
-    if(inherits(mask.j, "try-error")){break}
-    
-    #13. Crop correction raster to bcr----
-    cor <- Correction |> 
-      crop(mask.j, mask=TRUE)
-    
-    #14. Multiply by masking raster----
-    #if missing and substitute exists (1*1=1), if not missing or no substitute (0*1/1*0=0)
-    cor2 <- cor*mask.j
-    #invert values to give regions with substitute values no weight
-    cori <- classify(cor2, cbind(1,0), others=1)
-    
-    #15. Get the edge weighting raster----
-    w <- rast(file.path(root, "gis", "edgeweights", paste0(loop.i$bcr[j], ".tif"))) |>
-      resample(cori)
-    
-    #16. Modify edge weighting raster to account for removed sections----
-    # 0-out areas of extrapolated values where alternate predictions exist
-    MosaicStack[[j]] <- w*cori
-    
-    #17. Read in the prediction----
-    p <- try(rast(loop.i$path.pred[j]) |> 
-               terra::project(crs(w)) |> 
-               crop(w))
+    #8. Read in the prediction----
+    p <- try(rast(loop.i$path.pred[j]))
     
     if(inherits(p, "try-error")){break}
     
-    #18. Weight the prediction----
+    #9. Weight the prediction----
     SppStack[[j]] <- p*w  #apply weighting to the predictions
+    
+    cat(j, "  ")
 
   }
   
-  #19. Skip to next if there were corrupt files----
+  #10. Skip to next if there were corrupt files----
   if(inherits(p, "try-error") | inherits(mask.j, "try-error")){
     
     return(NULL)
     
   }
-  
-  #20. Clean up ----
-  rm(f.mosaic, overlap.i, Overlay, Extrapolation, Correction, w, p)
-  gc()
-  
-  #21. Sum the two stacks----
+
+  #11. Sum the two stacks----
   CANwideW <- MosaicStack |> 
     sprc()|>
     mosaic(fun="sum")  #sum weighting (divisor)
@@ -189,17 +137,17 @@ brt_mosaic <- function(i){
     sprc()|>
     mosaic(fun="sum") # sum weighted predictions
   
-  #22. Correct the weighting ----
+  #12. Correct the weighting ----
   Weighted <- CANwideSp/(CANwideW)
   
-  #23. Fill in NAs----
+  #13. Fill in NAs----
   #some from hard border transition
   FinalOut <- cover(Weighted, focal(Weighted, w=9, fun=mean, na.policy="only", na.rm=TRUE)) |> 
     mask(st_transform(bcr, crs(CANwideSp)))
   #remaining NAs are waterbodies that will be masked out anyway
   
-  #24. Save----- 
-  writeRaster(FinalOut, file.path(root, "output", "08_mosaics",paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
+  #14. Save----- 
+  writeRaster(FinalOut, file.path(root, "output", "08_mosaics_can",paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
   
 }
 
@@ -216,14 +164,15 @@ predicted <- data.frame(file.pred = list.files(file.path(root, "output", "07_pre
 mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
   separate(file.mosaic, into=c("spp", "year"), sep="_", remove=FALSE) |> 
   mutate(year = as.numeric(str_sub(year, -100, -5)),
-         path.mosaic = file.path(root, "output", "08_mosaics", file.mosaic))
+         path.mosaic = file.path(root, "output", "08_mosaics_can", file.mosaic))
 
 #3. Make the to-do list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
+  dplyr::filter(use==TRUE, spp %in% sppuse,
+                str_sub(bcr, 1, 3)=="can") |> 
   expand_grid(year = seq(1985, 2020, 5))
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
@@ -234,7 +183,9 @@ loop <- full_join(predicted, todo) |>
   ungroup() |> 
   dplyr::filter(nas==0) |> 
   anti_join(mosaiced) |> 
-  arrange(-year)
+  arrange(-year) |> 
+  dplyr::filter(year > 1985,
+                str_sub(bcr, 1, 3)=="can")
 
 #5. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
