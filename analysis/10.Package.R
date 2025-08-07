@@ -22,6 +22,8 @@
 
 # Products from 1985 are excluded from packaging for 3 reasons: 1) There are very few sampling points in the dataset prior to 1993, the 1985 SCANFI products used for prediction are less reliable, 3) there are very few covariate layers that are available for those years of prediction
 
+#TO DO: THINK ABOUT TRUNCATING THE MEAN INSTEAD OF THE INDIVIDUAL RASTERS
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -32,11 +34,11 @@ library(sf)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 8}
+if(!cc){ cores <- 1}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -51,15 +53,12 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Get the water layer----
 print("* Getting water layer *")
-water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers", "hydrography_p_lakes_v2.shp")) |> 
-  dplyr::filter(TYPE %in% c(16, 18)) |> 
-  st_transform(crs="ESRI:102001")
+water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- read_sf(file.path(root, "gis", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
-  mutate(bcr= paste0(country, subUnit)) |> 
-  st_transform(crs="ESRI:102001")
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+  dplyr::filter(country=="can")
 
 #8. Mosaic polygon----
 print("* Mosaicing bcrs *")
@@ -122,34 +121,23 @@ brt_package <- function(i){
   
   if(inherits(stack.i, "try-error")){return(NULL)}
   
-  write.csv(loop, file.path(root, "output", "10_packaged", "04_READ.csv"), row.names = FALSE)
-  
-  #5. Truncate to 99.8% quantile----
-  #99.9% still gives Inf for some species
-  q99 <- global(stack.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
-  
-  truncate.i <- stack.i
-  for(k in 1:nlyr(truncate.i)){
-    truncate.i[[k]][values(truncate.i[[k]]) > q99[k,1]] <- q99[k,1]
-  }
-  
-  write.csv(loop, file.path(root, "output", "10_packaged", "05_TRUNCATED.csv"), row.names = FALSE)
-  
-  #6. Calculate mean----
-  mean.i <- mean(truncate.i, na.rm=TRUE) |> 
+  #5. Calculate mean----
+  mean.i <- mean(stack.i, na.rm=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
+  #6. Truncate to 99.8% quantile----
+  q99 <- global(mean.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
+  mean.i[[1]][values(mean.i[[1]]) > q99[,1]] <- q99[,1]
+  
   #7. Calculate sd----
   #FIX DIVISION BY ZERO
-  sd.i <- stdev(truncate.i, na.rm=TRUE) |> 
+  sd.i <- stdev(stack.i, na.rm=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
   #8. Calculate cv----
   cv.i <- sd.i/(mean.i+0.0000001)
-  
-  write.csv(loop, file.path(root, "output", "10_packaged", "08_SUMMARISED.csv"), row.names = FALSE)
   
   # #10. Read in the sampling distance layers----
   # sample.i <- try(rast(files.i$samplepath) |> 
@@ -171,7 +159,7 @@ brt_package <- function(i){
                      dplyr::filter(Limit=="0.1% limit") |>
                      st_transform(crs="ESRI:102001"))
     
-    if(inherits(range.i, "try-error")){return(NULL)}
+    if(inherits(limit.i, "try-error")){return(NULL)}
     
     #13. Zero out mean prediction outside range----
     mask.i <- mask(mean.i, limit.i)
@@ -179,8 +167,6 @@ brt_package <- function(i){
     mean.i <- crop(mask.i, sf.i, mask=TRUE) |>
       mask(water, inverse=TRUE)
   }
-  
-  write.csv(loop, file.path(root, "output", "10_packaged", "13_LIMITED.csv"), row.names = FALSE)
 
   #14. Stack----
   out.i <- c(mean.i, cv.i)
@@ -191,8 +177,6 @@ brt_package <- function(i){
   
   # out.i <- c(range.i, mean.i, cv.i, samplemn.i)
   # names(out.i) <- c( "range-limited mean", "mean", "cv", "detections")
-  
-  write.csv(loop, file.path(root, "output", "10_packaged", "14_STACKED.csv"), row.names = FALSE)
   
   #16. Add some attributes----
   attr(out.i, "species") <- spp.i
@@ -210,8 +194,6 @@ brt_package <- function(i){
   
   #18. Save----
   writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
-  
-  write.csv(loop, file.path(root, "output", "10_packaged", "18_SAVED.csv"), row.names = FALSE)
   
 }
 
@@ -254,8 +236,8 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 loop <- sampled |> 
   anti_join(done) |> 
   dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-  dplyr::filter(str_sub(bcr, 1, 3)=="can") |> 
-#  dplyr::filter(bcr=="mosaic") |> 
+#  dplyr::filter(str_sub(bcr, 1, 3)=="can") |> 
+  dplyr::filter(bcr=="mosaic") |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
