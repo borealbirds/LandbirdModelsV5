@@ -23,7 +23,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 4}
+if(!cc){ cores <- 3}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -37,9 +37,7 @@ if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Subunit polygons----
-bcr.country <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Unbuffered.shp")) |> 
-  mutate(bcr= paste0(country, subUnit)) |> 
-  st_transform(crs="ESRI:102001")
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
 
 #7. Mosaic polygon----
 bcr.all <- st_union(bcr.country)
@@ -182,9 +180,7 @@ mosaiced <- data.frame(path = list.files(file.path(root, "output", "08_mosaics")
 done <- data.frame(file.mean = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive=TRUE)) |> 
   separate(file.mean, into=c("folder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
   mutate(year = as.numeric(year)) |> 
-  dplyr::filter(bcr=="mosaic") |> 
-  dplyr::select(spp, year) |> 
-  unique()
+  dplyr::filter(bcr=="mosaic")
 
 #4. Make the todo list----
 loop <- anti_join(mosaiced, done)
