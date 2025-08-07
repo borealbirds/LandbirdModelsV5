@@ -76,7 +76,7 @@ rast<-rast(file.path(root,"PredictionRasters/AnnualClim/ERAMAP_1km_2019.tif"))
 rast[]<-0
 
 #6. Load data package with WildTrax data ----
-load(file.path(root,"Data", "04_NM5.0_data_stratify.R"))
+load(file.path(root,"Data", "04_NM5.0_data_stratify.Rdata"))
 rm(offsets, bcrlist, birdlist,cov) # clean workspace
 list<-colnames(bird)  # get all species 4-letter codes
 WTrax<-visit %>% filter(source!="eBird") # extract non-ebird observations
