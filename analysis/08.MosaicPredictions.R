@@ -114,6 +114,12 @@ brt_mosaic <- function(i){
     
     if(inherits(p, "try-error")){break}
     
+    if(ext(p)!=ext(w)){
+      p <- p |> 
+        resample(w) |> 
+        crop(w)
+    }
+    
     #9. Weight the prediction----
     SppStack[[j]] <- p*w  #apply weighting to the predictions
     
@@ -122,7 +128,7 @@ brt_mosaic <- function(i){
   }
   
   #10. Skip to next if there were corrupt files----
-  if(inherits(p, "try-error") | inherits(mask.j, "try-error")){
+  if(inherits(p, "try-error")){
     
     return(NULL)
     
@@ -138,13 +144,7 @@ brt_mosaic <- function(i){
     mosaic(fun="sum") # sum weighted predictions
   
   #12. Correct the weighting ----
-  Weighted <- CANwideSp/(CANwideW)
-  
-  #13. Fill in NAs----
-  #some from hard border transition
-  FinalOut <- cover(Weighted, focal(Weighted, w=9, fun=mean, na.policy="only", na.rm=TRUE)) |> 
-    mask(st_transform(bcr, crs(CANwideSp)))
-  #remaining NAs are waterbodies that will be masked out anyway
+  FinalOut <- CANwideSp/(CANwideW)
   
   #14. Save----- 
   writeRaster(FinalOut, file.path(root, "output", "08_mosaics_can",paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
@@ -158,10 +158,11 @@ predicted <- data.frame(file.pred = list.files(file.path(root, "output", "07_pre
   separate(file.pred, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
   mutate(year = as.numeric(year),
          path.pred = file.path(root, "output", "07_predictions", file.pred)) |> 
-  dplyr::select(-folder, -file)
+  dplyr::select(-folder, -file) |> 
+  dplyr::filter(str_sub(bcr, 1, 3)=="can")
 
 #2. Get list of mosaics completed----
-mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif")) |> 
+mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics_can"), pattern="*.tif")) |> 
   separate(file.mosaic, into=c("spp", "year"), sep="_", remove=FALSE) |> 
   mutate(year = as.numeric(str_sub(year, -100, -5)),
          path.mosaic = file.path(root, "output", "08_mosaics_can", file.mosaic))
@@ -176,7 +177,7 @@ todo <- birdlist |>
   expand_grid(year = seq(1985, 2020, 5))
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
-loop <- full_join(predicted, todo) |> 
+loop <- inner_join(predicted, todo) |> 
   mutate(na = ifelse(is.na(path.pred), 1, 0)) |> 
   group_by(spp, year) |>
   summarize(nas = sum(na)) |> 
@@ -184,8 +185,7 @@ loop <- full_join(predicted, todo) |>
   dplyr::filter(nas==0) |> 
   anti_join(mosaiced) |> 
   arrange(-year) |> 
-  dplyr::filter(year > 1985,
-                str_sub(bcr, 1, 3)=="can")
+  dplyr::filter(year > 1985)
 
 #5. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
