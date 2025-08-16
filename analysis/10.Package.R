@@ -22,8 +22,6 @@
 
 # Products from 1985 are excluded from packaging for 3 reasons: 1) There are very few sampling points in the dataset prior to 1993, the 1985 SCANFI products used for prediction are less reliable, 3) there are very few covariate layers that are available for those years of prediction
 
-#TO DO: THINK ABOUT TRUNCATING THE MEAN INSTEAD OF THE INDIVIDUAL RASTERS
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -38,7 +36,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 1}
+if(!cc){ cores <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -110,7 +108,7 @@ brt_package <- function(i){
                     year==year.i,
                     bcr==bcr.i) |> 
       rename(samplepath = path) |> 
-      mutate(predpath = file.path(root, "output", "08_mosaics", 
+      mutate(predpath = file.path(root, "output", "08_mosaics_can", 
                                     paste0(spp, "_", year, ".tif")))
     
   }
@@ -126,33 +124,40 @@ brt_package <- function(i){
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #6. Truncate to 99.8% quantile----
-  q99 <- global(mean.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
-  mean.i[[1]][values(mean.i[[1]]) > q99[,1]] <- q99[,1]
+  #Truncat to 99.8% quantile----
+  q99mn <- global(mean.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
+  mean.i[[1]][values(mean.i[[1]]) > q99mn[,1]] <- q99mn[,1]
   
-  #7. Calculate sd----
+  #6. Calculate sd----
   #FIX DIVISION BY ZERO
   sd.i <- stdev(stack.i, na.rm=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(water, inverse=TRUE)
   
-  #8. Calculate cv----
+  #7. Calculate cv----
   cv.i <- sd.i/(mean.i+0.0000001)
   
-  # #10. Read in the sampling distance layers----
+  #Truncate to 99.8% quantile----
+  q99cv <- global(cv.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
+  cv.i[[1]][values(cv.i[[1]]) > q99cv] <- q99cv[,1]
+  
+  # #8. Read in the sampling distance layers----
   # sample.i <- try(rast(files.i$samplepath) |> 
   #                   project("ESRI:102001"))
   # 
   # if(inherits(sample.i, "try-error")){return(NULL)}
   # 
-  # #11. Calculate mean sampling distance----
+  # #9. Calculate mean sampling distance----
   # samplemn.i <- mean(sample.i, na.rm=TRUE) |> 
   #   resample(mean.i) |>  
   #   crop(sf.i, mask=TRUE) |> 
   #   mask(water, inverse=TRUE)
   
-  #12. Read in range limit shp----
-  limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
+  #10. Stack----
+  stack.i <- c(mean.i, cv.i)
+  
+  #11. Mask outside range----
+  limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
   
   if(spp.i %in% limit){
     limit.i <- try(read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |>
@@ -161,39 +166,35 @@ brt_package <- function(i){
     
     if(inherits(limit.i, "try-error")){return(NULL)}
     
-    #13. Zero out mean prediction outside range----
-    mask.i <- mask(mean.i, limit.i)
-    mask.i[is.na(mask.i)] <- 0
-    mean.i <- crop(mask.i, sf.i, mask=TRUE) |>
-      mask(water, inverse=TRUE)
-  }
+    range.i <- mask(stack.i, limit.i)
+    range.i[is.na(range.i)] <- 0
+  } else {range.i <- stack.i}
 
-  #14. Stack----
-  out.i <- c(mean.i, cv.i)
+  #12. Mask by water and NA layer ----
+  na <- rast(file.path(root, "gis", "DataLimitationsMask.tif"))
+  na2 <- resample(na, range.i)
+  out.i <- range.i |> 
+    mask(water, inverse=TRUE) |> 
+    mask(na2)
+  
   names(out.i) <- c("mean", "cv")
   
-  # out.i <- c(range.i, mean.i, cv.i)
-  # names(out.i) <- c( "range-limited mean", "mean", "cv")
-  
-  # out.i <- c(range.i, mean.i, cv.i, samplemn.i)
-  # names(out.i) <- c( "range-limited mean", "mean", "cv", "detections")
-  
-  #16. Add some attributes----
+  #13. Add some attributes----
   attr(out.i, "species") <- spp.i
   attr(out.i, "subunit") <- bcr.i
   attr(out.i, "year") <- year.i
   
-  #17. Make folders as needed-----
-  if(!(file.exists(file.path(root, "output", "10_packaged", spp.i)))){
-    dir.create(file.path(root, "output", "10_packaged", spp.i))
+  #14. Make folders as needed-----
+  if(!(file.exists(file.path(root, "output", "10_packaged_can", spp.i)))){
+    dir.create(file.path(root, "output", "10_packaged_can", spp.i))
   }
   
-  if(!(file.exists(file.path(root, "output", "10_packaged", spp.i, bcr.i)))){
-    dir.create(file.path(root, "output", "10_packaged", spp.i, bcr.i))
+  if(!(file.exists(file.path(root, "output", "10_packaged_can", spp.i, bcr.i)))){
+    dir.create(file.path(root, "output", "10_packaged_can", spp.i, bcr.i))
   }
   
-  #18. Save----
-  writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
+  #15. Save----
+  writeRaster(out.i, filename = file.path(root, "output", "10_packaged_can", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
 }
 
@@ -212,9 +213,10 @@ predicted <-data.frame(file = list.files(file.path(root, "output", "07_predictio
   separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
   mutate(year = as.numeric(year),
          path = file.path(root, "output", "07_predictions", file)) |> 
-  dplyr::select(-folder, -file)
+  dplyr::select(-folder, -file) |> 
+  dplyr::filter(str_sub(bcr, 1, 3)=="can")
 
-mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive = TRUE)) |> 
+mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics_can"), pattern="*.tif", recursive = TRUE)) |> 
   separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
   mutate(year = as.numeric(year),
          path = file.path(root, "output", "09_sampling", file)) |> 
@@ -225,7 +227,7 @@ mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics")
 sampled <- rbind(predicted, mosaiced)
 
 #2. Check which have been run----
-done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
+done <- data.frame(file = list.files(file.path(root, "output", "10_packaged_can"), pattern="*.tif", recursive=TRUE))  |> 
   separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
   mutate(year = as.numeric(year)) |> 
   dplyr::select(-filetype) |> 
@@ -235,8 +237,8 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-#  dplyr::filter(str_sub(bcr, 1, 3)=="can") |> 
+  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA"),
+                year > 1985) |> 
   dplyr::filter(bcr=="mosaic") |> 
   arrange(-year, spp, bcr)
 
