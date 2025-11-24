@@ -68,6 +68,9 @@ tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
 
+#10. List species for range limitation ----
+limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
+
 #FUNCTION###########
 
 #1. Set up the loop----
@@ -121,18 +124,15 @@ brt_package <- function(i){
   
   #5. Calculate mean----
   mean.i <- mean(stack.i, na.rm=TRUE) |> 
-    crop(sf.i, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
+    crop(sf.i, mask=TRUE)
   
-  #Truncat to 99.8% quantile----
+  #Truncate to 99.8% quantile----
   q99mn <- global(mean.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
   mean.i[[1]][values(mean.i[[1]]) > q99mn[,1]] <- q99mn[,1]
   
   #6. Calculate sd----
-  #FIX DIVISION BY ZERO
   sd.i <- stdev(stack.i, na.rm=TRUE) |> 
-    crop(sf.i, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
+    crop(sf.i, mask=TRUE)
   
   #7. Calculate cv----
   cv.i <- sd.i/(mean.i+0.0000001)
@@ -157,8 +157,6 @@ brt_package <- function(i){
   stack.i <- c(mean.i, cv.i)
   
   #11. Mask outside range----
-  limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
-  
   if(spp.i %in% limit){
     limit.i <- try(read_sf(file.path(root, "gis", "ranges", paste0(spp.i, "_rangelimit.shp"))) |>
                      dplyr::filter(Limit=="0.1% limit") |>
@@ -166,16 +164,22 @@ brt_package <- function(i){
     
     if(inherits(limit.i, "try-error")){return(NULL)}
     
-    range.i <- mask(stack.i, limit.i)
-    range.i[is.na(range.i)] <- 0
+    mask.i <- mask(stack.i, limit.i)
+    mask.i[is.na(mask.i)] <- 0
+    range.i <- mask.i |> 
+      crop(sf.i, mask=TRUE) |> 
+      mask(water, inverse=TRUE)
   } else {range.i <- stack.i}
 
   #12. Mask by water and NA layer ----
-  na <- rast(file.path(root, "gis", "DataLimitationsMask.tif"))
-  na2 <- resample(na, range.i)
+  # na <- rast(file.path(root, "gis", "DataLimitationsMask.tif"))
+  # na2 <- resample(na, range.i)
+  # out.i <- range.i |> 
+  #   mask(water, inverse=TRUE) |> 
+  #   mask(na2)
+  
   out.i <- range.i |> 
-    mask(water, inverse=TRUE) |> 
-    mask(na2)
+    mask(water, inverse=TRUE)
   
   names(out.i) <- c("mean", "cv")
   
@@ -239,13 +243,12 @@ loop <- sampled |>
   anti_join(done) |> 
   dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA"),
                 year > 1985) |> 
-  dplyr::filter(bcr=="mosaic") |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.all", "bcr.country", "brt_package", "root", "water"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.all", "bcr.country", "brt_package", "root", "water", "limit"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
