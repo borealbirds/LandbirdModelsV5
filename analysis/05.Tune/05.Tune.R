@@ -56,10 +56,10 @@ set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- FALSE
+cc <- TRUE
 
 #4. Set cores for local vs cluster----
-if(cc){ cores <- 24 }
+if(cc){ cores <- 48 }
 if(!cc | test){ cores <- 1}
 
 #5. Create and register clusters----
@@ -88,8 +88,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 #9. Set species subset----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
   rename(spp = species_code) |> 
-  dplyr::select(spp, rerun) |> 
-  dplyr::filter(rerun %in% set)
+  dplyr::select(spp, rerun)
 
 #10. Load data objects----
 print("* Loading data on workers *")
@@ -134,6 +133,11 @@ brt_tune <- function(i){
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) |> 
     rename(count = bird.i)
   
+  if(spp.i=="CAWA"){
+    dat.i <- dat.i |> 
+      dplyr::select(-VLCE_1km)
+  }
+  
   #8. Get offsets----
   off.i <- offsets[offsets$id %in% visit.i$id, spp.i]
   
@@ -156,10 +160,10 @@ brt_tune <- function(i){
   #stop at a certain lr and remove that model from the to-do list
   while((trees.i < 1000 & lr.i > lr.min) |
         (trees.i==10000 & lr.i < lr.max)){
-    
+
     if(trees.i < 1000){ lr.i <- lr.i/10}
     if(trees.i==10000 & lr.i < lr.max){ lr.i <- lr.i*10}
-    
+
     set.seed(1234)
     m.i <- try(dismo::gbm.step(data=dat.i,
                                gbm.x=c(2:ncol(dat.i)),
@@ -168,12 +172,12 @@ brt_tune <- function(i){
                                tree.complexity = id.i,
                                learning.rate = lr.i,
                                family="poisson"))
-    
-    # divide lr by 2 if stuck in eternal loop of 10000 and < 1000 
-    if(trees.i==10000 & m.i$n.trees < 1000){
-      
+
+    # divide lr by 2 if stuck in eternal loop of 10000 and < 1000
+    if((trees.i==10000 & m.i$n.trees < 1000) | (trees.i < 1000 & m.i$n.trees==10000)){
+
       lr.i <- lr.i/2
-      
+
       set.seed(1234)
       m.i <- try(dismo::gbm.step(data=dat.i,
                                  gbm.x=c(2:ncol(dat.i)),
@@ -182,11 +186,11 @@ brt_tune <- function(i){
                                  tree.complexity = id.i,
                                  learning.rate = lr.i,
                                  family="poisson"))
-      
+
     }
-    
+
     trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
-    
+
   }
   
   #11. Get performance metrics----
@@ -256,7 +260,8 @@ tmpcl <- clusterExport(cl, c("brt_tune"))
 bcr.spp <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
   dplyr::filter(use==TRUE) |> 
-  dplyr::select(-use)
+  dplyr::select(-use) |> 
+  anti_join(sppuse)
 
 #2. Reformat covariate list----
 bcr.cov <- covlist |> 
@@ -271,7 +276,8 @@ files <- data.frame(path = list.files(file.path(root, "output", "05_tuning"), pa
                     file = list.files(file.path(root, "output", "05_tuning"), pattern="*.csv", recursive = TRUE)) |> 
   separate(file, into=c("step", "spp", "bcr"), sep="_", remove=FALSE) |> 
   mutate(bcr = str_sub(bcr, -100, -5)) |> 
-  dplyr::filter(!is.na(bcr))
+  dplyr::filter(!is.na(bcr),
+                spp %in% unique(bcr.spp$spp))
 
 #4. Set learning rate threshold for dropping a spp*bcr combo----
 lr.min <- 1e-5
@@ -297,7 +303,7 @@ if(nrow(files) > 0){
     anti_join(perf) |> 
     mutate(lr = 0.001) |> 
     arrange(spp, bcr) |> 
-    inner_join(sppuse)
+    anti_join(sppuse)
   
 }
 
@@ -306,7 +312,7 @@ if(nrow(files)==0){
   loop <- bcr.spp |> 
     mutate(lr = 0.001) |> 
     arrange(spp, bcr) |> 
-    inner_join(sppuse)
+    anti_join(sppuse)
 }
 
 #For testing
