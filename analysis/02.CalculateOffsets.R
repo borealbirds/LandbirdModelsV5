@@ -26,7 +26,7 @@ library(sf) #coordinate projection
 library(lutz) #timezone lookup
 library(suncalc) #required for QPAD for time since sunrise calculation
 library(data.table) #collapse list to dataframe
-library(maptools)
+#library(maptools)
 library(intrval)
 library(raster)
 
@@ -54,9 +54,9 @@ rd1 <- rast("C:/Users/elly/Documents/BAM/QPAD/qpad-offsets/data/seedgrow.tif")
 load(file.path(root, "data", "01_NM5.0_data_clean.Rdata"))
 
 #2. Project visit coordinates ----
-set.seed(1234)
+#set.seed(1234)
 visit_v <- visit |> 
-#  sample_n(1000) |> 
+#  sample_n(10000) |> 
   st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
   st_transform(crs(rtree)) |> 
   vect()
@@ -112,7 +112,7 @@ visit_x <- visit_s |>
   mutate(TSSR = tssr/24,
          JDAY = yday(datetime)/366,
          LCC4 = factor(LCC4, levels=c("DecidMixed", "Conif", "Open", "Wet")),
-         LCC2 = factor(LCC2, levels=c("DecidMixed", "Conif")),
+         LCC2 = factor(LCC2, levels=c("Forest", "OpenWet")),
          MAXDUR = duration,
          MAXDIS = distance/100)
 
@@ -143,6 +143,10 @@ for (i in 1:length(spp)) {
   
   #3. Get best model & coeff----
   mi <- bestmodelBAMspecies(spp[i], type="BIC")
+  if(spp[i]=="CAWA"){
+    mi$edr <- "0"
+  }
+  #change EDR model to null
   cfi <- coefBAMspecies(spp[i], mi$sra, mi$edr)
   ## constant for NA cases
   cf0 <- exp(unlist(coefBAMspecies(spp[i], 0, 0)))
@@ -171,6 +175,7 @@ for (i in 1:length(spp)) {
   #5. Update design matrices to match the coefs ----
   Xp2 <- Xp[,names(cfi$sra), drop=FALSE]
   if("DSLS" %in% colnames(Xp2)){OKp <- !is.na(Xp2[,"DSLS"])} else {OKp <- rowSums(is.na(Xp2))}
+  OKp <- ifelse(OKp==0, TRUE, FALSE)
   Xq2 <- Xq[,names(cfi$edr), drop=FALSE]
   OKq <- rowSums(is.na(Xq2)) == 0
   
@@ -193,7 +198,7 @@ for (i in 1:length(spp)) {
   ii <- which(p == 0)
   p[ii] <- sra_fun(visit_x$MAXDUR[ii], cf0[1])
   
-  #9. Calculate offset -----
+  #9. Calculate offset -----``
   offsets[,i+1] = round(log(p) + log(A) + log(q), 4)
 
   cat(spp[i], "\n")
