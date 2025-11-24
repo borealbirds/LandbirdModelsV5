@@ -35,10 +35,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 #3. Load data packages with covariate lookup table----
 load(file.path(root, "Data", "04_NM5.0_data_stratify.Rdata"))
 
-#4. Set options to not write the .aux.xml file----
-rgdal::setCPLConfigOption("GDAL_PAM_ENABLED", "FALSE")
-
-#5. Get buffered region shapefile----
+#4. Get buffered region shapefile----
 bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
 #GET PREDICTION RASTER LOCATIONS######
@@ -47,7 +44,8 @@ bcr.out <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.sh
 #Remove Archived files and a couple weirdos, 100m ones
 files <- data.frame(path = list.files(file.path(root, "PredictionRasters"), full.names = TRUE, recursive = TRUE, pattern="*.tif"),
                     file = list.files(file.path(root, "PredictionRasters"), full.names = FALSE, recursive = TRUE, pattern="*.tif")) |> 
-  dplyr::filter(!str_sub(file, 1, 7)=="Archive") |> 
+  dplyr::filter(!str_sub(file, 1, 7)=="Archive",
+                !str_sub(file, -3, -1)=="xml") |> 
   rowwise() |> 
   mutate(int = str_locate_all(file, "/"),
          int = max(int)) |> 
