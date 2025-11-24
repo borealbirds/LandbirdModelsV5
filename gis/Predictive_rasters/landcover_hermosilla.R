@@ -16,6 +16,7 @@ ee_Initialize()
 
 # workdir
 setwd("E:/MelinaStuff/BAM/NationalModelv5.0")
+root <- "G:/Shared drives/BAM_NationalModels5"
 
 # Set extent 
 rast1k <- rast(nrows=4527, ncols=7300, xmin=-4100000, xmax=3200000, ymin=1673000, ymax=6200000, crs = "EPSG:5072")
@@ -67,5 +68,19 @@ for (i in 1:length(yrlist)) {
   writeRaster(VLCE_cp, filename=file.path(out_f, paste0("VLCE1km_",as.character(yrlist[i]), ".tif")), overwrite=TRUE)
 }
 
+# Fix the 0 to NA issue
 
+files.he <- data.frame(path = list.files(file.path(root, "PredictionRasters", "Landcover", "Hermosilla", "1km"), full.names = TRUE),
+                       file = list.files(file.path(root, "PredictionRasters", "Landcover", "Hermosilla", "1km")))
 
+for(i in 1:nrow(files.he)){
+  
+  rast.i <- rast(files.he$path[[i]])
+  
+  rast.i[values(rast.i)=="0"] <- NA
+  
+  terra::writeRaster(rast.i, file.path(root, "PredictionRasters", "Landcover", "Hermosilla", "1km_2", files.he$file[i]), overwrite=TRUE)
+  
+  cat(i, " ")
+  
+}
