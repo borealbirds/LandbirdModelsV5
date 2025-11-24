@@ -66,6 +66,13 @@ rm(offsets, cov, bcrlist, visit, bird)
 #9. BCR perimeter ----
 bcr <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
 
+#10. Alaska cropping ----
+akbox <- st_as_sfc(st_bbox(c(xmin= -3693930,
+                          ymin = 2187083,
+                          xmax = -1617275,
+                          ymax = 4562389),
+                          crs = st_crs(bcr)))
+
 #10. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
@@ -80,6 +87,7 @@ brt_mosaic <- function(i){
   #2. Loop settings----
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
+  country.i <- loop$country[i]
   
   #3. Loop file lists----
   predicted.i <- dplyr::filter(predicted, spp==spp.i, year==year.i)
@@ -87,9 +95,9 @@ brt_mosaic <- function(i){
   #4. Determine required blank predictions for unmodelled BCRs----
   zeros.i <- zeros |> 
     anti_join(predicted.i)
-  
+
   #5. Add zero files to available files----
-  loop.i <- predicted.i |> 
+  all.i <- predicted.i |> 
     dplyr::select(-file.pred) |> 
     mutate(path.extrap = file.path(root, "gis", "extrapolation", paste0(bcr, "_", year.i, ".tif"))) |> 
     rbind(zeros.i |> 
@@ -97,6 +105,17 @@ brt_mosaic <- function(i){
             mutate(path.extrap = path.pred,
                    spp = spp.i,
                    year = year.i))
+  
+  #filter to the right list for country
+  if(country.i=="Canada"){
+    loop.i <- all.i |> 
+      dplyr::filter(str_sub(bcr, 1, 3)=="can")
+  }
+  
+  if(country.i=="Alaska"){
+    loop.i <- all.i |> 
+      dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"))
+  }
   
   #6. Set up bcr loop to correct rasters----
   SppStack <- list() #hold the species prediction rasters
@@ -113,6 +132,11 @@ brt_mosaic <- function(i){
     p <- try(rast(loop.i$path.pred[j]))
     
     if(inherits(p, "try-error")){break}
+    
+    #Crop out the southern portion of BCR 5
+    if(loop.i$bcr[j]=="usa5"){
+      p <- crop(p, project(vect(akbox), crs(p)))
+    }
     
     if(ext(p)!=ext(w)){
       p <- p |> 
@@ -147,7 +171,11 @@ brt_mosaic <- function(i){
   FinalOut <- CANwideSp/(CANwideW)
   
   #14. Save----- 
-  writeRaster(FinalOut, file.path(root, "output", "08_mosaics_can",paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
+  if(!(file.exists(file.path(root, "output", "08_mosaics", country.i, spp.i)))){
+    dir.create(file.path(root, "output", "08_mosaics", country.i, spp.i))
+  }
+  
+  writeRaster(FinalOut, file.path(root, "output", "08_mosaics", country.i, spp.i, paste0(spp.i, "_", year.i, ".tif")), overwrite=T)
   
 }
 
@@ -158,34 +186,35 @@ predicted <- data.frame(file.pred = list.files(file.path(root, "output", "07_pre
   separate(file.pred, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
   mutate(year = as.numeric(year),
          path.pred = file.path(root, "output", "07_predictions", file.pred)) |> 
-  dplyr::select(-folder, -file) |> 
-  dplyr::filter(str_sub(bcr, 1, 3)=="can")
+  dplyr::select(-folder, -file)
 
 #2. Get list of mosaics completed----
-mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics_can"), pattern="*.tif")) |> 
-  separate(file.mosaic, into=c("spp", "year"), sep="_", remove=FALSE) |> 
-  mutate(year = as.numeric(str_sub(year, -100, -5)),
-         path.mosaic = file.path(root, "output", "08_mosaics_can", file.mosaic))
+mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file.mosaic, into=c("country", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |> 
+  mutate(path.mosaic = file.path(root, "output", "08_mosaics", file.mosaic),
+         year = as.numeric(year))
 
 #3. Make the to-do list----
 sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
 
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE, spp %in% sppuse,
-                str_sub(bcr, 1, 3)=="can") |> 
+  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
+  mutate(country= case_when(str_sub(bcr, 1, 3)=="can" ~ "Canada",
+                            bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5") ~ "Alaska")) |> 
   expand_grid(year = seq(1985, 2020, 5))
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
 loop <- inner_join(predicted, todo) |> 
   mutate(na = ifelse(is.na(path.pred), 1, 0)) |> 
-  group_by(spp, year) |>
+  group_by(country, spp, year) |>
   summarize(nas = sum(na)) |> 
   ungroup() |> 
   dplyr::filter(nas==0) |> 
   anti_join(mosaiced) |> 
   arrange(-year) |> 
-  dplyr::filter(year > 1985)
+  dplyr::filter(year > 1985,
+                !is.na(country))
 
 #5. Get the full list of zeroed bcr raster----
 zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full.names = TRUE),
@@ -196,7 +225,7 @@ zeros <- data.frame(path.zero = list.files(file.path(root, "gis", "zeros"), full
 #MOSAIC####
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root"))
+tmpcl <- clusterExport(cl, c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root", "akbox"))
 
 #2. Run BRT function in parallel----
 print("* Mosaicing predictions *")
