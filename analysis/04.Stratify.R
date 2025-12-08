@@ -27,6 +27,7 @@
 #To consider for V6:
 #stratification across years for year-specific validation.
 #Explore tidy models
+#Truncate counts by 99.9% quantile at species level - some models don't converge otherwise
 
 #PREAMBLE############################
 
