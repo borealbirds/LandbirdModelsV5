@@ -24,7 +24,7 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 #4. Read in buffered and merged region shapefile----
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel_Buffered.shp"))
 
-#ZERO PREDICTIONS#####
+#ZERO PREDICTIONS - BCRS#####
 
 #1. Get the list of stacks for one year----
 stacks <- data.frame(file=list.files(file.path(root, "gis", "stacks"), pattern="*.tif"),
@@ -46,6 +46,33 @@ for(i in 1:nrow(stacks)){
   
   #5. Save----
   terra::writeRaster(zero.i, file.path(root, "gis", "zeros", paste0(stacks$bcr[i], ".tif")), overwrite=TRUE)
+  
+  cat("Finished", i, "\n")
+  
+}
+
+#ZERO PREDICTIONS - MOSAICS#####
+
+#1. Get the list of stacks for one year----
+stacks <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE, full.names = TRUE),
+                     file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file, into=c("region", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |>  
+  group_by(region) |> 
+  sample_n(1) |> 
+  ungroup()
+
+#2. Set up loop----
+for(i in 1:nrow(stacks)){
+  
+  #3. Read in the stack and take just the first one-----
+  stack.i <- rast(stacks$path[i])[[1]]
+  
+  #4. Convert numbers to 0s-----
+  zero.i <- classify(stack.i, cbind(NA, NA, NA))
+  zero.i[!is.na(zero.i)] <- 0
+  
+  #5. Save----
+  terra::writeRaster(zero.i, file.path(root, "gis", "zeros", paste0(stacks$region[i], ".tif")), overwrite=TRUE)
   
   cat("Finished", i, "\n")
   
