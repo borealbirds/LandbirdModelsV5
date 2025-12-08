@@ -117,6 +117,11 @@ brt_mosaic <- function(i){
       dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"))
   }
   
+  if(country.i=="Lower48"){
+    loop.i <- all.i |> 
+      dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28"))
+  }
+  
   #6. Set up bcr loop to correct rasters----
   SppStack <- list() #hold the species prediction rasters
   MosaicStack <- list() #hold the weighting rasters
@@ -133,9 +138,12 @@ brt_mosaic <- function(i){
     
     if(inherits(p, "try-error")){break}
     
-    #Crop out the southern portion of BCR 5
-    if(loop.i$bcr[j]=="usa5"){
+    #Crop BCR 5 to south or nort
+    if(loop.i$bcr[j]=="usa5" & country.i=="Alaska"){
       p <- crop(p, project(vect(akbox), crs(p)))
+    }
+    if(loop.i$bcr[j]=="usa5" & country.i=="Lower48"){
+      p <- mask(p, project(vect(akbox), crs(p)), inverse=TRUE)
     }
     
     if(ext(p)!=ext(w)){
@@ -195,17 +203,19 @@ mosaiced <- data.frame(file.mosaic = list.files(file.path(root, "output", "08_mo
          year = as.numeric(year))
 
 #3. Make the to-do list----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv"))$species_code
-
 todo <- birdlist |> 
   pivot_longer(-bcr, names_to="spp", values_to="use") |> 
-  dplyr::filter(use==TRUE, spp %in% sppuse) |> 
-  mutate(country= case_when(str_sub(bcr, 1, 3)=="can" ~ "Canada",
-                            bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5") ~ "Alaska")) |> 
-  expand_grid(year = seq(1985, 2020, 5))
+  dplyr::filter(use==TRUE) |> 
+  mutate(Canada = ifelse(str_sub(bcr, 1, 3)=="can", 1, 0),
+         Alaska = ifelse(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"), 1, 0),
+         Lower48 = ifelse(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28"), 1, 0)) |> 
+  pivot_longer(Canada:Lower48, names_to="country", values_to="use2") |> 
+  dplyr::filter(use2==1) |>
+  expand_grid(year = seq(1985, 2020, 5)) |> 
+  dplyr::select(-use, -use2)
 
 #4. Remove spp*boot*year combinations that don't have all BCRs----
-loop <- inner_join(predicted, todo) |> 
+loop <- left_join(todo, predicted) |> 
   mutate(na = ifelse(is.na(path.pred), 1, 0)) |> 
   group_by(country, spp, year) |>
   summarize(nas = sum(na)) |> 
