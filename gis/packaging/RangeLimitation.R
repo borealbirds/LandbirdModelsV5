@@ -9,7 +9,6 @@
 #PREAMBLE############################
 
 #1. Load packages----
-library(auk) #eBird data handling
 library(tidyverse) #basic data wrangling
 library(sf) #read in & handle study area
 library(terra) #raster management
@@ -21,7 +20,7 @@ library(dggridR) #grid for spatial thinning
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Load data package with WildTrax data ----
-load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
+load(file.path(root, "data", "AllDetections.Rdata"))
 
 #4. List of species ----
 spp <- read.csv(file.path(root,"data","Lookups","lu_species.csv")) |> 
@@ -31,81 +30,6 @@ spp <- read.csv(file.path(root,"data","Lookups","lu_species.csv")) |>
                                          # species_common_name=="Yellow Warbler" ~ "Northern Yellow Warbler",
                                          # species_common_name=="Warbling Vireo" ~ "Eastern Warbling Vireo",
                                          !is.na(species_common_name) ~ species_common_name))
-
-#GET EBIRD DATA################
-
-#Only need to run this once
-
-# #1. Get list of ebd objects to process----
-# ebd.files <- list.files(file.path(root, "data", "eBird", "ebd_raw"), pattern="*relOct-2022")
-# 
-# #2. Set the sampling file path ----
-# auk_sampling(file.path(root, "data", "eBird", "ebd_raw", "ebd_sampling_relJul-2024", "ebd_sampling_relJul-2024.txt"))
-# 
-# #2. Set up loop----
-# for(i in 3:length(ebd.files)){
-#   
-#   #3. Set ebd path----
-#   auk_set_ebd_path(file.path(root, "data", "eBird", "ebd_raw", ebd.files[i]), overwrite=TRUE)
-#   
-#   #4. Define filters----
-#   filters <- auk_ebd(paste0(ebd.files[i], ".txt")) |> 
-#     auk_species(c(spp$species_common_name)) |>
-#     auk_protocol(c("Traveling", "Stationary")) |>
-#     auk_year(c(1980, 2022)) |> # max/min of model training data
-#     auk_date(c("*-05-15", "*-07-15")) |> #May 15-Jul 15
-#     auk_duration(duration=c(0, 720)) |>   #<=12 hr long checklists
-#     auk_complete()  # only complete checklists
-#   
-#   #5. Filter data----
-#   #select columns to keep
-#   filtered <- auk_filter(filters, file=file.path(root, "data", "eBird", "ebd_filtered_range", paste0(ebd.files[i], ".txt")), overwrite=TRUE)
-#   
-#   cat(i, " ")
-#   
-# }
-
-#5. Check list of processed files----
-ebd.files.done <- list.files(file.path(root, "data", "eBird", "ebd_filtered_range"), pattern="*.txt", full.names = TRUE)
-
-#PUT DATA TOGETHER####
-
-#1. Read the ebird data in ----
-#Note this next line takes a long time to run (couple hours)
-#test <- read_ebd(ebd.files.done[2])
-raw.ebd.list <- purrr::map(.x=ebd.files.done, .f=~read_ebd(.))
-raw.ebd <- do.call(rbind, raw.ebd.list)
-
-#2. Wrangle the ebird data ----
-dat.ebd <- raw.ebd |> 
-  mutate(date_time = ymd_hms(paste0(observation_date, time_observations_started))) |> 
-  dplyr::select(checklist_id, latitude, longitude, observation_count, date_time, common_name, observation_count) |> 
-  rename(count = observation_count,
-         id = checklist_id,
-         lat = latitude,
-         lon = longitude) |> 
-  left_join(spp |> 
-              rename(common_name = species_common_name) |> 
-              dplyr::select(common_name, species_code)) |> 
-  dplyr::select(-common_name)
-
-#3. Wrangle the rest of the dataset ----
-dat.bam <- as.matrix(bird) |> 
-  as.data.frame() |> 
-  rownames_to_column("id") |> 
-  pivot_longer(-id, names_to = "species_code", values_to = "count") |> 
-  mutate(id = as.numeric(id)) |> 
-  left_join(visit |> 
-              dplyr::select(id, lat, lon, date) |> 
-              rename(date_time = date))
-
-#4. Put together ----
-dat <- rbind(dat.ebd |> 
-               mutate(source = "eBird"),
-             dat.bam |> 
-               mutate(source = "BAM"))
-
-rm(dat.bam, dat.ebd, raw.ebd)
 
 #MAKE THE LIMITATION RASTERS########
 
@@ -140,13 +64,87 @@ for(i in 1:nrow(spp)){
   kde.i <- kde(dat.thin, cell_size = 100000, band_width = 500000)
   
   #6. Rasterize ----
-  r <- rast(extent = ext(kde.i), resolution = 1000, crs = crs(kde.i))
+  #let's use 100 km cells for now
+  r <- rast(extent = ext(kde.i) + 5000, resolution = 10000, crs = crs(kde.i))
   kde.r <- rasterize(kde.i, r, field="kde_value")
   
-  #7. Binarize ----
+  #7. Make an edge raster ----
+  kde.edge <- kde.r
+  values(kde.edge) <- ifelse(is.na(values(kde.r)), 1, 0)
+  nb.sum <- focal(kde.edge, w= matrix(1,3,3), fun=sum, na.policy="omit")
+  edge <- (kde.edge==1) & (nb.sum < 9)
+  edge[edge==0] <- NA
+  plot(edge)
+  
+  #9. Convert to points ----
+  pts <- as.points(edge, values=FALSE)
+  plot(pts)
+  
+  #10. Binarize the raster ----
+  #the isopleths below the percentile of any observation
   dat.min <- min(terra::extract(kde.r, vect(dat.thin))$kde_value)
+  
+  kde.0 <- kde.r
+  values(kde.0) <- ifelse(values(kde.r > dat.min), NA, 1)
+  plot(kde.0)
+  
   kde.1 <- kde.r
-  values(kde.1) <- ifelse(values(kde.1 > dat.min), 1, NA)
+  values(kde.1) <- ifelse(values(kde.r > dat.min), 1, NA)
+  plot(kde.1)
+  
+  #11. Now make a distance raster ----
+  kde.dist <- distance(kde.1)
+  plot(kde.dist)
+  
+  #12. Get the distance for each point ----
+  pts.dist <- terra::extract(x=kde.dist, y=pts)
+  
+  #13. Get the nearest point for each cell of the raster
+  kde.pts <- as.points(kde.0)
+  kde.nearest <- nearest(kde.pts, pts)
+  
+  
+  #7. Binarize ----
+0
+
+  
+  #8. Edge of raster ----
+  kde.edge <- rast(kde.10)
+  kde.edge[] <- NA
+  nr <- nrow(kde.edge)
+  nc <- ncol(kde.edge)
+  kde.edge[1, 1:nc] <- 1
+  kde.edge[nr, 1:nc] <- 1
+  kde.edge[1:nr, 1] <- 1
+  kde.edge[1:nr, nc] <- 1
+  
+
+  
+
+  
+  #10. Make a raster of just the boundary points ----
+  kde.0 <- kde.r 
+  values(kde.0) <- ifelse(values(kde.0 > dat.min), NA, 1)
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
   
   kde.0 <- kde.r
   values(kde.0) <- ifelse(values(kde.0 > dat.min), NA, values(kde.0))
