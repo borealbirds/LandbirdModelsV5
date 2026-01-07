@@ -1,11 +1,10 @@
 ###############################################
-# title: "Range Limitation"
+# title: "Range Limitation - Data prep"
 # author: Elly Knight
 # date: December 12, 2025
 ##################################################
 
-#This code uses presence/absence from BAM model training data and augments it with any complete ebird record up to 12hrs long and travelling up to 20km. The output is used to produced to produce range limitation rasters of BAM-modeled species.
-
+#This code collates presence/absence from BAM model training data, augmented by any complete ebird record up to 12hrs long and travelling up to 20km.
 #PREAMBLE############################
 
 #1. Load packages----
@@ -26,47 +25,45 @@ spp <- read.csv(file.path(root,"data","Lookups","lu_species.csv")) |>
   dplyr::filter(species_code %in% colnames(birdlist[,-1])) |> 
   mutate(species_common_name = case_when(species_common_name=="House Wren" ~ "Northern House Wren",
                                          species_common_name=="Le Conte's Sparrow" ~ "LeConte's Sparrow",
-                                         # species_common_name=="Yellow Warbler" ~ "Northern Yellow Warbler",
-                                         # species_common_name=="Warbling Vireo" ~ "Eastern Warbling Vireo",
                                          !is.na(species_common_name) ~ species_common_name))
 
 #GET EBIRD DATA################
 
-#Only need to run this once
+#Only need to run this section once
 
-# #1. Get list of ebd objects to process----
-# ebd.files <- list.files(file.path(root, "data", "eBird", "ebd_raw"), pattern="*relOct-2022")
-# 
-# #2. Set the sampling file path ----
-# auk_sampling(file.path(root, "data", "eBird", "ebd_raw", "ebd_sampling_relJul-2024", "ebd_sampling_relJul-2024.txt"))
-# 
-# #2. Set up loop----
-# for(i in 3:length(ebd.files)){
-#   
-#   #3. Set ebd path----
-#   auk_set_ebd_path(file.path(root, "data", "eBird", "ebd_raw", ebd.files[i]), overwrite=TRUE)
-#   
-#   #4. Define filters----
-#   filters <- auk_ebd(paste0(ebd.files[i], ".txt")) |> 
-#     auk_species(c(spp$species_common_name)) |>
-#     auk_protocol(c("Traveling", "Stationary")) |>
-#     auk_year(c(1980, 2022)) |> # max/min of model training data
-#     auk_date(c("*-05-15", "*-07-15")) |> #May 15-Jul 15
-#     auk_duration(duration=c(0, 720)) |>   #<=12 hr long checklists
-#     auk_complete()  # only complete checklists
-#   
-#   #5. Filter data----
-#   #select columns to keep
-#   filtered <- auk_filter(filters, file=file.path(root, "data", "eBird", "ebd_filtered_range", paste0(ebd.files[i], ".txt")), overwrite=TRUE)
-#   
-#   cat(i, " ")
-#   
-# }
+#1. Get list of ebd objects to process----
+ebd.files <- list.files(file.path(root, "data", "eBird", "ebd_raw"), pattern="*relOct-2022")
 
-#5. Check list of processed files----
-ebd.files.done <- list.files(file.path(root, "data", "eBird", "ebd_filtered_range"), pattern="*.txt", full.names = TRUE)
+#2. Set the sampling file path ----
+auk_sampling(file.path(root, "data", "eBird", "ebd_raw", "ebd_sampling_relJul-2024", "ebd_sampling_relJul-2024.txt"))
+
+#2. Set up loop----
+for(i in 3:length(ebd.files)){
+
+  #3. Set ebd path----
+  auk_set_ebd_path(file.path(root, "data", "eBird", "ebd_raw", ebd.files[i]), overwrite=TRUE)
+
+  #4. Define filters----
+  filters <- auk_ebd(paste0(ebd.files[i], ".txt")) |>
+    auk_species(c(spp$species_common_name)) |>
+    auk_protocol(c("Traveling", "Stationary")) |>
+    auk_year(c(1980, 2022)) |> # max/min of model training data
+    auk_date(c("*-05-15", "*-07-15")) |> #May 15-Jul 15
+    auk_duration(duration=c(0, 720)) |>   #<=12 hr long checklists
+    auk_complete()  # only complete checklists
+
+  #5. Filter data----
+  #select columns to keep
+  filtered <- auk_filter(filters, file=file.path(root, "data", "eBird", "ebd_filtered_range", paste0(ebd.files[i], ".txt")), overwrite=TRUE)
+
+  cat(i, " ")
+
+}
 
 #PUT DATA TOGETHER####
+
+#1. Check list of processed files----
+ebd.files.done <- list.files(file.path(root, "data", "eBird", "ebd_filtered_range"), pattern="*.txt", full.names = TRUE)
 
 #1. Read the ebird data in ----
 #Note this next line takes a long time to run (couple hours)
@@ -93,6 +90,7 @@ dat.bam <- as.matrix(bird) |>
   rownames_to_column("id") |> 
   pivot_longer(-id, names_to = "species_code", values_to = "count") |> 
   mutate(id = as.numeric(id)) |> 
+  dplyr::filter(count > 0) |> 
   left_join(visit |> 
               dplyr::select(id, lat, lon, date) |> 
               rename(date_time = date))
@@ -102,7 +100,5 @@ dat <- rbind(dat.ebd |>
                mutate(source = "eBird"),
              dat.bam |> 
                mutate(source = "BAM"))
-
-rm(dat.bam, dat.ebd, raw.ebd)
 
 save(dat, file = file.path(root, "data", "AllDetections.Rdata"))
