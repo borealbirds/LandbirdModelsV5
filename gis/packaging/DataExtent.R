@@ -1,10 +1,12 @@
 ###############################################
-# title: "Smoothing data range extent layer"
-# author: Elly Knight
+# title: "Data extent layer"
+# author: Elly Knight, Anna Drake
 # date: August 8, 2025
 ##################################################
 
-#This code takes the NA tif output from "Probable_Range_Extent.R" and smooths it for masking packaged outputs to the area of available survey data.
+#This code creates a data availability mask for the final packaged models. We use a threshold of at least 450 surveys within a 250 km radius as the threshold based on occurrence probability analyses.
+# false positives at > 450 records are rare (~2% if true occurrence rate=0.1% or 1/1000 (our "absent" threshold)); 
+# false negatives at < 450 records are substantial (~19% if true occurrence rate =1% or 1/100 (a rare "present" species))
 
 #PREAMBLE############################
 
@@ -25,52 +27,71 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
 #4. Load BCRs ----
 bcr <- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) |> 
-  st_transform(crs=4326)
-
-#CALCULATE EXTENT#################
-
-#1. Get bootstrap 1 ----
-visit_1 <- visit |> 
-  dplyr::filter(id %in% bootlist$b1)
-
-#2. Make it spatial ----
-pts <- visit_1 |> 
-  st_as_sf(coords=c("lon", "lat"), crs=4326) 
-
-#3. Try convex hull ----
-mcp <- pts |> 
+  st_transform(crs=5072) |>
   st_union() |> 
-  st_concave_hull(ratio = 0.2) 
+  vect() |> 
+  aggregate() |> 
+  fillHoles()
 
-#4. Visualize ----
-ggplot() +
-  geom_sf(data=bcr, aes(fill=factor(subUnit))) +
-  geom_sf(data=st_as_sf(mcp), fill=NA, linewidth = 1) +
-  geom_point(data=visit_1, aes(x=lon, y=lat))
+#5. Blank raster ----
+rast<-rast(file.path(root,"PredictionRasters/AnnualClim/ERAMAP_1km_2019.tif"))
+rast[]<-0
 
-#5. Make it a raster ----
-r <- bcr |> 
-  st_transform(crs=5072) |> 
-  rast(resolution = 1000)
+#SURVEY DENSITY #############
 
-mcp_v <- mcp |> 
+#1. Make it spatial ----
+visit_sp <- st_as_sf(visit, coords=c("lon", "lat"), crs=4326) |> 
+  st_transform(crs=5072)
+
+#2. Buffer by 250 km ----
+All <- st_buffer(visit_sp, 250000)
+
+#3. Stack and sum buffers - 'rasterize' is memory intensive, so split up the file ----
+All2<-list()
+rows<-c(seq(1,nrow(All), by=round(nrow(All)/10,0)))
+rows[11]<-nrow(All) # include the last few rows in group 10
+
+for (b in c(1:10)){
+  All.b<-All[c(rows[b]:rows[b+1]),] # subset
+  All2[b]<- rasterize(vect(All.b), rast, fun="sum") # summarize surveys per 250km
+}
+
+#4. Put together  -----
+Total<-rast(All2)
+Total <- app(Total, fun = "sum", na.rm = TRUE)
+
+#5. Filter to areas with at least 450 surveys ----
+Total[Total < 450] <- NA
+plot(Total)
+
+#POLISHING ##########
+
+#1. Downsampling (for speed) ----
+Down <- aggregate(Total, 10, "mean")
+
+#2. Binarize ----
+Down[Down > 1] <- 1
+plot(Down)
+
+#3. Make it a shapefile and fill holes ----
+Shp <- as.polygons(Down, dissolve = TRUE, na.rm=TRUE) |> 
+  aggregate() |> 
+  fillHoles()
+
+#4. Smooth ----
+Smooth <- Shp |> 
   st_as_sf() |> 
-  st_transform(crs=5072) |> 
-  vect()
+  st_buffer(500000) |> 
+  st_buffer(-500000)
 
-mcp_r <- rasterize(mcp_v, r, field=1, background=NA)
-plot(mcp_r)
-
-#compare
-na1 <- rast(file.path(root, "MosaicWeighting", "Range", "ABS_NA_Layer450.tiff"))
-plot(na1)
-
-#6. Smooth it ----
-w <- matrix(1, 299, 299)
-mcp_smooth <- focal(mcp_r, w=w, fun=mean, na.policy="omit", expand=TRUE)
-plot(mcp_smooth)
+#5. Crop by bcr extent ----
+Out <- Smooth |> 
+  vect() |> 
+  crop(bcr)
+  
+#6. Plot ----
+plot(bcr)
+plot(Out, add=TRUE, col="red")
 
 #7. Save ----
-writeRaster(mcp_smooth, file.path(root, "gis", "DataExtentMask.tif"))
-
-
+terra::writeVector(Out, file.path(root, "gis", "DataLimitationsMask.shp"))
