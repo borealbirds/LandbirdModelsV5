@@ -150,7 +150,8 @@ for(i in 1:nrow(spp)){
   kde.sum <- (kde.01 + ifel(is.na(kde.scaler), 0, kde.scaler))
   
   #18. Smooth ----
-  kde.out <- focal(kde.sum, w=matrix(1,25,25), fun=median)
+  kde.out <- focal(kde.sum, w=matrix(1,25,25), fun=median) |> 
+    project("ESRI:102001")
   names(kde.out) <- "range"
   #plot(kde.out)
   
@@ -165,9 +166,9 @@ for(i in 1:nrow(spp)){
   ggplot(kde.df) +
     geom_raster(aes(x=x, y=y, fill=range), show.legend = FALSE) +
     scale_fill_viridis_c() +
-    theme_minimal() +
-    xlim(c(-6000000, 4500000)) +
-    ylim(c(500000, 8000000))
+    theme_minimal()+
+    xlim(c(-5000000, 4000000)) +
+    ylim(c(-1000000, 6000000))
   
   ggsave(filename = file.path(root, "gis", "ranges", "plots", paste0(spp.i, ".tif")), height = 4, width = 6, units="in")
   
