@@ -16,7 +16,7 @@
 
 # Products are stacked, attributed, and saved in a hierarchical structure that is accessed by the BAMExploreR package. Do not change this file structure or the attribution approach for future versions.
 
-# This script also standardizes all projects to ESRI:102001 (NAD83 Canada Alberta Equal Conic)
+# This script also standardizes all projects to EPSG:3978 NAD 83 / Canada Atlas Lambert
 
 # Each averaged raster is also masked by water bodies
 
@@ -51,14 +51,13 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Get the water layer----
 print("* Getting water layer *")
-water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers.shp"))
+water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers.shp")) |> 
+  st_transform("EPSG:3978")
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |>
-  dplyr::filter(country=="can") |> 
-  st_union() |> 
-  st_area()
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+  st_transform("EPSG:3978") 
 
 #8. Mosaic polygons----
 print("* Mosaicing bcrs *")
@@ -72,21 +71,31 @@ akbox <- st_as_sfc(st_bbox(c(xmin= -3693930,
 bcr.can <- bcr.country |> 
   dplyr::filter(country=="can") |> 
   st_union() |> 
-  st_transform("ESRI:102001")
+  st_transform("EPSG:3978") |> 
+  vect() |> 
+  aggregate() |> 
+  fillHoles() |> 
+  st_as_sf()
 
 bcr.ak <- bcr.country |> 
   dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |> 
   st_crop(akbox) |> 
   st_union() |> 
-  st_transform("ESRI:102001") |> 
-  vect()
+  st_transform("EPSG:3978") |> 
+  vect() |> 
+  aggregate() |> 
+  fillHoles() |> 
+  st_as_sf()
 
 bcr.48 <- bcr.country |> 
   dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
   st_difference(akbox) |> 
   st_union() |> 
-  st_transform("ESRI:102001") |> 
-  vect()
+  st_transform("EPSG:3978") |> 
+  vect() |> 
+  aggregate() |> 
+  fillHoles() |> 
+  st_as_sf()
 
 #9. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -98,7 +107,9 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 # limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
 
 #10. Data limit mask ----
-limit <- rast(file.path(root, "gis", "DataExtentMask.tif"))
+limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
+  st_transform("EPSG:3978")
+
 #FUNCTION###########
 
 #1. Set up the loop----
@@ -148,7 +159,7 @@ brt_package <- function(i){
   
   #4. Read in the predictions----
   stack.i <- try(rast(files.i$predpath) |> 
-                   project("ESRI:102001"))
+                   project("EPSG:3978"))
   
   if(inherits(stack.i, "try-error")){return(NULL)}
   
@@ -173,35 +184,32 @@ brt_package <- function(i){
   
   #8. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath) |>
-                    project("ESRI:102001"))
+                    project("EPSG:3978"))
 
   if(inherits(sample.i, "try-error")){return(NULL)}
 
   #9. Calculate mean sampling distance----
   samplemn.i <- mean(sample.i, na.rm=TRUE) |>
     resample(mean.i) |>
-    crop(sf.i, mask=TRUE) |>
-    mask(water, inverse=TRUE)
+    crop(sf.i, mask=TRUE)
   
   #10. Stack----
   stack.i <- c(mean.i, cv.i, samplemn.i)
   names(stack.i) <- c("mean", "cv", "detectiondistance")
   
   #11. Mask outside range----
-  limit.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
-    project("ESRI:102001") |> 
+  range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
+    project("EPSG:3978") |> 
     resample(stack.i)
   
-  mask.i <- stack.i * limit.i
+  mask.i <- stack.i * range.i
   mask.i[is.na(mask.i)] <- 0
 
   #12. Mask by water and NA layer ----
-  na <- resample(limit, mask.i)
-  
   out.i <- mask.i |> 
     crop(sf.i, mask=TRUE) |> 
-    mask(na) |> 
-    mask(water, inverse=TRUE)
+    crop(vect(limit), mask=TRUE) |> 
+    mask(vect(water), inverse=TRUE)
   
   #13. Add some attributes----
   attr(out.i, "species") <- spp.i
@@ -260,15 +268,13 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA"),
-                year >= 2000,
-                bcr=="Canada") |> 
+  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.all", "bcr.country", "brt_package", "root", "water", "limit"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
