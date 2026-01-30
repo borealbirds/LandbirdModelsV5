@@ -7,12 +7,15 @@
 library(googledrive)
 library(terra)
 
-#NOTE FOR V6: CONSIDER A CUSTOM CIRCULAR FOCAL WINDOW THAT BETTER MATCHES THE AREA OF THE COVARIATE EXTRACTION
+#NOTE FOR V6: CONSIDER A CUSTOM CIRCULAR FOCAL WINDOW THAT BETTER MATCHES THE AREA OF THE COVARIATE EXTRACTION 
 #00100
 #01110
 #11111
 #01110
 #00100
+#OR USE A CIRCULAR FOCAL WINDOW (example below)
+#w <- focalWeight(r, d = radius, type = "circle")
+#biomass5k <- terra::focal(biomass_pj, w = w, fun = mean, na.rm = TRUE)
 
 ########################
 ### PARAMS
