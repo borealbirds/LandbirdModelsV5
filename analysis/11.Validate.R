@@ -1,7 +1,7 @@
 # ---
-# title: National Models 5.0 - validate subunit predictions
+# title: National Models 5.0 - validate models
 # author: Elly Knight
-# created: Sep 15, 2025
+# created: Feb 2, 2026
 # ---
 
 #NOTES################################
@@ -10,13 +10,15 @@
 
 # The script works by running only on species and bootstrap combinations that have been fully run for all bcrs and for all years, which is determined by whether they've been mosaicked for all years.
 
-# Validation is done by comparing the withheld data to predictions made from the model object.
+# Validation is done by comparing the withheld data to predictions made from the model object. A previous version of the model script derived predictions from the spatial predictions for each year; however, the evaluation was not comparable to previous versions.
 
 # Only withheld data from within the BCR is used; not data from the 100 km buffer
 
 # Validation is done for two spatial extents: BCR & mosaic. The mosaic extent validation is done by summing the dataset across BCRs for that species 
 
-# This script collects a list of bootstrap model objects that will not load and deletes them at the end of the script. The bootstrap script will need to be rerun for those files.
+# The metrics calculated are the same as used for V4 of the models. Additional metrics may be desired for future versions.
+
+#TO DO: Parallelize
 
 #PREAMBLE############################
 
