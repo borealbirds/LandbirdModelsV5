@@ -91,7 +91,7 @@ done <- data.frame(file.mean = list.files(file.path(root, "output", "11_validati
 loop <- anti_join(todo, done)
 
 #5. Set bootstraps ----
-boots <- 2
+boots <- 32
 
 #6. Get the mosaics list ----
 mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
@@ -158,19 +158,17 @@ get_data_bcr <- function(k){
 }
 
 # Function to run the evaluation metrics for each bootstrap
-evaluate_boot <- function(k){
-  
-  dat.k <- dat[[j]][[k]]
+evaluate_boot <- function(data){
   
   #1. Calculate prevalence ----
-  prevalence <- mean(ifelse(dat.k$train$count >0, 1, 0))
+  prevalence <- mean(ifelse(data$train$count >0, 1, 0))
   
   #2. Get the AUCs ----
-  AUC_init <- simple_auc(simple_roc(ifelse(dat.k$test$count>0, 1, 0), dat.k$test$predinit))
-  AUC_final <- simple_auc(simple_roc(ifelse(dat.k$test$count>0, 1, 0), dat.k$test$predfull))
+  AUC_init <- simple_auc(simple_roc(ifelse(data$test$count>0, 1, 0), data$test$predinit))
+  AUC_final <- simple_auc(simple_roc(ifelse(data$test$count>0, 1, 0), data$test$predfull))
   
   #3. Pseudo-R2 -----
-  pseudo_R2 <- pseudo_r2(dat.k$test$count, dat.k$test$predfull, dat.k$test$predinit)[1]
+  pseudo_R2 <- pseudo_r2(data$test$count, data$test$predfull, data$test$predinit)[1]
   
   #4. Return ----
   eval.k <- data.frame(prevalence, AUC_init, AUC_final, pseudo_R2) |> 
@@ -211,7 +209,7 @@ for(i in 1:nrow(loop)){
     dat[[j]] <- purrr::map(.x = c(1:boots), get_data_bcr)
 
     #8. Evaluate -----
-    eval[[j]] <- purrr::map(.x = c(1:boots), evaluate_boot) |> 
+    eval[[j]] <- purrr::map2(dat[[j]], evaluate_boot) |> 
       rbindlist()
     
     #9. Calculate OCCC -----
@@ -224,49 +222,57 @@ for(i in 1:nrow(loop)){
     
   }
   
-  #15. Add some names----
-  names(dat) <- c(loop.i$bcr)[1:3]
-  names(eval) <- c(loop.i$bcr)[1:3]
-  names(preds) <- c(loop.i$bcr)[1:3]
-  names(oc) <- c(loop.i$bcr)[1:3]
+  #10. Add some names----
+  names(dat) <- c(loop.i$bcr)
+  names(eval) <- c(loop.i$bcr)
+  names(preds) <- c(loop.i$bcr)
+  names(oc) <- c(loop.i$bcr)
   
-  #10. Get the list of mosaics to do ----
+  #11. Get the list of mosaics to do ----
   mosaic.i <- dplyr::filter(mosaiced, spp==spp.i)
   
-  #11. Set up the mosaic loop ----
+  #12. Set up the mosaic loop ----
   for(j in 1:nrow(mosaic.i)){
     
-    #12. Get the bcrs ----
+    #13. Get the bcrs ----
     bcr.j <- mosaic.i$region[j]
     if(bcr.j=="Canada"){bcrs.j <- colnames(bcrlist)[str_sub(colnames(bcrlist), 1, 3)=="can"]}
     if(bcr.j=="Alaska"){bcrs.j <- c("usa41423", "usa2", "usa40", "usa43", "usa5")}
     if(bcr.j=="Lower48"){bcrs.j <- c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")}
     
-    #13. Get the data ----
-    dat[[nrow(loop.i)+j]] <- dat[names(dat) %in% bcrs.j] |> 
-      unlist(recursive = FALSE)
+    #14. Get the data ----
+    dat.bcr <- dat[names(dat) %in% bcrs.j]
+    dat[[nrow(loop.i)+j]] <- lapply(seq_len(length(dat.bcr[[1]])), function(i){
+      train_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$train))
+      test_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$test))
+      list(train = train_i, test = test_i)
+    })
     
+    #15. Evaluate ----
+    eval[[nrow(loop.i)+j]] <- purrr::map_dfr(dat[[nrow(loop.i)+j]], evaluate_boot)
     
+    #16. Calculate OCCC -----
+    #Need to get a dataframe of predictions wtih a column for each bootstrap
+    preds[[nrow(loop.i)+j]] <- suppressWarnings(do.call(cbind,
+                                           lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
+    oc[[nrow(loop.i)+j]] <- epi.occc(preds[[nrow(loop.i)+j]])
+    
+    cat(j, " ")
     
   }
+  
+  #18. Add some more names----
+  names(dat) <- c(loop.i$bcr, mosaic.i$region)
+  names(eval) <- c(loop.i$bcr, mosaic.i$region)
+  names(preds) <- c(loop.i$bcr, mosaic.i$region)
+  names(oc) <- c(loop.i$bcr, mosaic.i$region)
 
-  
-  
-  
-  
-  
-  # #15. Add some names----
-  names(dat, eval, oc, preds) <- c(loop.i$bcr, mosaic.i$region)
-  
-  #16. Save the data----
-  save(test, train, eval, file = file.path(root, "output", "11_validation",
+  #19. Save the data----
+  save(eval, oc, file = file.path(root, "output", "11_validation",
                                            paste0(spp.i, ".Rdata")))
   
   end.i <- Sys.time()
   
   cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="hours"), "hours\n")
-  
-  
-  
   
 }
