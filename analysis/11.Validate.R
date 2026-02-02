@@ -1,7 +1,7 @@
 # ---
 # title: National Models 5.0 - validate subunit predictions
 # author: Elly Knight
-# created: April 29, 2024
+# created: Sep 15, 2025
 # ---
 
 #NOTES################################
@@ -10,24 +10,22 @@
 
 # The script works by running only on species and bootstrap combinations that have been fully run for all bcrs and for all years, which is determined by whether they've been mosaicked for all years.
 
-# Validation is done by rounding the withheld data to the nearest five years and extracting the predicted density values from the spatial prediction for each bootstrap.
+# Validation is done by comparing the withheld data to predictions made from the model object.
 
-# Validation is done for two spatial extents: BCR & mosaic. The mosaic extent is added to the end of the list of BCRs and compiled from the BCR data.
+# Only withheld data from within the BCR is used; not data from the 100 km buffer
+
+# Validation is done for two spatial extents: BCR & mosaic. The mosaic extent validation is done by summing the dataset across BCRs for that species 
 
 # This script collects a list of bootstrap model objects that will not load and deletes them at the end of the script. The bootstrap script will need to be rerun for those files.
-
-#TO DO FOR V6: Convert to functions and tidy
 
 #PREAMBLE############################
 
 #1. Load packages----
 library(tidyverse)
-library(terra)
-library(sf)
-library(dismo)
+library(purrr)
 library(gbm)
-library(DescTools)
-library(carat)
+library(epiR)
+library(data.table)
 
 #2. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -39,7 +37,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 bird.df <- as.data.frame(as.matrix(bird))
 bird.df$id <- as.numeric(row.names(bird.df))
 
-#5. Function for pseudoR2----
+#5. Functions for evaluation----
 #As per NMV4
 pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
   if (is.null(null))
@@ -56,27 +54,34 @@ pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
   c(R2=R2, R2adj=R2adj, Deviance=D0 - DR, Dev0=D0, DevR=DR, p_value=p_value)
 }
 
+simple_roc <- function(labels, scores){
+  Labels <- labels[order(scores, decreasing=TRUE)]
+  data.frame(
+    TPR=cumsum(Labels)/sum(Labels),
+    FPR=cumsum(!Labels)/sum(!Labels),
+    Labels=Labels)
+}
+
+simple_auc <- function(ROC) {
+  ROC$inv_spec <- 1-ROC$FPR
+  dx <- diff(ROC$inv_spec)
+  sum(dx * ROC$TPR[-1]) / sum(dx)
+}
+
 #INVENTORY#########
 
-#1. Get list of sets that have been mosaiced----
-#We inventory from the mosaics because we also evaluate the mosaic performance
-mosaics <- data.frame(path = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
-                      file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("spp", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year))
+#1. Get list of models that have been packaged ----
+#this ensures completeness
+packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
+                      file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("spp1", "bcr1", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
+  dplyr::filter(spp!="Extrapolation")
 
 #2. Make the todo list----
-#remove spp*boot combinations that don't have all years, we need them to get the predicted values
-todo <- mosaics |> 
+todo <- packaged |> 
   dplyr::select(spp) |> 
-  unique() |> 
-  expand_grid(year = seq(1985, 2020, 5)) |> 
-  full_join(mosaics) |> 
-  mutate(na = ifelse(is.na(path), 1, 0)) |>
-  group_by(spp) |>
-  summarize(nas = sum(na)) |> 
-  ungroup() |>
-  dplyr::filter(nas==0)
+  unique()
 
 #3. Check which have been run----
 done <- data.frame(file.mean = list.files(file.path(root, "output", "11_validation"), pattern="*.Rdata"))  |> 
@@ -85,12 +90,95 @@ done <- data.frame(file.mean = list.files(file.path(root, "output", "11_validati
 #4. Make the todo list----
 loop <- anti_join(todo, done)
 
-#WRITE FUNCTIONS###########
+#5. Set bootstraps ----
+boots <- 32
 
-#TEST DATA COMPILATION###############
+#6. Get the mosaics list ----
+mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file, into=c("region", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
+  dplyr::select(-sppfolder, -filetype, -year, -file) |> 
+  unique()
 
-#1. Set up loop----
-corrupt <- data.frame()
+#WRITE FUNCTIONS ###############
+
+# Function to get train and test data and the predictions from the model object 
+get_data_bcr <- function(k){
+  
+  #1. Get visits ----
+  visit.k <- bcrlist[bcrlist[,bcr.j]>0, c("id", bcr.j)]
+  colnames(visit.k) <- c("id", "use")
+  
+  #2. Get year & coords ----
+  year.k <- visit[visit$id %in% visit.k$id, c("year", "lon", "lat")]
+  
+  #3. Get response data (bird data)----
+  bird.k <- bird[as.character(visit.k$id), spp.i]
+  
+  #4. Get the offset ----
+  off.k <- offsets[offsets$id %in% visit.k$id, spp.i]
+  
+  #5. Put together -----
+  dat.k <- cbind(visit.k, year.k, bird.k, off.k) |> 
+    rename(count = bird.k,
+           offset = off.k,
+           year1 = year) |> 
+    mutate(year = round(year1/5)*5,
+           year = ifelse(year==1980, 1985, year))
+  
+  #6. Get the training data for this bootstrap ----
+  train.k <- dat.k |> 
+    dplyr::filter(id %in% bootlist[[k + 2]])
+  
+  #7. Get the with withheld test data ----
+  #exclude the buffer
+  #add species presence/absence
+  test.k <- dat.k |> 
+    dplyr::filter(!id %in% bootlist[[k + 2]],
+                  use==1) |> 
+    mutate(p = ifelse(count > 0, 1, 0))
+  
+  #8. Get the covariates for test data ----
+  cov.k <- cov[cov$id %in% test.k$id, colnames(cov) %in% b.list[[1]]$var.names] |> 
+    cbind(test.k)
+  
+  #9. Get full predictions ----
+  test.k$predraw <- suppressWarnings(predict.gbm(b.list[[k]], cov.k, type="link"))
+  test.k$predfull <- exp(test.k$predraw + test.k$offset)
+  
+  #3. Get intercept only predictions ----
+  test.k$predinit <- exp(b.list[[k]]$initF + test.k$offset)
+  
+  #8. Return ----
+  out.k <- list(train.k, test.k)
+  names(out.k) <- c("train", "test")
+  
+  return(out.k)
+  
+}
+
+# Function to run the evaluation metrics for each bootstrap
+evaluate_boot <- function(data){
+  
+  #1. Calculate prevalence ----
+  prevalence <- mean(ifelse(data$train$count >0, 1, 0))
+  
+  #2. Get the AUCs ----
+  AUC_init <- simple_auc(simple_roc(ifelse(data$test$count>0, 1, 0), data$test$predinit))
+  AUC_final <- simple_auc(simple_roc(ifelse(data$test$count>0, 1, 0), data$test$predfull))
+  
+  #3. Pseudo-R2 -----
+  pseudo_R2 <- pseudo_r2(data$test$count, data$test$predfull, data$test$predinit)[1]
+  
+  #4. Return ----
+  eval.k <- data.frame(prevalence, AUC_init, AUC_final, pseudo_R2) |> 
+    mutate(boot = k)
+  return(eval.k)
+  
+}
+
+# EVALUATE #########
+
 for(i in 1:nrow(loop)){
   
   start.i <- Sys.time()
@@ -102,302 +190,89 @@ for(i in 1:nrow(loop)){
   loop.i <- birdlist[,c("bcr", spp.i)] |> 
     pivot_longer(-bcr, names_to="spp", values_to="use") |> 
     dplyr::filter(use==TRUE) |> 
-    dplyr::select(bcr, use) |> 
-    rbind(data.frame(bcr="mosaic", use=TRUE))
+    dplyr::select(bcr, use)
   
-  #4. Set up bcr loop----
-  train <- list()
-  test <- list()
+  #4. Set up the BCR loop----
+  dat <- list()
   eval <- list()
+  preds <- list()
+  oc <- list()
   for(j in 1:nrow(loop.i)){
     
-    #5. Get the bcr---
+    #5. Get the bcr ----
     bcr.j <- loop.i$bcr[j]
     
-    #GET TRAIN & TEST DATA####
+    #6. Get the models ----
+    load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata")))
     
-    #1. Determine if it's the mosaic loop or not
-    if(bcr.j!="mosaic"){
-      
-      #2. Set up bootstrap loop----
-      train.j <- list()
-      test.j <- list()
-      for(k in 1:32){
-        
-        #3. Get visits ----
-        visit.k <- bcrlist[bcrlist[,bcr.j]>0, c("id", bcr.j)]
-        colnames(visit.k) <- c("id", "use")
-        
-        #4. Get year & coords ----
-        year.k <- visit[visit$id %in% visit.k$id, c("year", "lon", "lat")]
-        
-        #5. Get response data (bird data)----
-        bird.k <- bird[as.character(visit.k$id), spp.i]
-        
-        #6. Get the offset ----
-        off.k <- offsets[offsets$id %in% visit.k$id, spp.i]
-        
-        #7. Put together -----
-        dat.k <- cbind(visit.k, year.k, bird.k, off.k) |> 
-          rename(count = bird.k,
-                 offset = off.k,
-                 year1 = year) |> 
-          mutate(year = round(year1/5)*5,
-                 year = ifelse(year==1980, 1985, year))
-        
-        #8. Get the training data for this bootstrap ----
-        train.j[[k]] <- dat.k |> 
-          dplyr::filter(id %in% bootlist[[k + 2]])
-        
-        #9. Get the with withheld test data ----
-        #exclude the buffer
-        #add species presence/absence
-        test.j[[k]] <- dat.k |> 
-          dplyr::filter(!id %in% bootlist[[k + 2]],
-                        use==1) |> 
-          mutate(p = ifelse(count > 0, 1, 0))
-        
-      }
-      
-    } else {
-      
-      #10. If it is the mosaic loop, bind all the other bcrs together----
-      train.j <- lapply(1:32, function(k){
-        dfs <- lapply(train, function(x) x[[j]])
-        do.call(rbind, dfs)
-      })
-      
-      test.j <- lapply(1:32, function(k){
-        dfs <- lapply(test, function(x) x[[j]])
-        do.call(rbind, dfs)
-      })
-      
-    }
-    
-    #GET PREDICTIONS####
-    
-    #1. Set up loop to get the predictions for the withheld data----
-    
-    #years of predictions
-    years <- seq(1985, 2020, 5)
-    
-    #Make data frame to hold predictions
-    prediction.j <- list()
-    
-    for(k in 1:length(years)){
-      
-      year.k <- years[k]
-      
-      #2. Read in prediction raster----
-      if(bcr.j!="mosaic"){
-        rast.k <- try(rast(file.path(root, "output", "07_predictions", spp.i,
-                                 paste0(spp.i, "_", bcr.j, "_", year.k, ".tif"))))
-      } else {
-        rast.k <- try(rast(file.path(root, "output", "08_mosaics", 
-                                 paste0(spp.i, "_", year.k, ".tif"))))
-      }
-      
-      if(inherits(rast.k, "try-error")){break}
+    #7. Get the data -----
+    dat[[j]] <- purrr::map(.x = c(1:boots), get_data_bcr)
 
-      #3. filter and project data----
-      test.k <- lapply(test.j, function(df) df[df$year==year.k,])
-      
-      vect.k <- lapply(test.k, function(df){
-        vect(df, geom=c("lon", "lat"), crs="EPSG:4326")
-      })
-      
-      #4. Extract predictions----
-      for(l in 1:length(test.k)){
-        test.k[[l]]$prediction <- extract(rast.k[[l]], vect.k[[l]])[[2]]
-      }
-      
-      #5. remove NAs and infinite predictions----
-      prediction.k <- lapply(test.k, function(df){
-        df[is.finite(df$prediction) & !is.na(df$prediction),]
-      })
-      
-      #6. Put the years together ----
-      for(l in 1:length(prediction.k)){
-        if(k==1){
-          prediction.j[[l]] <- prediction.k[[l]]
-        } else {
-          prediction.j[[l]] <- rbind(prediction.j[[l]], prediction.k[[l]])
-        }
-        
-      }
-      
-      cat("Year", year.k, "\n")
-      
-    }
-
-    #VALIDATE#############
+    #8. Evaluate -----
+    eval[[j]] <- purrr::map2(dat[[j]], evaluate_boot) |> 
+      rbindlist()
     
-    #1. Calculate total deviance----
-    totaldev.i <- sapply(train.j, function(df){
-      calc.deviance(df$count, rep(mean(df$count), nrow(df)), family="poisson", calc.mean = FALSE)/nrow(df)
-    })
+    #9. Calculate OCCC -----
+    #Need to get a dataframe of predictions wtih a column for each bootstrap
+    preds[[j]] <- suppressWarnings(do.call(cbind,
+                     lapply(dat[[j]], function(b){as.numeric(b$test$predfull)})))
+    oc[[j]] <- epi.occc(preds[[j]])
     
-    #2. Get total training residual deviance----
-    if(bcr.j!="mosaic"){
-      load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata")))
-      
-      train.resid.i <- c()
-      for(k in 1:length(train.j)){
-        train.resid.i <- c(train.resid.i, mean(b.list[[k]]$train.error^2))
-      }
-    }
+    cat(j, " ")
     
-    #2. Determine whether can evaluate----  
-    #Skip to next loop if there's no withheld data or positive detections for that time period
-    
-    if(any(sapply(test.j, function(df) sum(df$p)==0)) | 
-       any(sapply(test.j, function(df) nrow(df)==0))){
-      
-      #3. Save what we can----
-      eval[[j]] <- data.frame(spp=spp.i,
-                               bcr=bcr.j,
-                               boot=c(1:32),
-                               trees = b.list[[1]]$n.trees,
-                               n.train = sapply(b.list, function(m) m$nTrain),
-                               n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
-                               n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
-                               total.dev = totaldev.i,
-                               train.resid = train.resid.i,
-                               train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                               n.test.p = sapply(test.j, function(df) sum(df$p)),
-                               n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)))
-      
-      train[[j]] <- train.j
-      test[[j]] <- prediction.j
-      
-      cat("BCR", loop.i$bcr[j], ":", j, "of", nrow(loop.i), "\n")
-      
-      next
-    }
-    
-    #5. Dismo evaluate presence & absence----
-    p.i <- lapply(prediction.j, function(df) dplyr::filter(df, p==1))
-    a.i <- lapply(prediction.j, function(df) dplyr::filter(df, p==0))
-    
-    eval.i <- mapply(function(a, p) {
-      dismo::evaluate(p = p$prediction, a=a$prediction)
-    }, a.i, p.i)
-    
-    #6. Calculate other count metrics----
-    #Accuracy, discrimination (spearman, pearson, intercept, slope), precision (Norberg et al. 2019 Ecol Mongr, Waldock et al. 2022 Ecography)
-    
-    accuracy.i <- sapply(prediction.j, function(df){
-      df |> 
-        mutate(diff = abs(count - prediction)) |> 
-        summarize(accuracy = mean(diff)/mean(count))
-    }) |> 
-      unlist() |> 
-      unname()
-    
-    precision.i <- sapply(prediction.j, function(df){
-      sd(df$count)/sd(df$prediction)
-    })
-    
-    lm.i <- lapply(prediction.j, function(df){
-      lm(prediction ~ count, data = df, na.action="na.exclude")
-    })
-    
-    cor.spearman.i <- sapply(prediction.j, function(df){
-      cor(df$prediction, df$count, method="spearman")
-    })
-    
-    cor.pearson.i <- sapply(prediction.j, function(df){
-      cor(df$prediction, df$count, method="pearson")
-    })
-    
-    #7. Calculate test deviance & residuals----
-    test.dev.i <- sapply(prediction.j, function(df){
-      calc.deviance(df$count, df$prediction, family="poisson")
-    })
-    
-    test.resid.i <- sapply(prediction.j, function(df){
-      mean(abs(df$count - df$prediction))
-    })
-    
-    #8. Calculate pseudo-R2----
-    r2.i <- sapply(prediction.j, function(df){
-      pseudo_r2(df$count, df$prediction)
-    }) |> 
-      t() |> 
-      data.frame()
-    
-    #9. Put together----
-    if(bcr.j!="mosaic"){
-      eval[[j]] <- data.frame(spp=spp.i,
-                              bcr=bcr.j,
-                              boot=c(1:32),
-                              trees = b.list[[1]]$n.trees,
-                              n.train = sapply(b.list, function(m) m$nTrain),
-                              n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
-                              n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
-                              total.dev = totaldev.i,
-                              train.resid = train.resid.i,
-                              train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                              n.test.p = sapply(test.j, function(df) sum(df$p)),
-                              n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)),
-                              auc = sapply(eval.i, function(x) x@auc),
-                              cor = sapply(eval.i, function(x) x@cor),
-                              cor.spearman = cor.spearman.i,
-                              cor.pearson = cor.pearson.i,
-                              accuracy = accuracy.i,
-                              precision = precision.i,
-                              discrim.intercept = sapply(lm.i, function(x) x$coefficients[1]),
-                              discrim.slope = sapply(lm.i, function(x) x$coefficients[2]),
-                              pseudor2 = r2.i$R2adj)
-    } else {
-      eval[[j]] <- data.frame(spp=spp.i,
-                              bcr=bcr.j,
-                              boot=c(1:32),
-                              n.train.p = sapply(train.j, function(df) nrow(dplyr::filter(df, count > 0))),
-                              n.train.a = sapply(train.j, function(df) nrow(dplyr::filter(df, count == 0))),
-                              total.dev = totaldev.i,
-                              train.d2 = (totaldev.i - train.resid.i)/totaldev.i,
-                              n.test.p = sapply(test.j, function(df) sum(df$p)),
-                              n.test.a = sapply(test.j, function(df) nrow(df) - sum(df$p)),
-                              auc = sapply(eval.i, function(x) x@auc),
-                              cor = sapply(eval.i, function(x) x@cor),
-                              cor.spearman = cor.spearman.i,
-                              cor.pearson = cor.pearson.i,
-                              accuracy = accuracy.i,
-                              precision = precision.i,
-                              discrim.intercept = sapply(lm.i, function(x) x$coefficients[1]),
-                              discrim.slope = sapply(lm.i, function(x) x$coefficients[2]),
-                              pseudor2 = r2.i$R2adj)
-    }
-    
-    train[[j]] <- train.j
-    test[[j]] <- prediction.j
-    
-    cat("BCR", loop.i$bcr[j], ":", j, "of", nrow(loop.i), "\n")
-
   }
   
-  if(inherits(rast.k, "try-error")){next}
-  if(inherits(mod.i, "try-error")){next}
+  #10. Add some names----
+  names(dat) <- c(loop.i$bcr)
+  names(eval) <- c(loop.i$bcr)
+  names(preds) <- c(loop.i$bcr)
+  names(oc) <- c(loop.i$bcr)
   
-  #15. Add some names----
-  names(test) <- loop.i$bcr
-  names(train) <- loop.i$bcr
-  names(eval) <- loop.i$bcr
+  #11. Get the list of mosaics to do ----
+  mosaic.i <- dplyr::filter(mosaiced, spp==spp.i)
   
-  #16. Save the data----
-  save(test, train, eval, file = file.path(root, "output", "11_validation",
-                                                          paste0(spp.i, ".Rdata")))
+  #12. Set up the mosaic loop ----
+  for(j in 1:nrow(mosaic.i)){
+    
+    #13. Get the bcrs ----
+    bcr.j <- mosaic.i$region[j]
+    if(bcr.j=="Canada"){bcrs.j <- colnames(bcrlist)[str_sub(colnames(bcrlist), 1, 3)=="can"]}
+    if(bcr.j=="Alaska"){bcrs.j <- c("usa41423", "usa2", "usa40", "usa43", "usa5")}
+    if(bcr.j=="Lower48"){bcrs.j <- c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")}
+    
+    #14. Get the data ----
+    dat.bcr <- dat[names(dat) %in% bcrs.j]
+    dat[[nrow(loop.i)+j]] <- lapply(seq_len(length(dat.bcr[[1]])), function(i){
+      train_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$train))
+      test_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$test))
+      list(train = train_i, test = test_i)
+    })
+    
+    #15. Evaluate ----
+    eval[[nrow(loop.i)+j]] <- purrr::map_dfr(dat[[nrow(loop.i)+j]], evaluate_boot)
+    
+    #16. Calculate OCCC -----
+    #Need to get a dataframe of predictions wtih a column for each bootstrap
+    preds[[nrow(loop.i)+j]] <- suppressWarnings(do.call(cbind,
+                                           lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
+    oc[[nrow(loop.i)+j]] <- epi.occc(preds[[nrow(loop.i)+j]])
+    
+    cat(j, " ")
+    
+  }
+  
+  #18. Add some more names----
+  names(dat) <- c(loop.i$bcr, mosaic.i$region)
+  names(eval) <- c(loop.i$bcr, mosaic.i$region)
+  names(preds) <- c(loop.i$bcr, mosaic.i$region)
+  names(oc) <- c(loop.i$bcr, mosaic.i$region)
+
+  #19. Save the data----
+  save(eval, oc, file = file.path(root, "output", "11_validation",
+                                           paste0(spp.i, ".Rdata")))
   
   end.i <- Sys.time()
   
   cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="hours"), "hours\n")
   
 }
-
-#17. Delete corrupt bootstraps----
-remove <- corrupt |> 
-  mutate(path = file.path(root, "output", "bootstraps", spp,
-                          paste0(spp, "_", bcr, "_", boot, ".Rdata")))
-
-file.remove(unique(remove$path))
