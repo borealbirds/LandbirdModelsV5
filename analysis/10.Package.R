@@ -110,6 +110,9 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
   st_transform("EPSG:3978")
 
+#11. Set number of bootstraps ----
+boots <- 32
+
 #FUNCTION###########
 
 #1. Set up the loop----
@@ -265,13 +268,14 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
+#  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
+  dplyr::filter(bcr=="Canada") |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "boots"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
