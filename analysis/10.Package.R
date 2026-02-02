@@ -172,15 +172,12 @@ brt_package <- function(i){
   mean.i[[1]][values(mean.i[[1]]) > q99mn[,1]] <- q99mn[,1]
   
   #6. Calculate sd----
-  sd.i <- stdev(stack.i, na.rm=TRUE) |> 
+  se.i <- stdev(stack.i, na.rm=TRUE)/sqrt(boots) |> 
     crop(sf.i, mask=TRUE)
   
-  #7. Calculate cv----
-  cv.i <- sd.i/(mean.i+0.0000001)
-  
   #Truncate to 99.8% quantile----
-  q99cv <- global(cv.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
-  cv.i[[1]][values(cv.i[[1]]) > q99cv] <- q99cv[,1]
+  q99cv <- global(se.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
+  se.i[[1]][values(se.i[[1]]) > q99cv] <- q99cv[,1]
   
   #8. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath) |>
@@ -194,8 +191,8 @@ brt_package <- function(i){
     crop(sf.i, mask=TRUE)
   
   #10. Stack----
-  stack.i <- c(mean.i, cv.i, samplemn.i)
-  names(stack.i) <- c("mean", "cv", "detectiondistance")
+  stack.i <- c(mean.i, se.i, samplemn.i)
+  names(stack.i) <- c("mean", "standarderror", "detectiondistance")
   
   #11. Mask outside range----
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
