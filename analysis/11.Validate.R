@@ -211,8 +211,7 @@ for(i in 1:nrow(loop)){
     dat[[j]] <- purrr::map(.x = c(1:boots), get_data_bcr)
 
     #8. Evaluate -----
-    eval[[j]] <- purrr::map2(dat[[j]], evaluate_boot) |> 
-      rbindlist()
+    eval[[j]] <- purrr::map_dfr(dat[[j]], evaluate_boot)
     
     #9. Calculate OCCC -----
     #Need to get a dataframe of predictions wtih a column for each bootstrap
