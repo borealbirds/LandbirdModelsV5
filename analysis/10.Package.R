@@ -30,6 +30,7 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(parallel)
+library(QPAD)
 
 #2. Determine if testing and on local or cluster----
 cc <- FALSE
@@ -102,6 +103,7 @@ print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
+tmpcl <- clusterEvalQ(cl, library(QPAD))
 # 
 # #10. List species for range limitation ----
 # limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
@@ -110,8 +112,9 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
   st_transform("EPSG:3978")
 
-#11. Set number of bootstraps ----
-boots <- 32
+#11. Data package ----
+load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
+rm(cov, covlist, bcrlist, birdlist, bootlist)
 
 #FUNCTION###########
 
@@ -161,26 +164,32 @@ brt_package <- function(i){
   }
   
   #4. Read in the predictions----
-  stack.i <- try(rast(files.i$predpath) |> 
+  rast.i <- try(rast(files.i$predpath) |> 
                    project("EPSG:3978"))
   
-  if(inherits(stack.i, "try-error")){return(NULL)}
+  if(inherits(rast.i, "try-error")){return(NULL)}
+  
+  #5. Truncate ----
+  
+  #Get species-specific truncation count 
+  countmax.i <- quantile(bird[, spp.i], 0.999) #max count
+  
+  #Get null QPAD correction
+  load_BAM_QPAD("3")
+  cf0 <- exp(unlist(coefBAMspecies(spp.i, 0, 0)))
+  off.i <- exp(cf0[1])*exp(cf0[2])
+  
+  #Get density truncation
+  q99 <- countmax.i/off.i
+  
+  #truncate
+  truncate.i <- clamp(rast.i, upper = q99, values=TRUE)
   
   #5. Calculate mean----
-  mean.i <- mean(stack.i, na.rm=TRUE) |> 
-    crop(sf.i, mask=TRUE)
-  
-  #Truncate to 99.8% quantile----
-  q99mn <- global(mean.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
-  mean.i[[1]][values(mean.i[[1]]) > q99mn[,1]] <- q99mn[,1]
+  mean.i <- mean(truncate.i, na.rm=TRUE)
   
   #6. Calculate sd----
-  se.i <- stdev(stack.i, na.rm=TRUE)/sqrt(boots) |> 
-    crop(sf.i, mask=TRUE)
-  
-  #Truncate to 99.8% quantile----
-  q99cv <- global(se.i, fun=function(x) quantile(x, 0.998, na.rm=TRUE))
-  se.i[[1]][values(se.i[[1]]) > q99cv] <- q99cv[,1]
+  sd.i <- stdev(truncate.i, na.rm=TRUE)
   
   #8. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath) |>
@@ -190,11 +199,10 @@ brt_package <- function(i){
 
   #9. Calculate mean sampling distance----
   samplemn.i <- mean(sample.i, na.rm=TRUE) |>
-    resample(mean.i) |>
-    crop(sf.i, mask=TRUE)
+    resample(mean.i)
   
   #10. Stack----
-  stack.i <- c(mean.i, se.i, samplemn.i)
+  stack.i <- c(mean.i, sd.i, samplemn.i)
   names(stack.i) <- c("mean", "standarderror", "detectiondistance")
   
   #11. Mask outside range----
@@ -269,13 +277,13 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 loop <- sampled |> 
   anti_join(done) |> 
 #  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-  dplyr::filter(bcr=="Canada") |> 
+  dplyr::filter(bcr %in% c("Canada", "Alaska", "Lower48")) |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "boots"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "bird"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
