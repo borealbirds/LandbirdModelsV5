@@ -52,9 +52,7 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Get the water layer----
 print("* Getting water layer *")
-# water <- read_sf(file.path(root, "gis", "Lakes_and_Rivers.shp")) |> 
-#   st_transform("EPSG:3978")
-
+water <- read_sf(file.path(root, "gis", "WaterMask.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
@@ -173,7 +171,7 @@ brt_package <- function(i){
   #5. Truncate ----
   
   #Get species-specific truncation count 
-  countmax.i <- quantile(bird[, spp.i], 0.999) #max count
+  countmax.i <- stats::quantile(bird[, spp.i], probs = 0.999, na.rm = TRUE) #max count
   
   #Get null QPAD correction
   load_BAM_QPAD("3")
