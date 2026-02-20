@@ -74,8 +74,8 @@ simple_auc <- function(ROC) {
 
 #1. Get list of models that have been packaged ----
 #this ensures completeness
-packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
-                      file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive = TRUE)) |> 
+packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged_can"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
+                      file = list.files(file.path(root, "output", "10_packaged_can"), pattern="*.tif", recursive = TRUE)) |> 
   separate(file, into=c("spp1", "bcr1", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
   mutate(year = as.numeric(year)) |> 
   dplyr::filter(spp!="Extrapolation")
@@ -84,6 +84,8 @@ packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged"
 todo <- packaged |> 
   dplyr::select(spp) |> 
   unique()
+
+todo <- data.frame(spp = list.files(file.path(root, "output", "07_predictions")))
 
 #3. Check which have been run----
 done <- data.frame(file.mean = list.files(file.path(root, "output", "11_validation"), pattern="*.Rdata"))  |> 
@@ -173,13 +175,17 @@ evaluate_boot <- function(data){
   pseudo_R2 <- pseudo_r2(data$test$count, data$test$predfull, data$test$predinit)[1]
   
   #4. Return ----
-  eval.k <- data.frame(prevalence, AUC_init, AUC_final, pseudo_R2) |> 
-    mutate(boot = k)
+  eval.k <- data.frame(prevalence, AUC_init, AUC_final, pseudo_R2)
   return(eval.k)
   
 }
 
 # EVALUATE #########
+
+#1. Set up loop ----
+
+#Data frame for holding corrupt bootstraps
+corrupt <- data.frame()
 
 for(i in 1:nrow(loop)){
   
@@ -205,7 +211,11 @@ for(i in 1:nrow(loop)){
     bcr.j <- loop.i$bcr[j]
     
     #6. Get the models ----
-    load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata")))
+    bload <- try(load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata"))))
+    if(class(bload)=="try-error"){
+      corrupt <- rbind(corrupt, loop.i[j,])
+      break
+      }
     
     #7. Get the data -----
     dat[[j]] <- purrr::map(.x = c(1:boots), get_data_bcr)
@@ -222,6 +232,7 @@ for(i in 1:nrow(loop)){
     cat(j, " ")
     
   }
+  if(class(bload)=="try-error"){next}
   
   #10. Add some names----
   names(dat) <- c(loop.i$bcr)
