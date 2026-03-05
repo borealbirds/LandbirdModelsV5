@@ -56,7 +56,7 @@ set <- c(1:5)
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set cores for local vs cluster----
 if(cc){ cores <- 48 }
@@ -133,6 +133,9 @@ brt_tune <- function(i){
   dat.i <- cbind(bird.i, year.i, meth.i, cov.i) |> 
     rename(count = bird.i)
   
+  q99 <- round(quantile(dat.i$count, 0.999))
+  dat.i$count <- ifelse(dat.i$count > q99, q99, dat.i$count)
+  
   if(spp.i=="CAWA"){
     dat.i <- dat.i |> 
       dplyr::select(-VLCE_1km)
@@ -174,7 +177,7 @@ brt_tune <- function(i){
                                family="poisson"))
 
     # divide lr by 2 if stuck in eternal loop of 10000 and < 1000
-    if((trees.i==10000 & m.i$n.trees < 1000) | (trees.i < 1000 & m.i$n.trees==10000)){
+    try(if((trees.i==10000 & m.i$n.trees < 1000) | (trees.i < 1000 & m.i$n.trees==10000)){
 
       lr.i <- lr.i/2
 
@@ -187,7 +190,7 @@ brt_tune <- function(i){
                                  learning.rate = lr.i,
                                  family="poisson"))
 
-    }
+    })
 
     trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
 
@@ -301,7 +304,8 @@ if(nrow(files) > 0){
   #Full combinations, take out done models
   loop <- bcr.spp |> 
     anti_join(perf) |> 
-    mutate(lr = 0.001) |> 
+    mutate(lr = 0.001) |>
+    mutate(lr = ifelse(spp=="BBMA", 0.01, 0.001)) |> 
     arrange(spp, bcr) |> 
     anti_join(sppuse)
   
