@@ -62,7 +62,7 @@ spp <- packaged |>
 species <- species.wt |> 
   inner_join(spp |> 
                rename(id = spp)) |> 
-  dplyr::select(all_of(colnames(species.wt)))
+  dplyr::select(all_of(colnames(species.wt))) |> 
   dplyr::filter(id %in% c("BBWA", "BBWO", "BLPW", "CAWA", "CONW", "LEYE", "OSFL", "OVEN", "RUBL", "SOSA", "TEWA"))
 
 #6. Check against to do list ----
@@ -260,5 +260,6 @@ metadata <- read.csv(file.path(root, "data", "Lookups", "BAMv5-results-metadata.
 
 #1. Put it together ----
 out <- list(species, regions, variables, importance, validation, abundances)
+names(out) <- c("species", "regions", "variables", "importance", "validation", "abundances")
 
 write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results_example.xlsx"))
