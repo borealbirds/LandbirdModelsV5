@@ -37,7 +37,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 4}
+if(!cc){ cores <- 6}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -171,11 +171,17 @@ brt_package <- function(i){
   #5. Truncate ----
   
   #Get species-specific truncation count 
-  countmax.i <- stats::quantile(bird[, spp.i], probs = 0.999, na.rm = TRUE) #max count
+  bird.i <- bird[,spp.i]
+  countmax.i <- stats::quantile(bird.i, probs = 0.999, na.rm = TRUE) #max count
   
   #Get null QPAD correction
   load_BAM_QPAD("3")
-  cf0 <- exp(unlist(coefBAMspecies(spp.i, 0, 0)))
+  if(spp.i=="CAJA"){
+    cf0 <- exp(unlist(coefBAMspecies("GRAJ", 0, 0)))
+  } else {
+    cf0 <- exp(unlist(coefBAMspecies(spp.i, 0, 0)))
+  }
+  
   off.i <- exp(cf0[1])*exp(cf0[2])
   
   #Get density truncation
@@ -276,7 +282,6 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 loop <- sampled |> 
   anti_join(done) |> 
 #  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-  dplyr::filter(bcr %in% c("Canada", "Alaska", "Lower48")) |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
@@ -289,3 +294,4 @@ print("* Packaging *")
 packaged <- parLapply(cl,
                       X=1:nrow(loop),
                       fun=brt_package)
+
