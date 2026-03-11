@@ -30,6 +30,8 @@
 
 #This script has a section to add a dataset for Alaska after the initial dataset was compiled. It is included here for reproducibility purposes but should be removed for the next iteration of models.
 
+#Future versions of BAM's models will have data download & harmonization separated out into a different repository on a separate shared drive.
+
 #PREAMBLE############################
 
 #1. Load packages----
