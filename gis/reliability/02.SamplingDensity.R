@@ -29,7 +29,7 @@ library(terra)
 library(parallel)
 
 #2. Set nodes for local vs cluster----
-cores <- 4
+cores <- 8
 
 #3. Create and register clusters----
 print("* Creating clusters *")
@@ -42,6 +42,7 @@ tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(Matrix))
 tmpcl <- clusterEvalQ(cl, library(terra))
+tmpcl <- clusterEvalQ(cl, library(sf))
 
 #5. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -58,7 +59,7 @@ crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +el
 radius <- 20000
 
 #8. Export objects to clusters ----
-tmpcl <- clusterExport(cl, c("root", "crs", "cov", "bootlist", "bcrlist"))
+tmpcl <- clusterExport(cl, c("root", "crs", "cov", "bootlist", "bcrlist", "visit", "radius"))
 
 #INVENTORY#########
 
@@ -90,7 +91,7 @@ tmpcl <- clusterExport(cl, c("loop"))
 
 #WRITE FUNCTION##########
 
-calc_extrapolation <- function(i){
+calc_sampling <- function(i){
   
   #1. Get model settings---
   bcr.i <- loop$bcr[i]
@@ -154,15 +155,15 @@ calc_extrapolation <- function(i){
 
 #11. Export to clusters----
 print("* Loading function on workers *")
-tmpcl <- clusterExport(cl, c("calc_extrapolation"))
+tmpcl <- clusterExport(cl, c("calc_sampling"))
 
-#RUN EXTRAPOLATION###############
+#RUN FUNCTION###############
 
 #1. Run function in parallel----
 print("* Calculating extrapolation *")
 mods <- parLapply(cl,
                   X=1:nrow(loop),
-                  fun=calc_extrapolation)
+                  fun=calc_sampling)
 
 #CONCLUDE####
 
