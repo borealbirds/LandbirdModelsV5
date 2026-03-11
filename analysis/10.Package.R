@@ -56,8 +56,7 @@ water <- read_sf(file.path(root, "gis", "WaterMask.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
-  st_transform("EPSG:3978") 
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
 
 #8. Mosaic polygons----
 print("* Mosaicing bcrs *")
@@ -208,7 +207,7 @@ brt_package <- function(i){
   
   #10. Stack----
   stack.i <- c(mean.i, sd.i, samplemn.i)
-  names(stack.i) <- c("mean", "standarderror", "detectiondistance")
+  names(stack.i) <- c("mean", "standard_deviation", "detection_distance")
   
   #11. Mask outside range----
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
