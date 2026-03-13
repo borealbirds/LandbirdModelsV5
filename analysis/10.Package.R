@@ -114,11 +114,15 @@ limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |>
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(cov, covlist, bcrlist, birdlist, bootlist)
 
+#12. Truncation values ----
+q <- read.csv(file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.csv"))
+
 #FUNCTION###########
 
 #1. Set up the loop----
 brt_package <- function(i){
   
+  cat("Start: ", Sys.time())
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
   bcr.i <- loop$bcr[i]
@@ -162,54 +166,48 @@ brt_package <- function(i){
   }
   
   #4. Read in the predictions----
+  cat("Read preds: ", Sys.time())
   rast.i <- try(rast(files.i$predpath) |> 
                    project("EPSG:3978"))
   
   if(inherits(rast.i, "try-error")){return(NULL)}
   
-  #5. Truncate ----
+  #5. Truncate by count quantile ----
   
-  #Get species-specific truncation count 
-  bird.i <- bird[,spp.i]
-  countmax.i <- stats::quantile(bird.i, probs = 0.999, na.rm = TRUE) #max count
-  
-  #Get null QPAD correction
-  load_BAM_QPAD("3")
-  if(spp.i=="CAJA"){
-    cf0 <- exp(unlist(coefBAMspecies("GRAJ", 0, 0)))
-  } else {
-    cf0 <- exp(unlist(coefBAMspecies(spp.i, 0, 0)))
-  }
-  
-  off.i <- exp(cf0[1])*exp(cf0[2])
-  
-  #Get density truncation
-  q99 <- countmax.i/off.i
+  #Get truncation
+  qsp <- q[q$spp==spp.i,]$q
   
   #truncate
-  truncate.i <- clamp(rast.i, upper = q99, values=TRUE)
+  truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
   
-  #5. Calculate mean----
-  mean.i <- mean(truncate.i, na.rm=TRUE)
+  #6. Secondary truncation ----
+  q99 <- global(mean(truncate.i, na.rm=TRUE), quantile, probs=0.999, na.rm=TRUE)[1,1]
   
-  #6. Calculate sd----
-  sd.i <- stdev(truncate.i, na.rm=TRUE)
+  truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
   
-  #8. Read in the sampling distance layers----
+  #7. Calculate mean----
+  cat("Summarize: ", Sys.time())
+  mean.i <- mean(truncate2.i, na.rm=TRUE)
+  
+  #8. Calculate sd----
+  sd.i <- stdev(truncate2.i, na.rm=TRUE)
+
+  #9. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath) |>
                     project("EPSG:3978"))
 
   if(inherits(sample.i, "try-error")){return(NULL)}
 
-  #9. Calculate mean sampling distance----
+  #10. Calculate mean sampling distance----
   samplemn.i <- mean(sample.i, na.rm=TRUE) |>
     resample(mean.i)
   
-  #10. Stack----
+  #11. Stack----
   stack.i <- c(mean.i, sd.i, samplemn.i)
   names(stack.i) <- c("mean", "standard_deviation", "detection_distance")
   
-  #11. Mask outside range----
+  #12. Mask outside range----
+  cat("Mask range: ", Sys.time())
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
     project("EPSG:3978") |> 
     resample(stack.i)
@@ -217,18 +215,19 @@ brt_package <- function(i){
   mask.i <- stack.i * range.i
   mask.i[is.na(mask.i)] <- 0
 
-  #12. Mask by water and NA layer ----
+  #13. Mask by water and NA layer ----
+  cat("Mask water: ", Sys.time())
   out.i <- mask.i |> 
     crop(sf.i, mask=TRUE) |> 
     crop(vect(limit), mask=TRUE) |> 
     mask(vect(water), inverse=TRUE)
   
-  #13. Add some attributes----
+  #14. Add some attributes----
   attr(out.i, "species") <- spp.i
   attr(out.i, "subunit") <- bcr.i
   attr(out.i, "year") <- year.i
   
-  #14. Make folders as needed-----
+  #15. Make folders as needed-----
   if(!(file.exists(file.path(root, "output", "10_packaged", spp.i)))){
     dir.create(file.path(root, "output", "10_packaged", spp.i))
   }
@@ -237,8 +236,13 @@ brt_package <- function(i){
     dir.create(file.path(root, "output", "10_packaged", spp.i, bcr.i))
   }
   
-  #15. Save----
+  #16. Save----
+  cat("Save: ", Sys.time())
   writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE, datatype = "FLT4S")
+  
+  cat("End: ", Sys.time())
+  
+  terra::tmpFiles(remove=TRUE)
   
 }
 
@@ -286,7 +290,7 @@ loop <- sampled |>
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "bird"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "q"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
