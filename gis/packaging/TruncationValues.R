@@ -80,4 +80,4 @@ for(i in 1:length(spp)){
 }
 
 #7. Save ----
-write.csv(q.out, file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.ccsv"), row.names = FALSE)
+write.csv(q.out, file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.csv"), row.names = FALSE)
