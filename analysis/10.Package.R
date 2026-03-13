@@ -167,8 +167,7 @@ brt_package <- function(i){
   
   #4. Read in the predictions----
   cat("Read preds: ", Sys.time())
-  rast.i <- try(rast(files.i$predpath) |> 
-                   project("EPSG:3978"))
+  rast.i <- try(rast(files.i$predpath))
   
   if(inherits(rast.i, "try-error")){return(NULL)}
   
@@ -180,36 +179,36 @@ brt_package <- function(i){
   #truncate
   truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
   
-  #6. Secondary truncation ----
-  q99 <- global(mean(truncate.i, na.rm=TRUE), quantile, probs=0.999, na.rm=TRUE)[1,1]
+  #6. Calculate mean----
+  cat("Summarize: ", Sys.time())
+  mn.i <- app(truncate.i, mean, na.rm=TRUE)
+  
+  #7. Secondary truncation ----
+  q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
   
   truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
-  
-  #7. Calculate mean----
-  cat("Summarize: ", Sys.time())
-  mean.i <- mean(truncate2.i, na.rm=TRUE)
+  mean.i <- clamp(mn.i, upper=q99, values=TRUE)
   
   #8. Calculate sd----
-  sd.i <- stdev(truncate2.i, na.rm=TRUE)
+  sd.i <- app(truncate2.i, sd, na.rm=TRUE)
 
   #9. Read in the sampling distance layers----
-  sample.i <- try(rast(files.i$samplepath) |>
-                    project("EPSG:3978"))
+  sample.i <- try(rast(files.i$samplepath))
 
   if(inherits(sample.i, "try-error")){return(NULL)}
 
   #10. Calculate mean sampling distance----
-  samplemn.i <- mean(sample.i, na.rm=TRUE) |>
+  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |>
     resample(mean.i)
   
   #11. Stack----
-  stack.i <- c(mean.i, sd.i, samplemn.i)
+  stack.i <- c(mean.i, sd.i, samplemn.i) |> 
+    project("EPSG:3978")
   names(stack.i) <- c("mean", "standard_deviation", "detection_distance")
   
   #12. Mask outside range----
   cat("Mask range: ", Sys.time())
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
-    project("EPSG:3978") |> 
     resample(stack.i)
   
   mask.i <- stack.i * range.i
@@ -285,7 +284,8 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 loop <- sampled |> 
   anti_join(done) |> 
 #  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-  arrange(-year, spp, bcr)
+  arrange(-year, spp, bcr) |> 
+  dplyr::filter(bcr=="Canada", year=="2020")
 
 #PACKAGE########
 
