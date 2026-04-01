@@ -18,7 +18,7 @@
 
 #Although the `gbm.fit` function might provide faster performance, we use `gbm` here to ensure the model terms match the terms in the prediction raster stack. The prediction and extrapolation scripts are by far the most time-intensive steps in the model building process, and so we prioritize redundancy over speed in the `06.Bootstrap.R` script to ensure predictions are correct. Otherwise, the order of variables in the raster stacks must match those in the model building.
 
-#TO DO FOR V6: Consider the most efficient place to reduce the models by filtering out covs < 0.01 relative influence
+#TO DO FOR V6: Consider the most efficient place to reduce the models by filtering out covs < 0.01 relative influence; current coding for model elements (line 86-103) isn't robust to different ID order in source files - suggest modifying it to left joins by id and the use of match() in offsets 
 
 #PREAMBLE############################
 
