@@ -358,7 +358,7 @@ loc.scanfi <- data.frame()
 
 #7. Set up to loop through years of SCANFI----
 years.scanfi <- unique(files.scanfi$year)
-for(i in 2:length(years.scanfi)){
+for(i in 1:length(years.scanfi)){
   
   loc.buff.yr <- dplyr::filter(loc.scanfi.buff, year.rd==years.scanfi[i]) |> 
     arrange(lat, lon) |> 
