@@ -29,7 +29,7 @@ library(terra)
 library(parallel)
 
 #2. Set nodes for local vs cluster----
-cores <- 8
+cores <- 10
 
 #3. Create and register clusters----
 print("* Creating clusters *")
@@ -58,13 +58,16 @@ crs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +el
 #8. Define summary radius ----
 radius <- 20000
 
+#9. Add five year interval ----
+visit$yearr <- round(visit$year/5)*5
+
 #8. Export objects to clusters ----
 tmpcl <- clusterExport(cl, c("root", "crs", "cov", "bootlist", "bcrlist", "visit", "radius"))
 
 #INVENTORY#########
 
 #1. Set desired years----
-years <- seq(1985, 2020, 5)
+years <- seq(1990, 2020, 5)
 
 #2. Create to do list----
 todo <- data.frame(bcr = colnames(bcrlist[,-1])) |> 
@@ -74,7 +77,7 @@ todo <- data.frame(bcr = colnames(bcrlist[,-1])) |>
 #3. Determine which are already done----
 done <- data.frame(path = list.files(file.path(root, "gis", "samplingdensity"), pattern="*.tif", full.names=TRUE, recursive=TRUE),
                    file = list.files(file.path(root, "gis", "samplingdensity"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("bcr", "year", "file"), remove=FALSE) |>  
+  separate(file, into=c("split", "bcr", "year", "file"), remove=FALSE) |>  
   mutate(year = as.numeric(year)) |> 
   dplyr::select(-file)
 
@@ -100,7 +103,7 @@ calc_sampling <- function(i){
   #2. Get all data for the BCR ----
   visit.i <- bcrlist[bcrlist[,bcr.i]>0, c("id", bcr.i)] |> 
     left_join(visit) |> 
-    dplyr::filter(round(year/2)*2==year.i) |> 
+    dplyr::filter(yearr==year.i) |> 
     dplyr::select(id, lon, lat, year)
   
   #4. Set up bootstrap list ----
