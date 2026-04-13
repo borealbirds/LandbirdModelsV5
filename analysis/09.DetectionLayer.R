@@ -23,7 +23,7 @@ cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 4}
+if(!cc){ cores <- 3}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -92,14 +92,16 @@ brt_sampling <- function(i){
         dplyr::filter(use > 0) |> 
         dplyr::select(id) |> 
         unique() |> 
-        arrange(id)
+        arrange(id) |> 
+        dplyr::filter(id %in% bootlist[[k + 2]])
+
       }
     
     #8. Get year & coords ----
-    year.k <- visit[visit$id %in% visit.k$id, c("year", "lon", "lat")]
+    year.k <- visit[visit$id %in% visit.k$id, c("id", "year", "lon", "lat")]
     
     #9. Get response data (bird data)----
-    bird.k <- bird[as.character(visit.k$id), spp.i]
+    bird.k <- bird[as.character(year.k$id), spp.i]
     
     #10. Filter ----
     detections.k <- cbind(bird.k, year.k) |> 
@@ -132,6 +134,8 @@ brt_sampling <- function(i){
     #14. Make a stack ----
     if(k==1){ rast.out <- rast.k} else { rast.out <- c(rast.out, rast.k) }
     
+    cat(k, " ")
+    
   }
   
   #15. Name the rasters ----
@@ -143,8 +147,6 @@ brt_sampling <- function(i){
   }
   
   writeRaster(rast.out, filename = file.path(root, "output", "09_sampling", spp.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
-  
-  cat("Sampling", i, "of", nrow(loop), "\n")
   
 }
 
