@@ -17,8 +17,8 @@
 # Areas where there are <450 records + 'not present' are re-coded insufficient to determine absence (NA).
 # Areas where there are <450 records + 'present' are left as 'present' 
 # This is because:
-# false positives at <450 records are rare (~2% if true occurrence rate=0.1% or 1/1000 (our "absent" threshold)); 
-# false negatives at <450 records are substantial (~19% if true occurrence rate =1% or 1/100 (a rare "present" species))
+# false positives at > 450 records are rare (~2% if true occurrence rate=0.1% or 1/1000 (our "absent" threshold)); 
+# false negatives at < 450 records are substantial (~19% if true occurrence rate =1% or 1/100 (a rare "present" species))
 # Finally, smoothed range extents are produced as shapefiles using the product rasters at both thresholds
 # These shapefiles are simplified by: (1) joining regions within 100km of each other (2) filling holes
 # equivalent to 100km diameter or less and, (3) smoothing contours using the 'ksmooth' function.
