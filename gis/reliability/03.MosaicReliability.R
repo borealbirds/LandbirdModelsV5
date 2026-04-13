@@ -93,13 +93,20 @@ water <- read_sf(file.path(root, "gis", "WaterMask.shp")) |>
 #MOSAIC#######
 
 #1. Set up to loop through years ----
-loop <- expand.grid(year = seq(1985, 2020, 5),
+todo <- expand.grid(year = seq(1990, 2020, 5),
                      bcr = c("Canada", "Alaska", "Lower48"))
 
-loop <- expand.grid(year = c(2020),
-                     bcr = c("Canada", "Alaska", "Lower48"))
+#2. Get ones that are done ----
+done <- data.frame(file = list.files(file.path(root, "output", "10_packaged", "Sampling"), recursive = TRUE, pattern="*.tif")) |> 
+  separate(file, into=c("folder", "bcr", "year", "filetype")) |> 
+  dplyr::select(bcr, year) |> 
+  mutate(year = as.numeric(year))
 
-for(i in 1:length(loop)){
+#3. Make to do list ----
+loop <- todo |> 
+  anti_join(done)
+
+for(i in 1:nrow(loop)){
   
   year.i <- loop$year[i]
   country.i <- loop$bcr[i]
@@ -156,19 +163,18 @@ for(i in 1:length(loop)){
   #7. Stack and crop ----
   out <- c(mean.extrap, mean.train, mean.test) |> 
     project("EPSG:3978") |> 
-    crop(bcr, mask=TRUE) |> 
-    mask(water, inverse=TRUE)
+    crop(bcr, mask=TRUE)
   
   #8. Fix names ----
   names(out) <- c("extrapolation", "samplingdensity_train", "samplingdensity_test")
   
   #8. Make folder as needed ----
-  if(!(file.exists(file.path(root, "output", "10_packaged", "SamplingReliability", country.i)))){
-    dir.create(file.path(root, "output", "10_packaged", "SamplingReliability", country.i))
+  if(!(file.exists(file.path(root, "output", "10_packaged","Sampling", country.i)))){
+    dir.create(file.path(root, "output", "10_packaged", "Sampling", country.i))
   }
   
   #8. Save
-  writeRaster(out, file.path(root, "output", "10_packaged", "SamplingReliability", country.i, paste0(country.i, "_", year.i, ".tif")), overwrite=T)
+  writeRaster(out, file.path(root, "output", "10_packaged", "Sampling", country.i, paste0(country.i, "_", year.i, ".tif")), overwrite=T)
   
   cat(i, "  ")
   
