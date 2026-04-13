@@ -15,11 +15,13 @@
 #PREAMBLE############################
 
 #1. Load packages----
+library(furrr) #parallelize & map
 library(tidyverse) #data wrangling
 library(data.table) #rbinding lists to dataframe with filling unmatched columns
 library(openxlsx) #read and save to excel
 library(sf) #shapefiles
 library(BAMexploreR) #variable importance & pop est function
+library(parallel) #parallelize
 
 #2. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -63,7 +65,7 @@ species <- species.wt |>
   inner_join(spp |> 
                rename(id = spp)) |> 
   dplyr::select(all_of(colnames(species.wt))) |> 
-  dplyr::filter(id %in% c("BBWA", "BBWO", "BLPW", "CAWA", "CONW", "LEYE", "OSFL", "OVEN", "RUBL", "SOSA", "TEWA"))
+  arrange(id)
 
 #6. Check against to do list ----
 missing <- data.frame(id=colnames(dplyr::select(birdlist, -bcr))) |> 
@@ -72,7 +74,8 @@ missing <- data.frame(id=colnames(dplyr::select(birdlist, -bcr))) |>
 #REGIONS############
 
 #1. Get BCR shapefile for modelling ----
-bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
+bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+  st_transform("EPSG:5072")
 
 #2. Get original BCR shapefile for BCR names ----
 bcr_og <- read_sf(file.path(root, "Regions", "archived", "BCR_Terrestrial_master.shp")) |> 
@@ -131,10 +134,10 @@ variables <- read.csv(file.path(root, "data", "Lookups", "covariate_metadata.csv
 #IMPORTANCE#########
 
 #1. Get it from BAMexploreR ----
-imp_bamx <- bam_predictor_importance_v5
+imp_bam <- bam_predictor_importance_v5
 
 #2. Wrangle ----
-importance <- imp_bamx |> 
+importance <- imp_bam |> 
   rename(id = spp,
          region = bcr,
          variable = predictor,
@@ -181,14 +184,20 @@ validation <- rbindlist(eval.out, fill=TRUE) |>
 #ABUNDANCES##########
 
 #1. Set up the function ----
-pop_sum <- function(file, type, region, id, year){
+pop_sum <- function(i){
+  
+  file <- todo_i$file[i]
+  type <- todo_i$type[i]
+  region <- todo_i$region[i]
+  id <- todo_i$id[i]
+  year <- todo_i$year[i]
   
   #read in raster stack of bootstraps, remove the buffer (single models only)
-  if(type=="Single model"){ 
-    bcr <- dplyr::filter(bcr_mod, bcr==region) |> 
-      vect()
+  if(type=="Single model"){
+    bcr_v <- vect(bcr_mod)
+    bcr_i <- bcr_v[bcr_v$bcr==region,]
     r <- rast(file.path(root, "output", "07_predictions", file)) |> 
-      crop(bcr, mask=TRUE)
+      crop(bcr_i, mask=TRUE)
     }
   if(type=="Mosaic"){r <- rast(file.path(root, "output", "08_mosaics", file))}
   
@@ -211,7 +220,7 @@ pop_sum <- function(file, type, region, id, year){
     id = id,
     region = region,
     year = year,
-    abundance_estimate = round(median(abun)/1e6, 4),
+    population_estimate = round(median(abun)/1e6, 4),
     population_lower = round(quantile(abun, 0.05)/1e6, 4),
     population_upper = round(quantile(abun, 0.95)/1e6, 4),
     density_estimate = round(median(mn), 4),
@@ -225,7 +234,7 @@ pop_sum <- function(file, type, region, id, year){
 
 #2. Get BCR shapefile for modelling ----
 bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
-  st_transform(crs=5072)
+  st_transform("EPSG:5072")
 
 #3. List of models to run ----
 pred <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), recursive = TRUE)) |> 
@@ -241,10 +250,31 @@ mosaic <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), 
 todo <- rbind(pred, mosaic) |> 
   inner_join(species) |> 
   dplyr::select(file, type, region, id, year) |> 
-  dplyr::filter(region=="Canada")
+  dplyr::filter(year > 1985)
 
-#4. Apply function ----
-abundance_out <- purrr::pmap(todo, pop_sum)
+#4. Apply function in parallel ----
+#do by species so we can stop and start again with losing too much
+abundance_out <- list()
+for(i in 1:nrow(species)){
+  
+  todo_i <- dplyr::filter(todo, id==species$id[i])
+  
+  #7 workers for 7 years of predictions
+  cl <- makePSOCKcluster(7, type="PSOCK")
+  tmpcl <- clusterEvalQ(cl, library(tidyverse))
+  tmpcl <- clusterEvalQ(cl, library(terra))
+  tmpcl <- clusterEvalQ(cl, library(sf))
+  tmpcl <- clusterExport(cl, c("bcr_mod", "pop_sum", "root", "todo_i"))
+
+  abundance_i <- parLapply(cl,
+                           X=1:nrow(todo_i),
+                           fun=pop_sum)
+  
+  abundance_out[[i]] <- rbindlist(abundance_i)
+  
+  print(paste0("Species ", i, " complete"))
+  
+}
 
 #5. Final object ----
 abundances <- rbindlist(abundance_out) |> 
@@ -259,7 +289,12 @@ metadata <- read.csv(file.path(root, "data", "Lookups", "BAMv5-results-metadata.
 #PACKAGE#########
 
 #1. Put it together ----
+out <- list(species, regions, variables, importance, validation)
+names(out) <- c("species", "regions", "variables", "importance", "validation")
+
+write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results_noabundance.xlsx"))
+
 out <- list(species, regions, variables, importance, validation, abundances)
 names(out) <- c("species", "regions", "variables", "importance", "validation", "abundances")
 
-write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results_example.xlsx"))
+write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results.xlsx"))
