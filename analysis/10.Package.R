@@ -22,6 +22,8 @@
 
 # Products from 1985 are excluded from packaging for 3 reasons: 1) There are very few sampling points in the dataset prior to 1993, the 1985 SCANFI products used for prediction are less reliable, 3) there are very few covariate layers that are available for those years of prediction
 
+#This script uses a template to resample from 5072 to 3978 due to changes in projection decisions part way through the modelling process. Future versions will not require this step because they should use 3978 from the onset.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -30,7 +32,6 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(parallel)
-library(QPAD)
 
 #2. Determine if testing and on local or cluster----
 cc <- FALSE
@@ -56,7 +57,8 @@ water <- read_sf(file.path(root, "gis", "WaterMask.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+  st_transform("EPSG:3978") 
 
 #8. Mosaic polygons----
 print("* Mosaicing bcrs *")
@@ -70,7 +72,6 @@ akbox <- st_as_sfc(st_bbox(c(xmin= -3693930,
 bcr.can <- bcr.country |> 
   dplyr::filter(country=="can") |> 
   st_union() |> 
-  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
@@ -80,7 +81,6 @@ bcr.ak <- bcr.country |>
   dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |> 
   st_crop(akbox) |> 
   st_union() |> 
-  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
@@ -90,7 +90,6 @@ bcr.48 <- bcr.country |>
   dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
   st_difference(akbox) |> 
   st_union() |> 
-  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
@@ -101,7 +100,6 @@ print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
-tmpcl <- clusterEvalQ(cl, library(QPAD))
 # 
 # #10. List species for range limitation ----
 # limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
@@ -115,14 +113,13 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(cov, covlist, bcrlist, birdlist, bootlist)
 
 #12. Truncation values ----
-q <- read.csv(file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.csv"))
+q <- read.csv(file.path(root, "data", "SpeciesPredictionTruncationValues.csv"))
 
 #FUNCTION###########
 
 #1. Set up the loop----
 brt_package <- function(i){
   
-  cat("Start: ", Sys.time())
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
   bcr.i <- loop$bcr[i]
@@ -166,7 +163,6 @@ brt_package <- function(i){
   }
   
   #4. Read in the predictions----
-  cat("Read preds: ", Sys.time())
   rast.i <- try(rast(files.i$predpath))
   
   if(inherits(rast.i, "try-error")){return(NULL)}
@@ -180,17 +176,18 @@ brt_package <- function(i){
   truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
   
   #6. Calculate mean----
-  cat("Summarize: ", Sys.time())
   mn.i <- app(truncate.i, mean, na.rm=TRUE)
   
   #7. Secondary truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
   
   truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
-  mean.i <- clamp(mn.i, upper=q99, values=TRUE)
+  mean.i <- clamp(mn.i, upper=q99, values=TRUE) |> 
+    project("EPSG:3978", res=1000)
   
   #8. Calculate sd----
-  sd.i <- app(truncate2.i, sd, na.rm=TRUE)
+  sd.i <- app(truncate2.i, sd, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000)
 
   #9. Read in the sampling distance layers----
   sample.i <- try(rast(files.i$samplepath))
@@ -198,16 +195,15 @@ brt_package <- function(i){
   if(inherits(sample.i, "try-error")){return(NULL)}
 
   #10. Calculate mean sampling distance----
-  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |>
+  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000) |> 
     resample(mean.i)
   
   #11. Stack----
-  stack.i <- c(mean.i, sd.i, samplemn.i) |> 
-    project("EPSG:3978")
+  stack.i <- c(mean.i, sd.i, samplemn.i)
   names(stack.i) <- c("mean", "standard_deviation", "detection_distance")
   
   #12. Mask outside range----
-  cat("Mask range: ", Sys.time())
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
     resample(stack.i)
   
@@ -215,10 +211,9 @@ brt_package <- function(i){
   mask.i[is.na(mask.i)] <- 0
 
   #13. Mask by water and NA layer ----
-  cat("Mask water: ", Sys.time())
   out.i <- mask.i |> 
-    crop(sf.i, mask=TRUE) |> 
     crop(vect(limit), mask=TRUE) |> 
+    crop(sf.i, mask=TRUE) |> 
     mask(vect(water), inverse=TRUE)
   
   #14. Add some attributes----
@@ -236,12 +231,7 @@ brt_package <- function(i){
   }
   
   #16. Save----
-  cat("Save: ", Sys.time())
   writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE, datatype = "FLT4S")
-  
-  cat("End: ", Sys.time())
-  
-  terra::tmpFiles(remove=TRUE)
   
 }
 
@@ -256,36 +246,19 @@ sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling")
   dplyr::filter(year!=1985) |>
   dplyr::select(-filetype, -file, -spf)
 
-predicted <-data.frame(file = list.files(file.path(root, "output", "07_predictions"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("folder", "spp", "bcr", "year", "file"), remove=FALSE) |> 
-  mutate(year = as.numeric(year),
-         path = file.path(root, "output", "07_predictions", file)) |> 
-  dplyr::select(-folder, -file) |> 
-  dplyr::filter(str_sub(bcr, 1, 3)=="can")
-
-mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("country", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year),
-         path = file.path(root, "output", "09_sampling", file)) |> 
-  dplyr::filter(year!=1985,
-                country=="Canada") |> 
-  mutate(bcr="mosaic") |> 
-  dplyr::select(all_of(colnames(predicted)))
-
 #2. Check which have been run----
 done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
   separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
   mutate(year = as.numeric(year)) |> 
   dplyr::select(-filetype) |> 
-  dplyr::filter(sppfolder!="extrapolation")
+  dplyr::filter(sppfolder!="SamplingReliability")
 
 #3. Make the todo list----
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
 #  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
-  arrange(-year, spp, bcr) |> 
-  dplyr::filter(bcr=="Canada", year=="2020")
+  arrange(-year, spp, bcr)
 
 #PACKAGE########
 
