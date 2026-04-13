@@ -41,7 +41,7 @@
 #BAM has previously used the Graham cluster; however, we hit major obstacles with innaccessibility of the scratch space during V5 and moved our work to Cedar.
 
 #Although this and the subsequent scripts for the cluster are written to run on more than one node at once, it is typically fastest to request one node for 24 hours at a time. Instead, we use a lookup table (e.g., sppuse below) with subgroupings to run more than group per modelling step at a time, each on a single node.
-
+# to do for V6: current coding for model elements (line 113-145) isn't robust to different ID order in source files, could lead to survey-covariate mismatch - suggest modifying it to left_joins() by id for dat.i and the use of match() in offsets (i.e. off.i <- offsets[match(dat.i$id, offsets$id)
 #PREAMBLE############################
 
 #1. Load packages----

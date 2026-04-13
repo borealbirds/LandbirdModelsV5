@@ -11,9 +11,9 @@ BAM's landbird models bridge the gap between local studies and large-scale manag
 5. Tune models for learning rate
 6. Bootstrap models
 7. Make spatial predictions
-8. Mosaic predictions across study area (currently limited to Canada)
+8. Mosaic predictions for three regions: Canada, Alaska, Lower 48 United States hemiboreal
 9. Calculate sampling density for each bootstrap
-10. Calculate mean and variance and package
+10. Calculate mean and variance across bootstrapes and package
 11. Cross-validate models
 12. Summarize model performance & metadata
 
