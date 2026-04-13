@@ -151,7 +151,7 @@ for(i in 1:nrow(spp)){
   
   #18. Smooth ----
   kde.out <- focal(kde.sum, w=matrix(1,25,25), fun=median) |> 
-    project("ESRI:102001")
+    project("EPSG:3978")
   names(kde.out) <- "range"
   #plot(kde.out)
   
