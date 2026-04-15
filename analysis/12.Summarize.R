@@ -274,6 +274,9 @@ for(i in 1:nrow(species)){
   
   print(paste0("Species ", i, " complete"))
   
+  stopCluster(cl)
+  gc()
+  
 }
 
 #5. Final object ----
