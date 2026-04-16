@@ -15,6 +15,7 @@ library(terra) #raster management
 library(data.table) #other data wrangling
 library(SpatialKDE) #KDE
 library(dggridR) #grid for spatial thinning
+library(FNN) #KNN for outlier removal
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -75,25 +76,38 @@ for(i in 1:nrow(spp)){
     st_transform(crs=3978) |> 
     st_intersection(bcr))
   
-  #5. KDE ----
-  #we use a large band_width to get something smooth
-  suppressMessages(kde1.i <- kde(dat.thin1, cell_size = 100000, band_width = 1000000))
+  #5. KNN ----
+  k <- 100
+  coords <- dat.thin1 |> 
+    st_drop_geometry() |> 
+    dplyr::select(lon, lat) |> 
+    as.matrix()
+  knn <- get.knn(coords, k)
+  dat.thin1$kdist <- knn$nn.dist[, k]
+  qknn <- quantile(dat.thin1$kdist, 0.995)
   
-  #6. Rasterize ----
-  r1 <- rast(extent = ext(kde1.i) + 20000, resolution = 10000, crs = crs(kde1.i))
-  kde.r1 <- rasterize(kde1.i, r1, field="kde_value")
+  # #5. KDE ----
+  # #we use a large band_width to get something smooth
+  # suppressMessages(kde1.i <- kde(dat.thin1, cell_size = 100000, band_width = 1000000))
+  # 
+  # #6. Rasterize ----
+  # r1 <- rast(extent = ext(kde1.i) + 20000, resolution = 10000, crs = crs(kde1.i))
+  # kde.r1 <- rasterize(kde1.i, r1, field="kde_value")
+  # 
+  # #7. Binarize the raster ----
+  # #the isopleths below the 1% quantile of points with data
+  # dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0.005)
+  # kde.q <- kde.r1
+  # values(kde.q) <- ifelse(values(kde.r1) > dat.q, 1, NA)
+  # #plot(kde.q)
+  # 
+  # #8. Remove observations below that
+  # dat.thin <- terra::extract(kde.q, vect(dat.thin1), bind=TRUE) |> 
+  #   st_as_sf() |> 
+  #   dplyr::filter(!is.na(kde_value))
   
-  #7. Binarize the raster ----
-  #the isopleths below the 1% quantile of points with data
-  dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0.005)
-  kde.q <- kde.r1
-  values(kde.q) <- ifelse(values(kde.r1) > dat.q, 1, NA)
-  #plot(kde.q)
-  
-  #8. Remove observations below that
-  dat.thin <- terra::extract(kde.q, vect(dat.thin1), bind=TRUE) |> 
-    st_as_sf() |> 
-    dplyr::filter(!is.na(kde_value))
+  dat.thin <- dat.thin1 |> 
+    dplyr::filter(kdist < qknn)
   
   ggplot() +
     geom_point(data=dat.thin1, aes(x=lon, y=lat), colour="black") +
