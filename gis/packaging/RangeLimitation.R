@@ -15,7 +15,7 @@ library(terra) #raster management
 library(data.table) #other data wrangling
 library(SpatialKDE) #KDE
 library(dggridR) #grid for spatial thinning
-library(FNN) #KNN for outlier removal
+library(dbscan) #DBSCAN for outlier removal
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels5"
