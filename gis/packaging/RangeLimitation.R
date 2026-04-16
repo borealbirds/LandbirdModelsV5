@@ -40,10 +40,16 @@ use <- dat |>
   dplyr::filter(doy > 155,
                 doy < 181)
 
+#6. Get the BCRs for plotting ----
+bcr <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+  st_simplify(dTolerance = units::set_units(100, "km")) |> 
+  st_transform(crs=3978) |> 
+  st_make_valid()
+
 #MAKE THE LIMITATION RASTERS########
 
 #1. Create grid for thinning----
-grid <- dgconstruct(spacing = 100, metric=TRUE)
+grid <- dgconstruct(spacing = 50, metric=TRUE)
 
 #2. Set up loop ----
 for(i in 1:nrow(spp)){
@@ -60,27 +66,52 @@ for(i in 1:nrow(spp)){
     unique()
   
   #4. Thin ----
-  suppressMessages(dat.thin <- dat.i |> 
+  suppressMessages(dat.thin1 <- dat.i |> 
     mutate(cell = dgGEO_to_SEQNUM(grid, lon, lat)$seqnum) |> 
     group_by(cell) |> 
     sample_n(1) |> 
     ungroup() |> 
-    st_as_sf(coords=c("lon", "lat"), crs=4326) |> 
-    st_transform(crs=5072))
+    st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
+    st_transform(crs=3978) |> 
+    st_intersection(bcr))
   
   #5. KDE ----
   #we use a large band_width to get something smooth
-  suppressMessages(kde.i <- kde(dat.thin, cell_size = 100000, band_width = 1000000))
+  suppressMessages(kde1.i <- kde(dat.thin1, cell_size = 100000, band_width = 1000000))
   
   #6. Rasterize ----
-  r <- rast(extent = ext(kde.i) + 20000, resolution = 10000, crs = crs(kde.i))
-  kde.r <- rasterize(kde.i, r, field="kde_value")
-  #plot(kde.r)
+  r1 <- rast(extent = ext(kde1.i) + 20000, resolution = 10000, crs = crs(kde1.i))
+  kde.r1 <- rasterize(kde1.i, r1, field="kde_value")
   
   #7. Binarize the raster ----
-  #the isopleths below any observation
+  #the isopleths below the 1% quantile of points with data
+  dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0.005)
+  kde.q <- kde.r1
+  values(kde.q) <- ifelse(values(kde.r1) > dat.q, 1, NA)
+  #plot(kde.q)
+  
+  #8. Remove observations below that
+  dat.thin <- terra::extract(kde.q, vect(dat.thin1), bind=TRUE) |> 
+    st_as_sf() |> 
+    dplyr::filter(!is.na(kde_value))
+  
+  ggplot() +
+    geom_point(data=dat.thin1, aes(x=lon, y=lat), colour="black") +
+    geom_point(data=dat.thin, aes(x=lon, y=lat), colour="grey")
+    
+  #9. Redo the KDE ----
+  suppressMessages(kde.i <- kde(dat.thin, cell_size = 100000, band_width = 1000000))
+  
+  #10. Rasterize again ----
+  r <- rast(extent = ext(kde.i) + 20000, resolution = 10000, crs = crs(kde.i))
+  kde.r <- rasterize(kde.i, r, field="kde_value")
+  # plot(kde.r1)
+  # plot(kde.r)
+  
+  #11. Get new min quantile ----
   dat.min <- quantile(terra::extract(kde.r, vect(dat.thin))$kde_value, 0)
   
+  #11. Binarize ----
   kde.0 <- kde.r
   values(kde.0) <- ifelse(values(kde.r) > dat.min, NA, 1)
   #plot(kde.0)
@@ -96,7 +127,7 @@ for(i in 1:nrow(spp)){
   #8. Make an exterior raster ----
   kde.edge <- kde.r
   values(kde.edge) <- ifelse(is.na(values(kde.edge)), 0, 1)
-  #plot
+  #plot(kde.edge)
   
   #9. Now make a distance raster ----
   kde.dist <- distance(kde.1)
@@ -155,22 +186,23 @@ for(i in 1:nrow(spp)){
   names(kde.out) <- "range"
   #plot(kde.out)
   
-  #18. Save ----
-  writeRaster(kde.out, filename = file.path(root, "gis", "ranges", paste0(spp.i, ".tif")), overwrite=TRUE)
-  
   #19. Plot for visualization ----
   kde.df <- kde.out |> 
-    aggregate(10) |> 
+    aggregate(2) |> 
     as.data.frame(xy=TRUE)
   
   ggplot(kde.df) +
-    geom_raster(aes(x=x, y=y, fill=range), show.legend = FALSE) +
+    geom_tile(aes(x=x, y=y, fill=range), show.legend = FALSE) +
+    geom_sf(data=dat.thin1, colour="black") +
+    geom_sf(data=dat.thin, colour="grey") +
+    geom_sf(data=bcr, fill=NA, colour="grey30", linewidth=0.2) +
     scale_fill_viridis_c() +
-    theme_minimal()+
-    xlim(c(-5000000, 4000000)) +
-    ylim(c(-1000000, 6000000))
+    theme_minimal()
   
   ggsave(filename = file.path(root, "gis", "ranges", "plots", paste0(spp.i, ".tif")), height = 4, width = 6, units="in")
+  
+  #18. Save ----
+  writeRaster(kde.out, filename = file.path(root, "gis", "ranges", paste0(spp.i, ".tif")), overwrite=TRUE)
   
   cat(i, " ")
   
