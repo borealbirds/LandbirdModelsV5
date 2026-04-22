@@ -6,11 +6,13 @@
 
 #NOTES################################
 
-# This script calculates means and coefficients of variation (CV) across bootstraps of model predictions, limits the predictions by range limits calculated from the dataset, and packages with the sampling distance layer.
+# This script calculates means and standard error (CV) across bootstraps of model predictions, limits the predictions by range limits calculated from the dataset, and packages with the sampling distance layer.
 
-# Means and cvs are calculated for two extents:
+# Means and ses are calculated for two extents:
 #1. Subunit: this the output of `07.Predict.R` run on compute canada, with the predictions trimmed to the BCR boundary.
 #2. Mosaic: this is the output of `08.MosaicPredictions.R`
+
+# We communicate model prediction variance via standard error instead of coefficient of variation or confidence intervals for several reasons: 1) we only want to provide one raster band within the stack for starage size and download efficiency, 2) while CV is better for visualizing variance, it does not have interpretable units, and so SE was prioritized as the better option after conversation with data users. R functions will be made available in the BAMexploreR package to derive CV and CIs from the SE band. CIs from the SE band will be approximations that in some cases may overestimate the lower CI due to a nonnormal distribution of bootstraps, but this is uncommon and is preferred to storing CI rasters.
 
 # Range limitation is done using the output of `gis/Probable_Range_Extent.R`
 
@@ -22,7 +24,8 @@
 
 # Products from 1985 are excluded from packaging for 3 reasons: 1) There are very few sampling points in the dataset prior to 1993, the 1985 SCANFI products used for prediction are less reliable, 3) there are very few covariate layers that are available for those years of prediction
 
-#This script uses a template to resample from 5072 to 3978 due to changes in projection decisions part way through the modelling process. Future versions will not require this step because they should use 3978 from the onset.
+# This script uses a template to resample from 5072 to 3978 due to changes in projection decisions part way through the modelling process. Future versions will not require this step because they should use 3978 from the onset.
+
 
 #PREAMBLE############################
 
@@ -34,7 +37,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -57,7 +60,8 @@ water <- read_sf(file.path(root, "gis", "WaterMask.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+bcr.all <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
+bcr.country <- bcr.all |> 
   st_transform("EPSG:3978") 
 
 #8. Mosaic polygons----
@@ -67,42 +71,42 @@ akbox <- st_as_sfc(st_bbox(c(xmin= -3693930,
                              ymin = 2187083,
                              xmax = -1617275,
                              ymax = 4562389),
-                           crs = st_crs(bcr.country)))
+                           crs = st_crs(bcr.all)))
 
-bcr.can <- bcr.country |> 
+bcr.can <- bcr.all |> 
   dplyr::filter(country=="can") |> 
-  st_union() |> 
+  st_union()  |> 
+  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
   st_as_sf()
 
-bcr.ak <- bcr.country |> 
+bcr.ak <- bcr.all |> 
   dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |> 
   st_crop(akbox) |> 
-  st_union() |> 
+  st_union()  |> 
+  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
   st_as_sf()
 
-bcr.48 <- bcr.country |> 
+bcr.48 <- bcr.all |> 
   dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
   st_difference(akbox) |> 
   st_union() |> 
+  st_transform("EPSG:3978") |> 
   vect() |> 
   aggregate() |> 
   fillHoles() |> 
-  st_as_sf()
+  st_as_sf() 
 
 #9. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
-# 
-# #10. List species for range limitation ----
-# limit <- c("CAWA", "BAWW", "BBWA", "BHVI", "BRCR", "CONW", "EVGR", "GWWA", "HAFL", "LCSP", "LEFL", "PUFI", "VATH", "VESP", "WIWR")
 
 #10. Data limit mask ----
 limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
@@ -180,9 +184,10 @@ brt_package <- function(i){
   
   #7. Secondary truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
+  q1 <- quantile(values(mn.i)[values(mn.i) > 0], probs=0.001, na.rm=TRUE)
   
-  truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
-  mean.i <- clamp(mn.i, upper=q99, values=TRUE) |> 
+  truncate2.i <- clamp(truncate.i, upper=q99, lower=q1, values=TRUE)
+  mean.i <- clamp(mn.i, upper=q99, lower=q1, values=TRUE) |> 
     project("EPSG:3978", res=1000)
   
   #8. Calculate sd----
@@ -193,25 +198,28 @@ brt_package <- function(i){
   sample.i <- try(rast(files.i$samplepath))
 
   if(inherits(sample.i, "try-error")){return(NULL)}
+  
+  #10. Stack----
+  stack.i <- c(mean.i, sd.i)
 
-  #10. Calculate mean sampling distance----
-  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
-    project("EPSG:3978", res=1000) |> 
-    resample(mean.i)
-  
-  #11. Stack----
-  stack.i <- c(mean.i, sd.i, samplemn.i)
-  names(stack.i) <- c("mean", "standard_deviation", "detection_distance")
-  
-  #12. Mask outside range----
+  #11. Mask outside range----
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
     resample(stack.i)
   
   mask.i <- stack.i * range.i
   mask.i[is.na(mask.i)] <- 0
+  
+  #12. Calculate mean sampling distance----
+  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000) |> 
+    resample(mean.i)
+  
+  #13. Stack again ----
+  stack2.i <- c(mask.i, samplemn.i)
+  names(stack2.i) <- c("mean", "standard_deviation", "detection_distance")
 
   #13. Mask by water and NA layer ----
-  out.i <- mask.i |> 
+  out.i <- stack2.i |> 
     crop(vect(limit), mask=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(vect(water), inverse=TRUE)
@@ -257,7 +265,6 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), p
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-#  dplyr::filter(!spp %in% c("BEKI", "SPGR", "SPSA", "CMWA")) |> 
   arrange(-year, spp, bcr)
 
 #PACKAGE########
