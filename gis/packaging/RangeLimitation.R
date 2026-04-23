@@ -15,7 +15,7 @@ library(terra) #raster management
 library(data.table) #other data wrangling
 library(SpatialKDE) #KDE
 library(dggridR) #grid for spatial thinning
-library(dbscan) #DBSCAN for outlier removal
+library(classInt) #jenks break for outliers
 
 #2. Set root path for data on google drive----
 root <- "G:/Shared drives/BAM_NationalModels5"
@@ -47,10 +47,19 @@ bcr <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |>
   st_transform(crs=3978) |> 
   st_make_valid()
 
+#7. Union for cropping ----
+sa <- st_union(bcr)
+
+#8. Species that we dont truncate for outliers ----
+#determined by visual inspection, typically generalist species with wide distributions that we don't think have vagrants, or high north species with sparse data points
+# spp0 <- c("ALFL", "AMCR", "ATTW", "BCCH", "BHCO", "BRCR", "CAJA", "CEDW", "CORA", "DEJU", "DOWO", "DUFL", "DUNL", "GCKI", "HAFL", "HAWO", "HETH", "HOLA", "LISP", "MAWR", "MOBL", "MODO", "NESP", "NOFL", "NOWA", "OCWA", "OSFL", "OVEN", "PHVI", "PISI", "PIWO", "PUFI", "RBNU", "RCKI", "REVI", "RUBL", "RUGR", "RWBL", "SAVS", "SOGR", "SOSA", "SOSP", "SPSA", "SWTH", "TEWA", "TRES", "VATH", "VESP", "WAVI", "WEWP", "WIPT", "WISN", "WWCR", "YBFL", "YEWA", "YRWA")
+
+spp2 <- c("AMPI", "ATSP", "ATTW", "BANS", "BARS", "BAWW", "BBCU", "BBWA", "BBWO", "BGGN", "BHVI", "BLBW", "BLPW", "BOWA", "BRBL", "BRCR", "BRTH", "BTBW", "BTNW", "BWWA", "CCSP", "CLSW", "CMWA", "COGR", "CONW", "CSWA", "DUFL", "EABL", "EATO", "EAWP", "FISP", "FOSP", "GCSP", "GCTH", "GRSP", "GRYE", "GWWA", "HOLA", "INBU", "LALO", "LCSP", "LEYE", "MAWA", "MOBL", "MOWA",  "NAWA", "NOCA", "NOPA", "PAWA", "PHVI", "PIGR", "PIWA", "RBGR", "RBWO", "RECR", "RHWO", "SCTA", "SEWR", "TOSO", "TOWA", "UPSA", "WCSP", "WETA", "WITU", "WIWA", "YBCU", "YHBL")
+
 #MAKE THE LIMITATION RASTERS########
 
 #1. Create grid for thinning----
-grid <- dgconstruct(spacing = 50, metric=TRUE)
+grid <- dgconstruct(spacing = 10, metric=TRUE)
 
 #2. Set up loop ----
 for(i in 1:nrow(spp)){
@@ -60,7 +69,7 @@ for(i in 1:nrow(spp)){
   #3. Wrangle the data ----
   #reduce to just unique locations to smooth
   dat.i <- use |> 
-    dplyr::filter(species_code==spp$species_code[i]) |> 
+    dplyr::filter(species_code==spp.i) |> 
     mutate(lat = round(lat, 3),
            lon = round(lon, 3)) |> 
     dplyr::select(lat, lon) |>
@@ -76,45 +85,45 @@ for(i in 1:nrow(spp)){
     st_transform(crs=3978) |> 
     st_intersection(bcr))
   
-  #5. KNN ----
-  k <- 100
-  coords <- dat.thin1 |> 
-    st_drop_geometry() |> 
-    dplyr::select(lon, lat) |> 
-    as.matrix()
-  knn <- get.knn(coords, k)
-  dat.thin1$kdist <- knn$nn.dist[, k]
-  qknn <- quantile(dat.thin1$kdist, 0.995)
+  #Manually remove west BWWA detections that are probably supposed to be a different sppp
+  if(spp.i %in% c("BWWA", "BTBW", "NOPA")){
+    dat.thin1 <- dplyr::filter(dat.thin1, lon > -100)
+  }
   
-  # #5. KDE ----
-  # #we use a large band_width to get something smooth
-  # suppressMessages(kde1.i <- kde(dat.thin1, cell_size = 100000, band_width = 1000000))
-  # 
-  # #6. Rasterize ----
-  # r1 <- rast(extent = ext(kde1.i) + 20000, resolution = 10000, crs = crs(kde1.i))
-  # kde.r1 <- rasterize(kde1.i, r1, field="kde_value")
-  # 
-  # #7. Binarize the raster ----
-  # #the isopleths below the 1% quantile of points with data
-  # dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0.005)
-  # kde.q <- kde.r1
-  # values(kde.q) <- ifelse(values(kde.r1) > dat.q, 1, NA)
-  # #plot(kde.q)
-  # 
-  # #8. Remove observations below that
-  # dat.thin <- terra::extract(kde.q, vect(dat.thin1), bind=TRUE) |> 
-  #   st_as_sf() |> 
-  #   dplyr::filter(!is.na(kde_value))
+  #5. KDE ----
+  #we use a large band_width to get something smooth
+  suppressMessages(kde1.i <- kde(dat.thin1, cell_size = 70000, band_width = 700000))
+
+  #6. Rasterize ----
+  r1 <- rast(extent = ext(kde1.i) + 20000, resolution = 10000, crs = crs(kde1.i))
+  kde.r1 <- rasterize(kde1.i, r1, field="kde_value")
   
-  dat.thin <- dat.thin1 |> 
-    dplyr::filter(kdist < qknn)
+  #7. Get the isopleths ----
+  iso <- terra::extract(kde.r1, vect(dat.thin1))$kde_value
+
+  #7. Binarize the raster to remove outliers ----
+  #the isopleths below the 1% quantile of points with data unless is a 0 species
+  if(!spp.i %in% spp2){
+    dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0)
+  } else {
+    dat.q <- quantile(terra::extract(kde.r1, vect(dat.thin1))$kde_value, 0.01)
+  }
+
+  kde.q <- kde.r1
+  values(kde.q) <- ifelse(values(kde.r1) > dat.q, 1, NA)
+  #plot(kde.q)
+
+  #8. Remove observations below that
+  dat.thin <- terra::extract(kde.q, vect(dat.thin1), bind=TRUE) |>
+    st_as_sf() |>
+    dplyr::filter(!is.na(kde_value))
   
-  ggplot() +
-    geom_point(data=dat.thin1, aes(x=lon, y=lat), colour="black") +
-    geom_point(data=dat.thin, aes(x=lon, y=lat), colour="grey")
+  # ggplot() +
+  #   geom_point(data=dat.thin1, aes(x=lon, y=lat), colour="black") +
+  #   geom_point(data=dat.thin, aes(x=lon, y=lat), colour="grey")
     
   #9. Redo the KDE ----
-  suppressMessages(kde.i <- kde(dat.thin, cell_size = 100000, band_width = 1000000))
+  suppressMessages(kde.i <- kde(dat.thin, cell_size = 70000, band_width = 700000))
   
   #10. Rasterize again ----
   r <- rast(extent = ext(kde.i) + 20000, resolution = 10000, crs = crs(kde.i))
@@ -185,18 +194,24 @@ for(i in 1:nrow(spp)){
   #15. Scale ----
   kde.scale <- kde.distance |> 
     mutate(scale1 = distance/maxdistance,
-           scale = 1-(scale1 - min(scale1))/(max(scale1) - min(scale1)))
+           scale = 1-(scale1 - min(scale1))/(max(scale1) - min(scale1)),
+           scale2 = ifelse(scale < 0.5, NA, (scale - 0.5)/(0.5)))
+  
+  #16. Take 50% and rescale ----
+  kde.scale2 <- 
   
   #16. Re-rasterize ----
-  kde.scaler <- rasterize(kde.scale, r, field="scale", fun=mean)
+  kde.scaler <- rasterize(kde.scale, r, field="scale2", fun=mean)
   #plot(kde.scaler)
   
   #17. Put together ----
   kde.sum <- (kde.01 + ifel(is.na(kde.scaler), 0, kde.scaler))
+  kde.sum2 <- ifel(kde.sum==0, NA, kde.sum) 
   
   #18. Smooth ----
-  kde.out <- focal(kde.sum, w=matrix(1,25,25), fun=median) |> 
-    project("EPSG:3978")
+  kde.out <- focal(kde.sum2, w=matrix(1,25,25), fun=median) |> 
+    project("EPSG:3978") |> 
+    crop(bcr, mask=TRUE)
   names(kde.out) <- "range"
   #plot(kde.out)
   
