@@ -32,6 +32,8 @@ options(scipen=9999)
 #4. Load dataset ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
+#5. Load species & year release list ----
+
 #SPECIES###########
 
 #1. Get WT list ----
@@ -292,12 +294,12 @@ metadata <- read.csv(file.path(root, "data", "Lookups", "BAMv5-results-metadata.
 #PACKAGE#########
 
 #1. Put it together ----
-out <- list(species, regions, variables, importance, validation)
-names(out) <- c("species", "regions", "variables", "importance", "validation")
+out <- list(metadata, species, regions, variables, importance, validation)
+names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation")
 
 write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results_noabundance.xlsx"))
 
-out <- list(species, regions, variables, importance, validation, abundances)
-names(out) <- c("species", "regions", "variables", "importance", "validation", "abundances")
+out <- list(metadata, species, regions, variables, importance, validation, abundances)
+names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation", "abundances")
 
 write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results.xlsx"))
