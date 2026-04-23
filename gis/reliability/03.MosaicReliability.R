@@ -1,6 +1,6 @@
 # ---
-# Title: Calculating extrapolation of models
-# Author: Anna Drake, adapted by Elly Knight
+# Title: Mosaicing model reliability layers
+# Author: Elly Knight
 # Date: June 2025
 # ---
 
@@ -9,7 +9,6 @@
 #PREAMBLE####
 
 #1. Load packages----
-print("* Loading packages on master *")
 library(sf)
 library(tidyverse)
 library(terra)
@@ -168,12 +167,12 @@ for(i in 1:nrow(loop)){
   #8. Fix names ----
   names(out) <- c("extrapolation", "samplingdensity_train", "samplingdensity_test")
   
-  #8. Make folder as needed ----
+  #9. Make folder as needed ----
   if(!(file.exists(file.path(root, "output", "10_packaged","Sampling", country.i)))){
     dir.create(file.path(root, "output", "10_packaged", "Sampling", country.i))
   }
   
-  #8. Save
+  #10. Save
   writeRaster(out, file.path(root, "output", "10_packaged", "Sampling", country.i, paste0(country.i, "_", year.i, ".tif")), overwrite=T)
   
   cat(i, "  ")
