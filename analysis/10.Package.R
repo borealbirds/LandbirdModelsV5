@@ -37,7 +37,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -56,7 +56,8 @@ if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
 #6. Get the water layer----
 print("* Getting water layer *")
-water <- read_sf(file.path(root, "gis", "WaterMask.shp"))
+water_ca <- read_sf(file.path(root, "gis", "WaterMask_Canada.shp"))
+water_us <- read_sf(file.path(root, "gis", "WaterMask_US.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
@@ -128,7 +129,7 @@ brt_package <- function(i){
   year.i <- loop$year[i]
   bcr.i <- loop$bcr[i]
   
-  #2. Get the BCR boundary----
+  #2. Get the BCR boundary & correct water mask ----
   if(!bcr.i %in% c("Canada", "Alaska", "Lower48")){
     
     sf.i <- bcr.country |> 
@@ -142,6 +143,10 @@ brt_package <- function(i){
     if(bcr.i=="Lower48"){sf.i <- vect(bcr.48)}
 
   }
+  
+  if(bcr.i=="Canada" | str_sub(bcr.i, 1, 3)=="can"){
+    water <- water_ca
+  } else {water <- water_us}
   
   #3. Get list of predictions, extrapolations, sampling layers----
   if(!bcr.i %in% c("Canada", "Alaska", "Lower48")){
@@ -182,23 +187,33 @@ brt_package <- function(i){
   #6. Calculate mean----
   mn.i <- app(truncate.i, mean, na.rm=TRUE)
   
-  #7. Secondary truncation ----
+  #7. Secondary upper truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
-  q1 <- quantile(values(mn.i)[values(mn.i) > 0], probs=0.001, na.rm=TRUE)
   
-  truncate2.i <- clamp(truncate.i, upper=q99, lower=q1, values=TRUE)
-  mean.i <- clamp(mn.i, upper=q99, lower=q1, values=TRUE) |> 
+  truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
+  mn2.i <- clamp(mn.i, upper=q99, values=TRUE)
+    
+  #8. Truncate values below 99.9% of the population estimate to zero ----
+  mndf.i <- as.data.frame(mn2.i, xy=TRUE) |> 
+    arrange(desc(mean)) |>
+    mutate(mean_prop = mean/sum(mean, na.rm=TRUE),
+           mean_cum = cumsum(mean_prop),
+           mean = ifelse(mean_cum > 0.999, 0, mean))
+  
+  q0 <- min(mndf.i[mndf.i$mean > 0,]$mean)
+  
+  mean.i <- mndf.i |> 
+    dplyr::select(x, y, mean) |> 
+    rast(type="xyz", crs(mn2.i)) |> 
     project("EPSG:3978", res=1000)
   
-  #8. Calculate sd----
-  sd.i <- app(truncate2.i, sd, na.rm=TRUE) |> 
-    project("EPSG:3978", res=1000)
-
-  #9. Read in the sampling distance layers----
-  sample.i <- try(rast(files.i$samplepath))
-
-  if(inherits(sample.i, "try-error")){return(NULL)}
+  truncate3.i <- ifel(truncate2.i < q0, 0, truncate2.i)
   
+  #9. Calculate sd----
+  sd.i <- app(truncate3.i, sd, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000) |> 
+    resample(mean.i)
+
   #10. Stack----
   stack.i <- c(mean.i, sd.i)
 
@@ -209,27 +224,33 @@ brt_package <- function(i){
   mask.i <- stack.i * range.i
   mask.i[is.na(mask.i)] <- 0
   
-  #12. Calculate mean sampling distance----
+  #12. Read in the sampling distance layers----
+  sample.i <- try(rast(files.i$samplepath))
+  
+  if(inherits(sample.i, "try-error")){return(NULL)}
+  
+  
+  #13. Calculate mean sampling distance----
   samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
     project("EPSG:3978", res=1000) |> 
     resample(mean.i)
   
-  #13. Stack again ----
+  #14. Stack again ----
   stack2.i <- c(mask.i, samplemn.i)
   names(stack2.i) <- c("mean", "standard_deviation", "detection_distance")
 
-  #13. Mask by water and NA layer ----
+  #15. Mask by water and NA layer ----
   out.i <- stack2.i |> 
     crop(vect(limit), mask=TRUE) |> 
     crop(sf.i, mask=TRUE) |> 
     mask(vect(water), inverse=TRUE)
   
-  #14. Add some attributes----
+  #16. Add some attributes----
   attr(out.i, "species") <- spp.i
   attr(out.i, "subunit") <- bcr.i
   attr(out.i, "year") <- year.i
   
-  #15. Make folders as needed-----
+  #17. Make folders as needed-----
   if(!(file.exists(file.path(root, "output", "10_packaged", spp.i)))){
     dir.create(file.path(root, "output", "10_packaged", spp.i))
   }
@@ -238,7 +259,7 @@ brt_package <- function(i){
     dir.create(file.path(root, "output", "10_packaged", spp.i, bcr.i))
   }
   
-  #16. Save----
+  #1.8 Save----
   writeRaster(out.i, filename = file.path(root, "output", "10_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE, datatype = "FLT4S")
   
 }
@@ -270,7 +291,7 @@ loop <- sampled |>
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water", "limit", "q"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water_ca", "water_us", "limit", "q"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
