@@ -183,36 +183,36 @@ brt_package <- function(i){
   
   #truncate
   truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
+  rm(rast.i)
   
   #6. Calculate mean----
   mn.i <- app(truncate.i, mean, na.rm=TRUE)
   
   #7. Secondary upper truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
-  
-  truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
   mn2.i <- clamp(mn.i, upper=q99, values=TRUE)
+  rm(mn.i)
     
   #8. Truncate values below 99.9% of the population estimate to zero ----
-  mndf.i <- as.data.frame(mn2.i, xy=TRUE) |> 
+  q0 <- as.data.frame(mn2.i, xy=TRUE) |> 
     arrange(desc(mean)) |>
     mutate(mean_prop = mean/sum(mean, na.rm=TRUE),
            mean_cum = cumsum(mean_prop),
-           mean = ifelse(mean_cum > 0.999, 0, mean))
+           mean = ifelse(mean_cum > 0.999, 0, mean)) |> 
+    dplyr::filter(mean>0) |> 
+    summarize(q0 = min(mean))
   
-  q0 <- min(mndf.i[mndf.i$mean > 0,]$mean)
-  
-  mean.i <- mndf.i |> 
-    dplyr::select(x, y, mean) |> 
-    rast(type="xyz", crs(mn2.i)) |> 
+  mean.i <- ifel(mn2.i < q0$q0, 0, mn2.i) |> 
     project("EPSG:3978", res=1000)
+  rm(mn2.i)
   
-  truncate3.i <- ifel(truncate2.i < q0, 0, truncate2.i)
+  truncate2.i <- ifel(truncate.i < q0$q0, 0, truncate.i) |> 
+    clamp(upper=q99, values=TRUE)
+  rm(truncate.i)
   
   #9. Calculate sd----
-  sd.i <- app(truncate3.i, sd, na.rm=TRUE) |> 
-    project("EPSG:3978", res=1000) |> 
-    resample(mean.i)
+  sd.i <- app(truncate2.i, sd, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000)
 
   #10. Stack----
   stack.i <- c(mean.i, sd.i)
@@ -234,6 +234,7 @@ brt_package <- function(i){
   samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
     project("EPSG:3978", res=1000) |> 
     resample(mean.i)
+  rm(sample.i)
   
   #14. Stack again ----
   stack2.i <- c(mask.i, samplemn.i)
