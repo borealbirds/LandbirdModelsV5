@@ -194,19 +194,20 @@ brt_package <- function(i){
   rm(mn.i)
     
   #8. Truncate values below 99.9% of the population estimate to zero ----
-  q0 <- as.data.frame(mn2.i, xy=TRUE) |> 
-    arrange(desc(mean)) |>
-    mutate(mean_prop = mean/sum(mean, na.rm=TRUE),
-           mean_cum = cumsum(mean_prop),
-           mean = ifelse(mean_cum > 0.999, 0, mean)) |> 
-    dplyr::filter(mean>0) |> 
-    summarize(q0 = min(mean))
+  #downsample to speed this up
+  mn.vals <- aggregate(mn2.i, 10, fun=mean, na.rm=TRUE) |> 
+    values(na.rm=TRUE) |> 
+    sort(decreasing=TRUE)
+  cumprop <- cumsum(mn.vals)/sum(mn.vals)
+  q0 <- mn.vals[which(cumprop > 0.999)[1]]
+  rm(mn.vals, cumprop)
   
-  mean.i <- ifel(mn2.i < q0$q0, 0, mn2.i) |> 
+  mean.i <- ifel(mn2.i < q0, 0, mn2.i) |> 
     project("EPSG:3978", res=1000)
   rm(mn2.i)
   
-  truncate2.i <- ifel(truncate.i < q0$q0, 0, truncate.i) |> 
+  truncate2.i <- ifel(truncate.i < q0, 0, truncate.i,
+                      filename=paste0(tempfile(), ".tif"), overwrite=TRUE) |> 
     clamp(upper=q99, values=TRUE)
   rm(truncate.i)
   
