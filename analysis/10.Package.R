@@ -37,7 +37,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -61,63 +61,23 @@ water_us <- read_sf(file.path(root, "gis", "WaterMask_US.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.all <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp"))
-bcr.country <- bcr.all |> 
-  st_transform("EPSG:3978") 
+bcr.country <- file.path(root, "gis", "Subregions_Mosaics_EPSG3978.shp")
 
-#8. Mosaic polygons----
-print("* Mosaicing bcrs *")
-
-akbox <- st_as_sfc(st_bbox(c(xmin= -3693930,
-                             ymin = 2187083,
-                             xmax = -1617275,
-                             ymax = 4562389),
-                           crs = st_crs(bcr.all)))
-
-bcr.can <- bcr.all |> 
-  dplyr::filter(country=="can") |> 
-  st_union()  |> 
-  st_transform("EPSG:3978") |> 
-  vect() |> 
-  aggregate() |> 
-  fillHoles() |> 
-  st_as_sf()
-
-bcr.ak <- bcr.all |> 
-  dplyr::filter(bcr %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |> 
-  st_crop(akbox) |> 
-  st_union()  |> 
-  st_transform("EPSG:3978") |> 
-  vect() |> 
-  aggregate() |> 
-  fillHoles() |> 
-  st_as_sf()
-
-bcr.48 <- bcr.all |> 
-  dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
-  st_difference(akbox) |> 
-  st_union() |> 
-  st_transform("EPSG:3978") |> 
-  vect() |> 
-  aggregate() |> 
-  fillHoles() |> 
-  st_as_sf() 
-
-#9. Load packages on clusters----
+#8. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(sf))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
 
-#10. Data limit mask ----
+#9. Data limit mask ----
 limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
   st_transform("EPSG:3978")
 
-#11. Data package ----
+#10. Data package ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(cov, covlist, bcrlist, birdlist, bootlist)
 
-#12. Truncation values ----
+#11. Truncation values ----
 q <- read.csv(file.path(root, "data", "SpeciesPredictionTruncationValues.csv"))
 
 #FUNCTION###########
@@ -130,19 +90,9 @@ brt_package <- function(i){
   bcr.i <- loop$bcr[i]
   
   #2. Get the BCR boundary & correct water mask ----
-  if(!bcr.i %in% c("Canada", "Alaska", "Lower48")){
-    
-    sf.i <- bcr.country |> 
-      dplyr::filter(bcr==bcr.i) |> 
-      vect()
-    
-  } else {
-    
-    if(bcr.i=="Canada"){sf.i <- vect(bcr.can)}
-    if(bcr.i=="Alaska"){sf.i <- vect(bcr.ak)}
-    if(bcr.i=="Lower48"){sf.i <- vect(bcr.48)}
-
-  }
+  sf.i <- bcr.country |> 
+    dplyr::filter(bcr==bcr.i) |> 
+    vect()
   
   if(bcr.i=="Canada" | str_sub(bcr.i, 1, 3)=="can"){
     water <- water_ca
