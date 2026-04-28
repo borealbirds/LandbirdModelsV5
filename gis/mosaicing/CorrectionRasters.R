@@ -9,7 +9,6 @@
 #PREAMBLE####
 
 #1. Load packages----
-print("* Loading packages on master *")
 library(sf)
 library(tidyverse)
 library(terra)
