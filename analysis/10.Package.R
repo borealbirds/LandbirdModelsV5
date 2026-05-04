@@ -61,7 +61,7 @@ water_us <- read_sf(file.path(root, "gis", "WaterMask_US.shp"))
 
 #7. Subunit polygons----
 print("* Getting bcrs *")
-bcr.country <- file.path(root, "gis", "Subregions_Mosaics_EPSG3978.shp")
+bcr.country <- read_sf(file.path(root, "gis", "Subregions_Mosaics_EPSG3978.shp"))
 
 #8. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -78,7 +78,7 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 rm(cov, covlist, bcrlist, birdlist, bootlist)
 
 #11. Truncation values ----
-q <- read.csv(file.path(root, "data", "SpeciesPredictionTruncationValues.csv"))
+load(file.path(root, "data", "SpeciesPredictionTruncationValues.Rdata"))
 
 #FUNCTION###########
 
@@ -128,42 +128,29 @@ brt_package <- function(i){
   
   #5. Truncate by count quantile ----
   
-  #Get truncation
-  qsp <- q[q$spp==spp.i,]$q
+  #Get truncation values
+  qsp <- q.out[q.out$spp==spp.i,]$q
+  q0 <- l.out[l.out$spp==spp.i,]$denshthresh
   
   #truncate
   truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
-  rm(rast.i)
   
   #6. Calculate mean----
-  mn.i <- app(truncate.i, mean, na.rm=TRUE)
+  mn.i <- app(truncate.i, mean, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000)
   
   #7. Secondary upper truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
   mn2.i <- clamp(mn.i, upper=q99, values=TRUE)
-  rm(mn.i)
+  
+  #8. Calculate sd----
+  sd2.i <- clamp(truncate.i, upper=q99, values=TRUE) |> 
+    app(sd, na.rm=TRUE) |> 
+    project("EPSG:3978", res=1000)
     
-  #8. Truncate values below 99.9% of the population estimate to zero ----
-  #downsample to speed this up
-  mn.vals <- aggregate(mn2.i, 10, fun=mean, na.rm=TRUE) |> 
-    values(na.rm=TRUE) |> 
-    sort(decreasing=TRUE)
-  cumprop <- cumsum(mn.vals)/sum(mn.vals)
-  q0 <- mn.vals[which(cumprop > 0.999)[1]]
-  rm(mn.vals, cumprop)
-  
-  mean.i <- ifel(mn2.i < q0, 0, mn2.i) |> 
-    project("EPSG:3978", res=1000)
-  rm(mn2.i)
-  
-  truncate2.i <- ifel(truncate.i < q0, 0, truncate.i,
-                      filename=paste0(tempfile(), ".tif"), overwrite=TRUE) |> 
-    clamp(upper=q99, values=TRUE)
-  rm(truncate.i)
-  
-  #9. Calculate sd----
-  sd.i <- app(truncate2.i, sd, na.rm=TRUE) |> 
-    project("EPSG:3978", res=1000)
+  #9. Truncate values below 99.95% of the population estimate to zero ----
+  mean.i <- ifel(mn2.i < q0, 0, mn2.i)
+  sd.i <-ifel(mn2.i < q0, 0, sd2.i)
 
   #10. Stack----
   stack.i <- c(mean.i, sd.i)
@@ -185,7 +172,6 @@ brt_package <- function(i){
   samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
     project("EPSG:3978", res=1000) |> 
     resample(mean.i)
-  rm(sample.i)
   
   #14. Stack again ----
   stack2.i <- c(mask.i, samplemn.i)
@@ -243,7 +229,7 @@ loop <- sampled |>
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.can", "bcr.ak", "bcr.48", "bcr.country", "brt_package", "root", "water_ca", "water_us", "limit", "q"))
+tmpcl <- clusterExport(cl, c("loop", "sampled", "bcr.country", "brt_package", "root", "water_ca", "water_us", "limit", "q.out", "l.out"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
