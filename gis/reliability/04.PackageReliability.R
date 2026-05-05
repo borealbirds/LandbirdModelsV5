@@ -21,7 +21,7 @@ bcr.all <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |>
   st_transform("EPSG:3978")
 
 #4. Make a todo list ----
-loop <- expand.grid(bcr = bcr.all$bcr, year=unique(extrap$year))
+loop <- expand.grid(bcr = bcr.all$bcr, seq(1990, 2020, 5))
 
 #PACKAGE############
 
