@@ -19,6 +19,7 @@
 #WARNING: This script searches the "PredictionRasters" folder of the working google drive to inventory the available years of prediction layers for each covariate. That folder must be perfectly maintained with no duplicates to ensure this script runs as intended. 
 
 #For V6: Add snap==TRUE to crop and touches = TRUE to mask to avoid NAs along the border in mosaiced product
+#For V6: Factors should be maintained when downsampling, instead of fixed later.
 
 #PREAMBLE############################
 
@@ -139,6 +140,9 @@ units <- bcr.out |>
   unique() |> 
   expand_grid(year = seq(1985, 2020, 5))
 
+#2. Set the covariates that are factors----
+fact <- names(cov)[sapply(cov, is.factor)]
+
 for(i in 1:nrow(units)){
   
   #2. Get subunit----
@@ -185,20 +189,31 @@ for(i in 1:nrow(units)){
     print("reproject")
     
     #9. Crop----
-    crop.i <- crop(rast.i, shp.i) |> 
-      mask(shp.i)
-    names(crop.i) <- files.i$cov[j]
+    crop.i <- crop(rast.i, shp.i, mask=TRUE)
     
     print("crop")
     
     #10. Resample for extent as needed----
     if(j > 1){
       if(ext(crop.i)!=ext(stack.i)){crop.i <- resample(crop.i, stack.i)}
-    } 
+    }
     
     print("resample")
     
+    #11. Specify levels if it's a factor ----
+    if(files.i$cov[j] %in% fact){
+      
+      cov.i <- cov[, files.i$cov[j]]
+      colnames(cov.i) <- "cov"
+      covlevels <- data.frame(ID = seq_along(levels(cov.i$cov)),
+                              class_name = levels(cov.i$cov))
+      levels(crop.i) <- covlevels
+      crop.i <- as.factor(crop.i)
+
+    }
+    
     #11. Stack----
+    names(crop.i) <- files.i$cov[j]
     if(j==1){stack.i <- crop.i} else {stack.i <- c(stack.i, crop.i)}
     
     print("stack")
@@ -221,8 +236,9 @@ for(i in 1:nrow(units)){
   
   #14. Make a new method raster----
   meth.i <- rast(ext(stack.i), resolution=res(stack.i), crs=crs(stack.i))
-  values(meth.i) <- "PC"
-  
+  levels(meth.i) <- levels(visit$method)
+  values(meth.i) <- factor("PC", levels=levels(visit$method))
+
   #15. Make a new year raster----
   year.r <- rast(ext(stack.i), resolution=res(stack.i), crs=crs(stack.i))
   values(year.r) <- units$year[i]
@@ -236,20 +252,20 @@ for(i in 1:nrow(units)){
   
   #18. Restack----
   stack.out <- c(meth.year.i, stack.i)
-
-  #14. Save----
+  
+  #19. Save----
   terra::writeRaster(stack.out, file.path(root, "gis", "stacks", paste0(bcr.i, "_", year.i, ".tif")), overwrite=TRUE)
   
   rm(rast.i, stack.i, stack.out, crop.i, shp.i)
   
-  #14. Remove temp files to save RAM----
+  #20. Remove temp files to save RAM----
   tmp.dir <- tempdir()
   tmp.files <- list.files(tmp.dir, pattern="*.tif", full.names = TRUE)
   file.remove(tmp.files)
   
 }
 
-#15. Check they're all there----
+#21. Check they're all there----
 files.stack <- data.frame(file=list.files(file.path(root, "gis", "stacks"), pattern="*.tif")) |> 
   separate(file, into=c("bcr", "year", "tif"), remove=FALSE) |>
   mutate(year = as.numeric(year),
@@ -260,7 +276,7 @@ files.stack <- data.frame(file=list.files(file.path(root, "gis", "stacks"), patt
 todo.stack <- anti_join(units, files.stack)
 nrow(todo.stack)
 
-#16. Check that they load properly----
+#22. Check that they load properly----
 corrupt <- data.frame()
 for(i in 1:nrow(files.stack)){
   
