@@ -29,7 +29,7 @@ library(terra)
 library(parallel)
 
 #2. Set nodes for local vs cluster----
-cores <- 10
+cores <- 8
 
 #3. Create and register clusters----
 print("* Creating clusters *")
