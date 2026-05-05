@@ -104,7 +104,7 @@ water_ca <- vect(read_sf(file.path(root, "gis", "WaterMask_Canada.shp")))
 water_us <- vect(read_sf(file.path(root, "gis", "WaterMask_US.shp")))
 
 #2. Set up dataframe ----
-previous <- try(load(file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.Rdata"))
+previous <- try(load(file.path(root, "data", "SpeciesPredictionTruncationValues.Rdata"))
 )
 if(inherits(previous, "try-error")){
   l.out <- data.frame()
@@ -219,7 +219,7 @@ for(i in 1:length(loop)){
   cat(i, " ")
   
   #7. Save ----
-  save(q.out, l.out, file = file.path(root, "data", "Lookups", "SpeciesPredictionTruncationValues.Rdata"))
+  save(q.out, l.out, file = file.path(root, "data", "SpeciesPredictionTruncationValues.Rdata"))
   
 }
 
