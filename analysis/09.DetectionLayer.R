@@ -84,7 +84,7 @@ brt_sampling <- function(i){
       
       if(bcr.i=="Alaska"){bcrs.i <- c("usa41423", "usa2", "usa40", "usa43", "usa5")}
       
-      if(bcr.i=="Lower48"){bcrs.i <- c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")}
+      if(bcr.i=="Lower48"){bcrs.i <- c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28")}
       
       visit.k <- bcrlist |> 
         dplyr::select(all_of(c("id", bcrs.i))) |> 

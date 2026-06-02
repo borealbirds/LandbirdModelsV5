@@ -32,14 +32,12 @@ options(scipen=9999)
 #4. Load dataset ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
-#5. Load species & year release list ----
-
 #SPECIES###########
 
 #1. Get WT list ----
 species.wt <- read.csv(file.path(root, "data", "lookups", "lu_species.csv")) |> 
+  mutate(scientific = paste(species_genus, species_name)) |> 
   rename(id = species_code,
-         scientific = species_name,
          english = species_common_name,
          french = species_french_name,
          family = species_family) |>
@@ -105,6 +103,39 @@ bcr <- bcr_mod |>
          type = "Single model") |> 
   dplyr::select(region, type, country, bcr, name, area_km2)
 
+#4. Get sample sizes -----
+surveys <- bcrlist |> 
+  pivot_longer(-id, names_to="region", values_to="use") |> 
+  dplyr::filter(use > 0)
+
+total.surveys <- surveys |> 
+  group_by(region) |> 
+  summarize(total_surveys = n()) |> 
+  ungroup()
+
+boot.surveys <- surveys |> 
+  dplyr::filter(id %in% bootlist$b1) |> 
+  group_by(region) |> 
+  summarize(bootstrap_surveys = n()) |> 
+  ungroup()
+
+bcr.surveys <- full_join(total.surveys, boot.surveys)
+
+surveys.ca <- data.frame(region = "Canada",
+                         total_surveys = nrow(surveys[str_sub(surveys$region, 1, 3)=="can",]),
+                         bootstrap_surveys = sum(bcr.surveys[str_sub(bcr.surveys$region, 1, 3)=="can",]$bootstrap_surveys))
+
+surveys.ak <- data.frame(region = "Alaska",
+                         total_surveys = nrow(surveys[surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),]),
+                         bootstrap_surveys = sum(bcr.surveys[bcr.surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),]$bootstrap_surveys))
+
+surveys.48 <- data.frame(region = "Lower48",
+                         total_surveys = nrow(surveys[surveys$region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28"),]),
+                         bootstrap_surveys = sum(bcr.surveys[bcr.surveys$region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28"),]$bootstrap_surveys))
+
+all.surveys <- rbind(bcr.surveys, surveys.ca, surveys.48, surveys.ak)
+
+
 #4. Make mosaic list ----
 area.ca <- bcr |> 
   dplyr::filter(country=="Canada") |> 
@@ -115,7 +146,7 @@ area.ak <- bcr |>
   summarize(area = sum(area_km2))
 
 area.48 <- bcr |> 
-  dplyr::filter(region %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
+  dplyr::filter(region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28")) |> 
   summarize(area = sum(area_km2))
 
 mosaic <- data.frame(region=c("Canada", "Alaska", "Lower48"),
@@ -126,7 +157,8 @@ mosaic <- data.frame(region=c("Canada", "Alaska", "Lower48"),
                      area_km2 = c(area.ca$area, area.ak$area, area.48$area))
 
 #5. Put together ----
-regions <- rbind(bcr, mosaic)
+regions <- rbind(bcr, mosaic) |> 
+  full_join(all.surveys)
 
 #VARIABLES########
 
@@ -222,12 +254,12 @@ pop_sum <- function(i){
     id = id,
     region = region,
     year = year,
-    population_estimate = round(median(abun)/1e6, 4),
-    population_lower = round(quantile(abun, 0.05)/1e6, 4),
-    population_upper = round(quantile(abun, 0.95)/1e6, 4),
-    density_estimate = round(median(mn), 4),
-    density_lower = round(quantile(mn, 0.05), 4),
-    density_upper = round(quantile(mn, 0.95), 4)
+    population_estimate = round(median(abun, na.rm=TRUE)/1e6, 4),
+    population_lower = round(quantile(abun, 0.05, na.rm=TRUE)/1e6, 4),
+    population_upper = round(quantile(abun, 0.95, na.rm=TRUE)/1e6, 4),
+    density_estimate = round(median(mn, na.rm=TRUE), 4),
+    density_lower = round(quantile(mn, 0.05, na.rm=TRUE), 4),
+    density_upper = round(quantile(mn, 0.95, na.rm=TRUE), 4)
   )
   
   return(out)
@@ -252,36 +284,50 @@ mosaic <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), 
 todo <- rbind(pred, mosaic) |> 
   inner_join(species) |> 
   dplyr::select(file, type, region, id, year) |> 
-  dplyr::filter(year > 1985)
+  dplyr::filter(year==2020)
 
-#4. Apply function in parallel ----
-#do by species so we can stop and start again with losing too much
-abundance_out <- list()
-for(i in 1:nrow(species)){
+#4. Check for existing output ----
+if(file.exists(file.path(root, "output", "12_BMV5-abundance.RData"))){
   
-  todo_i <- dplyr::filter(todo, id==species$id[i])
-  
-  #7 workers for 7 years of predictions
-  cl <- makePSOCKcluster(7, type="PSOCK")
-  tmpcl <- clusterEvalQ(cl, library(tidyverse))
-  tmpcl <- clusterEvalQ(cl, library(terra))
-  tmpcl <- clusterEvalQ(cl, library(sf))
-  tmpcl <- clusterExport(cl, c("bcr_mod", "pop_sum", "root", "todo_i"))
-
-  abundance_i <- parLapply(cl,
-                           X=1:nrow(todo_i),
-                           fun=pop_sum)
-  
-  abundance_out[[i]] <- rbindlist(abundance_i)
-  
-  print(paste0("Species ", i, " complete"))
-  
-  stopCluster(cl)
-  gc()
-  
+  load(file.path(root, "output", "12_BMV5-abundance.RData"))
+  abundances_done <- rbindlist(abundance_out)
+  loop <- anti_join(todo, abundances_done)
+  spp <- dplyr::filter(species, id %in% loop$id)
+} else {
+  abundance_out <- list()
 }
 
-#5. Final object ----
+#5. Apply function in parallel ----
+#do by species so we can stop and start again with losing too much
+if(nrow(spp) > 0){
+  for(i in 1:nrow(spp)){
+    
+    todo_i <- dplyr::filter(loop, id==spp$id[i])
+    
+    #7 workers for 7 years of predictions
+    cl <- makePSOCKcluster(7, type="PSOCK")
+    tmpcl <- clusterEvalQ(cl, library(tidyverse))
+    tmpcl <- clusterEvalQ(cl, library(terra))
+    tmpcl <- clusterEvalQ(cl, library(sf))
+    tmpcl <- clusterExport(cl, c("bcr_mod", "pop_sum", "root", "todo_i"))
+    
+    abundance_i <- parLapply(cl,
+                             X=1:nrow(todo_i),
+                             fun=pop_sum)
+    
+    abundance_out[[i]] <- rbindlist(abundance_i)
+    
+    print(paste0("Species ", i, " complete"))
+    
+    stopCluster(cl)
+    gc()
+    
+    save(abundance_out, file=file.path(root, "output", "12_BMV5-abundance.RData"))
+    
+  }
+}
+
+#6. Final object ----
 abundances <- rbindlist(abundance_out) |> 
   left_join(species) |> 
   dplyr::select(id, scientific, english, region, year, population_estimate, population_lower, population_upper, density_estimate, density_lower, density_upper)
@@ -294,12 +340,8 @@ metadata <- read.csv(file.path(root, "data", "Lookups", "BAMv5-results-metadata.
 #PACKAGE#########
 
 #1. Put it together ----
-out <- list(metadata, species, regions, variables, importance, validation)
-names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation")
-
-write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results_noabundance.xlsx"))
-
 out <- list(metadata, species, regions, variables, importance, validation, abundances)
 names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation", "abundances")
 
+#2. Save ----
 write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results.xlsx"))

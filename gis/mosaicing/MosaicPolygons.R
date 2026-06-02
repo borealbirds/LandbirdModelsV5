@@ -55,7 +55,7 @@ bcr.ak <- bcr.all |>
          country="usa")
 
 bcr.48 <- bcr.all |> 
-  dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")) |> 
+  dplyr::filter(bcr %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28")) |> 
   st_difference(akbox) |> 
   st_union() |> 
   st_transform("EPSG:3978") |> 

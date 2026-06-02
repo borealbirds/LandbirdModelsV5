@@ -250,7 +250,7 @@ for(i in 1:nrow(loop)){
     bcr.j <- mosaic.i$region[j]
     if(bcr.j=="Canada"){bcrs.j <- colnames(bcrlist)[str_sub(colnames(bcrlist), 1, 3)=="can"]}
     if(bcr.j=="Alaska"){bcrs.j <- c("usa41423", "usa2", "usa40", "usa43", "usa5")}
-    if(bcr.j=="Lower48"){bcrs.j <- c("usa5", "usa9", "usa10", "usa11", "usa13", "usa14", "usa23", "usa28")}
+    if(bcr.j=="Lower48"){bcrs.j <- c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28")}
     
     #14. Get the data ----
     dat.bcr <- dat[names(dat) %in% bcrs.j]
@@ -264,10 +264,12 @@ for(i in 1:nrow(loop)){
     eval[[nrow(loop.i)+j]] <- purrr::map_dfr(dat[[nrow(loop.i)+j]], evaluate_boot)
     
     #16. Calculate OCCC -----
-    #Need to get a dataframe of predictions wtih a column for each bootstrap
+    #Need to get a dataframe of predictions with a column for each bootstrap
     preds[[nrow(loop.i)+j]] <- suppressWarnings(do.call(cbind,
                                            lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
     oc[[nrow(loop.i)+j]] <- epi.occc(preds[[nrow(loop.i)+j]])
+    
+    #17. 
     
     cat(j, " ")
     
