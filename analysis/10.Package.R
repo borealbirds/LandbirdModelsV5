@@ -12,7 +12,7 @@
 #1. Subunit: this the output of `07.Predict.R` run on compute canada, with the predictions trimmed to the BCR boundary.
 #2. Mosaic: this is the output of `08.MosaicPredictions.R`
 
-# We communicate model prediction variance via standard error instead of coefficient of variation or confidence intervals for several reasons: 1) we only want to provide one raster band within the stack for starage size and download efficiency, 2) while CV is better for visualizing variance, it does not have interpretable units, and so SE was prioritized as the better option after conversation with data users. R functions will be made available in the BAMexploreR package to derive CV and CIs from the SE band. CIs from the SE band will be approximations that in some cases may overestimate the lower CI due to a nonnormal distribution of bootstraps, but this is uncommon and is preferred to storing CI rasters.
+# We communicate model prediction variance via standard deviation instead of coefficient of variation or confidence intervals for several reasons: 1) we only want to provide one raster band within the stack for starage size and download efficiency, 2) while CV is better for visualizing variance, it does not have interpretable units, and so SE was prioritized as the better option after conversation with data users. R functions will be made available in the BAMexploreR package to derive CV and CIs from the SE band. CIs from the SE band will be approximations that in some cases may overestimate the lower CI due to a nonnormal distribution of bootstraps, but this is uncommon and is preferred to storing CI rasters.
 
 # Range limitation is done using the output of `gis/Probable_Range_Extent.R`
 
@@ -26,7 +26,6 @@
 
 # This script uses a template to resample from 5072 to 3978 due to changes in projection decisions part way through the modelling process. Future versions will not require this step because they should use 3978 from the onset.
 
-
 #PREAMBLE############################
 
 #1. Load packages----
@@ -37,7 +36,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if testing and on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -73,11 +72,7 @@ tmpcl <- clusterEvalQ(cl, library(terra))
 limit <- read_sf(file.path(root, "gis", "DataLimitationsMask.shp")) |> 
   st_transform("EPSG:3978")
 
-#10. Data package ----
-load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
-rm(cov, covlist, bcrlist, birdlist, bootlist)
-
-#11. Truncation values ----
+#10. Truncation values ----
 load(file.path(root, "data", "SpeciesPredictionTruncationValues.Rdata"))
 
 #FUNCTION###########
@@ -142,6 +137,8 @@ brt_package <- function(i){
   
   #7. Secondary upper truncation ----
   q99 <- global(mn.i, quantile, probs=0.999, na.rm=TRUE)[1,1]
+  if(is.na(q99)){return(NULL)}
+  
   mn2.i <- clamp(mn.i, upper=q99, values=TRUE)
   rm(mn.i)
   
@@ -230,6 +227,14 @@ loop <- sampled |>
   anti_join(done) |> 
   arrange(-year, spp, bcr)
 
+#4. Shut down if nothing left to do----
+if(nrow(loop)==0){
+  print("* Shutting down clusters *")
+  stopCluster(cl)
+  
+  if(cc){ q() }
+}
+
 #PACKAGE########
 
 #1. Export objects to clusters----
@@ -241,3 +246,10 @@ packaged <- parLapply(cl,
                       X=1:nrow(loop),
                       fun=brt_package)
 
+#CONCLUDE####
+
+#1. Close clusters----
+print("* Shutting down clusters *")
+stopCluster(cl)
+
+if(cc){ q() }
