@@ -14,6 +14,8 @@
 
 #This script uses a custom (slower) version of the qpad-offsets repo code to accommodate locations outside the covarage of the available rasters and areas where there is true sunrise.
 
+#NOTE FOR V6: Should include the corrections object in the data object. Wasn't done in V5 because was added later.
+
 #PREAMBLE############################
 
 #1. Load packages----
@@ -138,6 +140,7 @@ spp <- getBAMspecieslist()
 
 #2. Set up output & loop----
 offsets <- data.frame(id=visit_x$id)
+corrections <- data.frame(id=visit_x$id)
 
 for (i in 1:length(spp)) {
   
@@ -198,19 +201,24 @@ for (i in 1:length(spp)) {
   ii <- which(p == 0)
   p[ii] <- sra_fun(visit_x$MAXDUR[ii], cf0[1])
   
-  #9. Calculate offset -----``
+  #9. Calculate offset & count correction -----
   offsets[,i+1] = round(log(p) + log(A) + log(q), 4)
+  corrections[,i+1] = round(p*q*A, 4)
 
   cat(spp[i], "\n")
   
 }
+
 colnames(offsets) <- c("id", spp)
+colnames(corrections) <- c("id", spp)
 
 #10. Fix GRAJ####
 offsets <- rename(offsets, CAJA = GRAJ)
+corrections <- rename(corrections, CAJA = GRAJ)
 
 #11. Reorder by ID-----
 offsets <- offsets[match(visit$id, offsets$id),]
+corrections <- corrections[match(visit$id, corrections$id),]
 
 #12. Clean up the visit object ----
 visit <- visit |> 
@@ -222,3 +230,5 @@ visit <- visit |>
 
 #1. Save----
 save(visit, bird, offsets, file=file.path(root, "data", "02_NM5.0_data_offsets.Rdata"))
+
+save(corrections, file=file.path(root, "data", "02_NM5.0_corrections.Rdata"))
