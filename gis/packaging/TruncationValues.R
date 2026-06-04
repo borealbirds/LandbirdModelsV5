@@ -22,61 +22,80 @@ root <- "G:/Shared drives/BAM_NationalModels5"
 #3. Load dataset ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
-#4. Load QPAD ----
-load_BAM_QPAD("3")
+#4. Load corrections ----
+load(file.path(root, "data", "02_NM5.0_corrections.Rdata"))
 
 #5. Get species list ----
 spp <- colnames(birdlist |> dplyr::select(-bcr))
 
 #GET UPPER TRUNCATION VALUES #########
 
-#1. Get global max count ----
+#1. Some wrangling ----
 bird.all <- as.data.frame(as.matrix(bird)) |> 
-  pivot_longer(ALFL:YTVI, names_to="spp", values_to="count")
-countmax <- stats::quantile(bird.all$count, probs = 0.995, na.rm = TRUE) 
+  rownames_to_column("id") |> 
+  mutate(id = as.integer(id)) |> 
+  pivot_longer(ALFL:YTVI, names_to="spp", values_to="count") 
+
+corr.all <- corrections |> 
+  pivot_longer(ALFL:YTVI, names_to="spp", values_to="correction") 
+
+all <- inner_join(bird.all, corr.all) |> 
+  left_join(visit |> 
+              dplyr::select(id, location, year))
 
 #2. Set up loop ----
 q.out <- data.frame()
 for(i in 1:length(spp)){
   
+  #3. Get the species
   spp.i <- spp[i]
   
-  #3. Get species-specific truncation count ----
-  #use varying qs depending on sppp
-  bird.i <- as.integer(bird[,spp.i])
-  countmax.i <- stats::quantile(bird.i, probs = 0.99, na.rm = TRUE)
+  all.i <- all |> 
+    dplyr::filter(spp==spp.i)
+  
+  #4. Get species max count filter ----
+  countmax <- stats::quantile(all.i$count, probs = 0.99, na.rm = TRUE)
+  if(countmax==0){
+    countmax <- stats::quantile(all.i$count, probs = 0.995, na.rm = TRUE)
+  }
+  if(countmax==0){
+    countmax <- stats::quantile(all.i$count, probs = 0.999, na.rm = TRUE)
+  }
+  if(countmax==0){
+    countmax <- stats::quantile(all.i$count, probs = 0.9999, na.rm = TRUE)
+  }
+  
+  #5. Truncate counts & calculate density ----
+  dat.i <- all.i |> 
+    mutate(count = ifelse(count > countmax, countmax, count),
+           density = count/correction)
+
+  #6. Get species-specific truncation count ----
+  #use varying qs depending on spp
+  densmax.i <- stats::quantile(dat.i$density, probs = 0.99, na.rm = TRUE)
   thresh.i = 0.99
-  if(countmax.i < countmax){
-    countmax.i <- stats::quantile(bird.i, probs = 0.995, na.rm = TRUE)
+  if(densmax.i==0){
+    densmax.i <- stats::quantile(dat.i$density, probs = 0.995, na.rm = TRUE)
     thresh.i = 0.995
   }
-  if(countmax.i < countmax){
-    countmax.i <- stats::quantile(bird.i, probs = 0.999, na.rm = TRUE)
+  if(densmax.i==0){
+    densmax.i <- stats::quantile(dat.i$density, probs = 0.999, na.rm = TRUE)
     thresh.i = 0.999
   }
-  if(countmax.i < countmax){
-    countmax.i <- stats::quantile(bird.i, probs = 0.9999, na.rm = TRUE)
+  if(densmax.i==0){
+    densmax.i <- stats::quantile(dat.i$density, probs = 0.9995, na.rm = TRUE)
+    thresh.i = 0.9995
+  }
+  if(densmax.i==0){
+    densmax.i <- stats::quantile(dat.i$density, probs = 0.9999, na.rm = TRUE)
     thresh.i = 0.9999
   }
   
-  #4. Get null QPAD correction ----
-  if(spp.i=="CAJA"){
-    cf0 <- exp(unlist(coefBAMspecies("GRAJ", 0, 0)))
-  } else {
-    cf0 <- exp(unlist(coefBAMspecies(spp.i, 0, 0)))
-  }
-  
-  off.i <- exp(cf0[1])*exp(cf0[2])
-  
-  #5. Get density truncation ----
-  q99 <- countmax.i/off.i
-  
-  #6. Output ----
+  #7. Output ----
   q.out <- rbind(data.frame(spp = spp.i,
                             thresh = thresh.i,
-                            countmax = countmax.i,
-                            off = off.i,
-                            q = q99),
+                            countmax = countmax,
+                            densmax = densmax.i),
                  q.out)
   
   cat(i, " ")
