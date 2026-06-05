@@ -28,7 +28,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if on local or cluster----
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -185,9 +185,7 @@ done <- data.frame(file = list.files(file.path(root, "output", "10_truncated"), 
 #remove species that we are omitting for now
 loop <- sampled |> 
   anti_join(done) |> 
-  arrange(-year, spp, bcr) |> 
-  dplyr::filter(bcr=="Canada",
-                year==2020)
+  arrange(-year, spp, bcr)
 
 #4. Shut down if nothing left to do----
 if(nrow(loop)==0){

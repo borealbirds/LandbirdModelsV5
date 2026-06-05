@@ -28,7 +28,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if on local or cluster----
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}

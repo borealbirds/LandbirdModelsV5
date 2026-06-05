@@ -27,17 +27,16 @@ library(Matrix)
 library(terra)
 
 #2. Set species subset ----
-set <- c(1)
-set_sp <- "TEWA"
+#set_sp <- NA
 set_yr <- 2020
 
 #3. Determine if testing and on local or cluster----
 test <- FALSE
-cc <- TRUE
+cc <- FALSE
 
 #4. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc | test){ cores <- 2}
+if(!cc | test){ cores <- 1}
 
 #5. Create and register clusters----
 print("* Creating clusters *")
@@ -50,13 +49,7 @@ print("* Setting root file path *")
 if(cc){root <- "/scratch/ecknight/NationalModels"}
 if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
 
-#7. Get the species list----
-sppuse <- read.csv(file.path(root, "data", "priority_spp_with_model_performance.csv")) |> 
-  rename(spp = species_code) |> 
-  dplyr::select(spp, rerun) |> 
-  dplyr::filter(rerun %in% set)
-
-#8. Load packages on clusters----
+#7. Load packages on clusters----
 print("* Loading packages on workers *")
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(tidyverse))
@@ -116,9 +109,7 @@ booted <- data.frame(path = list.files(file.path(root, "output", "06_bootstraps"
 todo <- booted |>
   dplyr::select(bcr, spp) |>
   expand_grid(year=years) |>
-  arrange(spp, year, bcr) |> 
-  inner_join(sppuse |> 
-               dplyr::select(spp, rerun))
+  arrange(spp, year, bcr)
 
 #RUN MODELS#########
 
@@ -132,14 +123,13 @@ done <- data.frame(file = list.files(file.path(root, "output", "07_predictions")
 if(nrow(done) > 0){
   
   loop <- todo |> 
-    anti_join(done)
-#    dplyr::filter(spp == set_sp)
-#    dplyr::filter(year == set_yr)
-  
+    anti_join(done) |> 
+    dplyr::filter(year %in% set_yr)
+
 } else { loop <- todo }
 
 #For testing
-#if(test) {loop <- loop[1:2,]}
+if(test) {loop <- loop[1:2,]}
 
 #3. Shut down if nothing left to do----
 if(nrow(loop)==0){
