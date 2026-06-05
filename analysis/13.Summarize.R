@@ -70,6 +70,7 @@ species <- species.wt |>
 #6. Check against to do list ----
 missing <- data.frame(id=colnames(dplyr::select(birdlist, -bcr))) |> 
   anti_join(species)
+nrow(missing)
 
 #REGIONS############
 
@@ -220,30 +221,7 @@ validation <- rbindlist(eval.out, fill=TRUE) |>
 #1. Set up the function ----
 pop_sum <- function(i){
   
-  file <- todo_i$file[i]
-  type <- todo_i$type[i]
-  region <- todo_i$region[i]
-  id <- todo_i$id[i]
-  year <- todo_i$year[i]
-  
-  #read in raster stack of bootstraps, remove the buffer (single models only)
-  if(type=="Single model"){
-    bcr_v <- vect(bcr_mod)
-    bcr_i <- bcr_v[bcr_v$bcr==region,]
-    r <- rast(file.path(root, "output", "07_predictions", file)) |> 
-      crop(bcr_i, mask=TRUE)
-    }
-  if(type=="Mosaic"){r <- rast(file.path(root, "output", "08_mosaics", file))}
-  
-  #get the truncation value from the packaged raster
-  p <- rast(file.path(root, "output", "10_packaged", id, region,
-                      paste0(id, "_", region, "_", year, ".tif")))
-  q99 <- global(p$mean, max, na.rm=TRUE)[,1]
-  
-  #truncate
-  t <- clamp(r, upper = q99, values=TRUE)
-  
-  #mask
+  t <- rast(file.path(root, "output", "10_truncated", todo_i$file[i]))
   
   #estimate population
   abun <- global(t * 1 * 100, sum, na.rm=TRUE)[,1]
@@ -253,9 +231,9 @@ pop_sum <- function(i){
   
   #results
   out <- data.frame(
-    id = id,
-    region = region,
-    year = year,
+    id = todo_i$id[i],
+    region = todo_i$region[i],
+    year = todo_i$year[i],
     population_estimate = round(median(abun, na.rm=TRUE)/1e6, 3),
     population_lower = round(quantile(abun, 0.05, na.rm=TRUE)/1e6, 3),
     population_upper = round(quantile(abun, 0.95, na.rm=TRUE)/1e6, 3),
@@ -268,35 +246,25 @@ pop_sum <- function(i){
   
 }
 
-#2. Get BCR shapefile for modelling ----
-bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
-  st_transform("EPSG:5072")
-
 #3. List of models to run ----
-pred <- data.frame(file = list.files(file.path(root, "output", "07_predictions"), recursive = TRUE)) |> 
-  separate(file, into=c("f1", "id", "region", "year", "filetype"), remove=FALSE) |> 
-  dplyr::select(-f1, -filetype) |> 
-  mutate(type = "Single model")
-
-mosaic <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), recursive = TRUE)) |> 
-  separate(file, into=c("region", "f1", "id", "year", "filetype"), remove=FALSE) |> 
-  dplyr::select(-f1, -filetype) |> 
-  mutate(type = "Mosaic")
+trunc <- data.frame(file = list.files(file.path(root, "output", "10_truncated"), recursive = TRUE)) |> 
+  separate(file, into=c("sppfolder", "regfolder", "id", "region", "year", "filetype"), remove=FALSE) |> 
+  dplyr::select(-sppfolder, -regfolder, -filetype)
   
-todo <- rbind(pred, mosaic) |> 
+todo <- trunc |> 
   inner_join(species) |> 
-  dplyr::select(file, type, region, id, year) |> 
-  dplyr::filter(year==2015)
+  dplyr::select(file, region, id, year)
 
 #4. Check for existing output ----
-if(file.exists(file.path(root, "output", "12_summary", "12_BMV5-abundance.RData"))){
+if(file.exists(file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))){
   
-  load(file.path(root, "output", "12_summary", "12_BMV5-abundance.RData"))
+  load(file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))
   abundances_done <- rbindlist(abundance_out)
   loop <- anti_join(todo, abundances_done)
   spp <- dplyr::filter(species, id %in% loop$id)
 } else {
   abundance_out <- list()
+  loop <- todo
 }
 
 #5. Apply function in parallel ----
@@ -304,7 +272,7 @@ if(file.exists(file.path(root, "output", "12_summary", "12_BMV5-abundance.RData"
 if(nrow(spp) > 0){
   for(i in 1:nrow(spp)){
     
-    todo_i <- dplyr::filter(loop, id==spp$id[i])
+    todo_i <- dplyr::filter(loop, id==spp$spp[i])
     
     #7 workers for 7 years of predictions
     cl <- makePSOCKcluster(7, type="PSOCK")
@@ -324,7 +292,7 @@ if(nrow(spp) > 0){
     stopCluster(cl)
     gc()
     
-    save(abundance_out, file=file.path(root, "output", "12_BMV5-abundance.RData"))
+    save(abundance_out, file=file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))
     
   }
 }
