@@ -23,7 +23,6 @@
 #1. Load packages----
 print("* Loading packages on master *")
 library(tidyverse)
-library(purrr)
 library(gbm)
 library(epiR)
 library(data.table)
@@ -96,7 +95,7 @@ simple_auc <- function(ROC) {
 }
 
 # Function to get train and test data and the predictions from the model object 
-get_data_bcr <- function(k){
+get_data_bcr <- function(k, bcr.j, spp.i, b.list){
   
   #1. Get visits ----
   visit.k <- bcrlist[bcrlist[,bcr.j]>0, c("id", bcr.j)]
@@ -202,10 +201,10 @@ brt_evaluate <- function(i){
     }
     
     #7. Get the data -----
-    dat[[j]] <- purrr::map(.x = c(1:length(b.list)), get_data_bcr)
+    dat[[j]] <- lapply(.x = seq_along(b.list), function(k) {get_data_bcr(.x, bcr.j=bcr.j, spp.i=spp.i, b.list=b.list)})
     
     #8. Evaluate -----
-    eval[[j]] <- purrr::map_dfr(dat[[j]], evaluate_boot)
+    eval[[j]] <- do.call(rbind, lapply(dat[[j]], function(x){evaluate_boot}))
     
     #9. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
@@ -216,7 +215,7 @@ brt_evaluate <- function(i){
     cat(j, " ")
     
   }
-  if(class(bload)=="try-error"){next}
+  if(class(bload)=="try-error") return(NULL)
   
   #10. Add some names----
   names(dat) <- c(loop.i$bcr)
@@ -269,10 +268,6 @@ brt_evaluate <- function(i){
   save(eval, oc, file = file.path(root, "output", "11_validation",
                                   paste0(spp.i, ".Rdata")))
   
-  end.i <- Sys.time()
-  
-  cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="hours"), "hours\n")
-  
 }
 
 
@@ -311,8 +306,8 @@ mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics")
 
 #1. Export objects to clusters----
 tmpcl <- clusterExport(cl, c("root", "loop", "mosaiced", 
-                             "bird", "offsets", "bcrlist", "birdlist", "bootlist", "visit", "id.occc",
-                             "pseudo_r2", "simple_roc", "simple_auc", "get_data_bcr", "evaluate_boot"))
+                             "bird", "offsets", "bcrlist", "birdlist", "bootlist", "visit", "cov", "id.occc",
+                             "pseudo_r2", "simple_roc", "simple_auc", "get_data_bcr", "evaluate_boot", "brt_evaluate"))
 
 #2. Run BRT function in parallel----
 print("* Evaluating *")
