@@ -29,7 +29,7 @@ library(data.table)
 library(parallel)
 
 #2. Determine if on local or cluster----
-cc <- FALSE
+cc <- TRUE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -201,10 +201,10 @@ brt_evaluate <- function(i){
     }
     
     #7. Get the data -----
-    dat[[j]] <- lapply(.x = seq_along(b.list), function(k) {get_data_bcr(.x, bcr.j=bcr.j, spp.i=spp.i, b.list=b.list)})
+    dat[[j]] <- lapply(seq_along(b.list), function(k) {get_data_bcr(k, bcr.j=bcr.j, spp.i=spp.i, b.list=b.list)})
     
     #8. Evaluate -----
-    eval[[j]] <- do.call(rbind, lapply(dat[[j]], function(x){evaluate_boot}))
+    eval[[j]] <- do.call(rbind, lapply(dat[[j]], evaluate_boot))
     
     #9. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
@@ -244,7 +244,7 @@ brt_evaluate <- function(i){
     })
     
     #15. Evaluate ----
-    eval[[nrow(loop.i)+j]] <- purrr::map_dfr(dat[[nrow(loop.i)+j]], evaluate_boot)
+    eval[[nrow(loop.i)+j]] <- do.call(rbind, lapply(dat[[nrow(loop.i)+j]], evaluate_boot))
     
     #16. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
