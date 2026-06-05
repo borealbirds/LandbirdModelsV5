@@ -51,3 +51,6 @@ vignettes/*.pdf
 
 # Local output folder for download from compute canada
 *output/
+
+# BRT auto output
+Rplots.pdf
