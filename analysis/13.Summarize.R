@@ -243,6 +243,8 @@ pop_sum <- function(i){
   #truncate
   t <- clamp(r, upper = q99, values=TRUE)
   
+  #mask
+  
   #estimate population
   abun <- global(t * 1 * 100, sum, na.rm=TRUE)[,1]
   
@@ -254,12 +256,12 @@ pop_sum <- function(i){
     id = id,
     region = region,
     year = year,
-    population_estimate = round(median(abun, na.rm=TRUE)/1e6, 4),
-    population_lower = round(quantile(abun, 0.05, na.rm=TRUE)/1e6, 4),
-    population_upper = round(quantile(abun, 0.95, na.rm=TRUE)/1e6, 4),
-    density_estimate = round(median(mn, na.rm=TRUE), 4),
-    density_lower = round(quantile(mn, 0.05, na.rm=TRUE), 4),
-    density_upper = round(quantile(mn, 0.95, na.rm=TRUE), 4)
+    population_estimate = round(median(abun, na.rm=TRUE)/1e6, 3),
+    population_lower = round(quantile(abun, 0.05, na.rm=TRUE)/1e6, 3),
+    population_upper = round(quantile(abun, 0.95, na.rm=TRUE)/1e6, 3),
+    density_estimate = round(median(mn, na.rm=TRUE), 3),
+    density_lower = round(quantile(mn, 0.05, na.rm=TRUE), 3),
+    density_upper = round(quantile(mn, 0.95, na.rm=TRUE), 3)
   )
   
   return(out)
@@ -284,12 +286,12 @@ mosaic <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), 
 todo <- rbind(pred, mosaic) |> 
   inner_join(species) |> 
   dplyr::select(file, type, region, id, year) |> 
-  dplyr::filter(year==2020)
+  dplyr::filter(year==2015)
 
 #4. Check for existing output ----
-if(file.exists(file.path(root, "output", "12_BMV5-abundance.RData"))){
+if(file.exists(file.path(root, "output", "12_summary", "12_BMV5-abundance.RData"))){
   
-  load(file.path(root, "output", "12_BMV5-abundance.RData"))
+  load(file.path(root, "output", "12_summary", "12_BMV5-abundance.RData"))
   abundances_done <- rbindlist(abundance_out)
   loop <- anti_join(todo, abundances_done)
   spp <- dplyr::filter(species, id %in% loop$id)

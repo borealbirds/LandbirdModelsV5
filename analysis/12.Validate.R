@@ -123,39 +123,42 @@ get_data_bcr <- function(k){
   off.k <- offsets[offsets$id %in% visit.k$id, spp.i]
   
   #5. Put together -----
+  #exclude the buffer
+  #add species presence/absence
   dat.k <- cbind(visit.k, year.k, bird.k, off.k) |> 
     rename(count = bird.k,
            offset = off.k,
            year1 = year) |> 
     mutate(year = round(year1/5)*5,
-           year = ifelse(year==1980, 1985, year))
-  
-  #6. Get the training data for this bootstrap ----
-  train.k <- dat.k |> 
-    dplyr::filter(id %in% bootlist[[k + 2]])
-  
-  #7. Get the with withheld test data ----
-  #exclude the buffer
-  #add species presence/absence
-  test.k <- dat.k |> 
-    dplyr::filter(!id %in% bootlist[[k + 2]],
-                  use==1) |> 
+           year = ifelse(year==1980, 1985, year)) |> 
+    dplyr::filter(use==1) |> 
     mutate(p = ifelse(count > 0, 1, 0))
   
-  #8. Get the covariates for test data ----
-  cov.k <- cov[cov$id %in% test.k$id, colnames(cov) %in% b.list[[1]]$var.names] |> 
-    cbind(test.k)
+  #6. Get the covariates ----
+  cov.k <- dat.k |> 
+    left_join(cov, by="id") |> 
+    dplyr::select(id, offset, count, p, all_of(b.list[[1]]$var.names))
   
-  #9. Get full predictions ----
-  test.k$predraw <- suppressWarnings(predict.gbm(b.list[[k]], cov.k, type="link"))
-  test.k$predfull <- exp(test.k$predraw + test.k$offset)
+  #7. Get full predictions ----
+  cov.k$predraw <- suppressWarnings(predict.gbm(b.list[[k]], cov.k, type="link"))
+  cov.k$predfull <- exp(cov.k$predraw + cov.k$offset)
   
-  #3. Get intercept only predictions ----
-  test.k$predinit <- exp(b.list[[k]]$initF + test.k$offset)
+  #8. Get intercept only predictions ----
+  cov.k$predinit <- exp(b.list[[k]]$initF + cov.k$offset)
   
-  #8. Return ----
-  out.k <- list(train.k, test.k)
-  names(out.k) <- c("train", "test")
+  #9. Split into train and test and occc objects ----
+  train.k <- cov.k |> 
+    dplyr::filter(id %in% bootlist[[k + 2]])
+  test.k <- cov.k |> 
+    dplyr::filter(!id %in% bootlist[[k + 2]])
+  occc.k <- cov.k |> 
+    dplyr::filter(id %in% id.occc$id)
+  
+  #10. Get the 
+  
+  #10. Return ----
+  out.k <- list(train.k, test.k, occc.k)
+  names(out.k) <- c("train", "test", "occc")
   
   return(out.k)
   
@@ -180,7 +183,19 @@ evaluate_boot <- function(data){
   
 }
 
+evalate_pred <- function(data){
+  
+  
+  
+  
+  
+}
+
 # EVALUATE #########
+
+#1. Get the survey ids for unique site-year data for the OCCC evaluation ----
+visit$cyid <- paste0(visit$location, "-", visit$year)
+id.occc <- visit[which(!duplicated(visit$cyid)), "id"]
 
 #1. Set up loop ----
 
@@ -224,9 +239,9 @@ for(i in 1:nrow(loop)){
     eval[[j]] <- purrr::map_dfr(dat[[j]], evaluate_boot)
     
     #9. Calculate OCCC -----
-    #Need to get a dataframe of predictions wtih a column for each bootstrap
+    #Need to get a dataframe of predictions with a column for each bootstrap
     preds[[j]] <- suppressWarnings(do.call(cbind,
-                     lapply(dat[[j]], function(b){as.numeric(b$test$predfull)})))
+                     lapply(dat[[j]], function(b){as.numeric(b$occc$predfull)})))
     oc[[j]] <- epi.occc(preds[[j]])
     
     cat(j, " ")
