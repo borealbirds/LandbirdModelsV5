@@ -18,28 +18,53 @@
 
 # The metrics calculated are the same as used for V4 of the models. Additional metrics may be desired for future versions.
 
-#TO DO: Parallelize
-
 #PREAMBLE############################
 
 #1. Load packages----
+print("* Loading packages on master *")
 library(tidyverse)
 library(purrr)
 library(gbm)
 library(epiR)
 library(data.table)
+library(parallel)
 
-#2. Set root path----
-root <- "G:/Shared drives/BAM_NationalModels5"
+#2. Determine if on local or cluster----
+cc <- FALSE
 
-#3. Load data file----
+#3. Set nodes for local vs cluster----
+if(cc){ cores <- 32}
+if(!cc){ cores <- 2}
+
+#4. Create and register clusters----
+print("* Creating clusters *")
+print(table(cores))
+cl <- makePSOCKcluster(cores, type="PSOCK")
+length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
+
+#5. Set root path----
+print("* Setting root file path *")
+if(cc){root <- "/scratch/ecknight/NationalModels"}
+if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
+
+#6. Load packages on clusters----
+print("* Loading packages on workers *")
+tmpcl <- clusterEvalQ(cl, library(tidyverse))
+tmpcl <- clusterEvalQ(cl, library(gbm))
+tmpcl <- clusterEvalQ(cl, library(purrr))
+tmpcl <- clusterEvalQ(cl, library(epiR))
+tmpcl <- clusterEvalQ(cl, library(data.table))
+
+#7. Load data file----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 
-#4. Convert bird data to dataframe----
-bird.df <- as.data.frame(as.matrix(bird))
-bird.df$id <- as.numeric(row.names(bird.df))
+#8. Get the survey ids for unique site-year data for the OCCC evaluation ----
+visit$cyid <- paste0(visit$location, "-", visit$year)
+id.occc <- visit[which(!duplicated(visit$cyid)), "id"]
 
-#5. Functions for evaluation----
+#WRITE FUNCTIONS ###############
+
+#1. Functions for evaluation----
 #As per NMV4
 pseudo_r2 <- function(observed, fitted, null=NULL, p=0) {
   if (is.null(null))
@@ -69,42 +94,6 @@ simple_auc <- function(ROC) {
   dx <- diff(ROC$inv_spec)
   sum(dx * ROC$TPR[-1]) / sum(dx)
 }
-
-#INVENTORY#########
-
-#1. Get list of models that have been packaged ----
-#this ensures completeness
-packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged_can"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
-                      file = list.files(file.path(root, "output", "10_packaged_can"), pattern="*.tif", recursive = TRUE)) |> 
-  separate(file, into=c("spp1", "bcr1", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year)) |> 
-  dplyr::filter(spp!="Extrapolation")
-
-#2. Make the todo list----
-todo <- packaged |> 
-  dplyr::select(spp) |> 
-  unique()
-
-todo <- data.frame(spp = list.files(file.path(root, "output", "07_predictions")))
-
-#3. Check which have been run----
-done <- data.frame(file.mean = list.files(file.path(root, "output", "11_validation"), pattern="*.Rdata"))  |> 
-  separate(file.mean, into=c("spp", "filetype"), remove=FALSE)
-
-#4. Make the todo list----
-loop <- anti_join(todo, done)
-
-#5. Set bootstraps ----
-boots <- 32
-
-#6. Get the mosaics list ----
-mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
-  separate(file, into=c("region", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year)) |> 
-  dplyr::select(-sppfolder, -filetype, -year, -file) |> 
-  unique()
-
-#WRITE FUNCTIONS ###############
 
 # Function to get train and test data and the predictions from the model object 
 get_data_bcr <- function(k){
@@ -183,28 +172,8 @@ evaluate_boot <- function(data){
   
 }
 
-evalate_pred <- function(data){
-  
-  
-  
-  
-  
-}
-
-# EVALUATE #########
-
-#1. Get the survey ids for unique site-year data for the OCCC evaluation ----
-visit$cyid <- paste0(visit$location, "-", visit$year)
-id.occc <- visit[which(!duplicated(visit$cyid)), "id"]
-
-#1. Set up loop ----
-
-#Data frame for holding corrupt bootstraps
-corrupt <- data.frame()
-
-for(i in 1:nrow(loop)){
-  
-  start.i <- Sys.time()
+#wrapper function
+brt_evaluate <- function(i){
   
   #2. Get loop settings----
   spp.i <- loop$spp[i]
@@ -230,18 +199,18 @@ for(i in 1:nrow(loop)){
     if(class(bload)=="try-error"){
       corrupt <- rbind(corrupt, loop.i[j,])
       break
-      }
+    }
     
     #7. Get the data -----
-    dat[[j]] <- purrr::map(.x = c(1:boots), get_data_bcr)
-
+    dat[[j]] <- purrr::map(.x = c(1:length(b.list)), get_data_bcr)
+    
     #8. Evaluate -----
     eval[[j]] <- purrr::map_dfr(dat[[j]], evaluate_boot)
     
     #9. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
     preds[[j]] <- suppressWarnings(do.call(cbind,
-                     lapply(dat[[j]], function(b){as.numeric(b$occc$predfull)})))
+                                           lapply(dat[[j]], function(b){as.numeric(b$occc$predfull)})))
     oc[[j]] <- epi.occc(preds[[j]])
     
     cat(j, " ")
@@ -281,7 +250,7 @@ for(i in 1:nrow(loop)){
     #16. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
     preds[[nrow(loop.i)+j]] <- suppressWarnings(do.call(cbind,
-                                           lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
+                                                        lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
     oc[[nrow(loop.i)+j]] <- epi.occc(preds[[nrow(loop.i)+j]])
     
     #17. 
@@ -295,13 +264,66 @@ for(i in 1:nrow(loop)){
   names(eval) <- c(loop.i$bcr, mosaic.i$region)
   names(preds) <- c(loop.i$bcr, mosaic.i$region)
   names(oc) <- c(loop.i$bcr, mosaic.i$region)
-
+  
   #19. Save the data----
   save(eval, oc, file = file.path(root, "output", "11_validation",
-                                           paste0(spp.i, ".Rdata")))
+                                  paste0(spp.i, ".Rdata")))
   
   end.i <- Sys.time()
   
   cat("FINISHED MODEL VALIDATION FOR", i, "OF", nrow(loop), "in", difftime(end.i, start.i, units="hours"), "hours\n")
   
 }
+
+
+#INVENTORY#########
+
+#1. Get list of models that have been packaged ----
+#this ensures completeness
+packaged <- data.frame(path = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", full.names=TRUE, recursive = TRUE),
+                       file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive = TRUE)) |> 
+  separate(file, into=c("spp1", "bcr1", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
+  dplyr::filter(spp1!="SamplingReliability")
+
+#2. Make the todo list----
+todo <- packaged |> 
+  dplyr::select(spp) |> 
+  unique()
+
+todo <- data.frame(spp = list.files(file.path(root, "output", "07_predictions")))
+
+#3. Check which have been run----
+done <- data.frame(file.mean = list.files(file.path(root, "output", "12_validation"), pattern="*.Rdata"))  |> 
+  separate(file.mean, into=c("spp", "filetype"), remove=FALSE)
+
+#4. Make the todo list----
+loop <- anti_join(todo, done)
+
+#5. Get the mosaics list ----
+mosaiced <- data.frame(file = list.files(file.path(root, "output", "08_mosaics"), pattern="*.tif", recursive=TRUE)) |> 
+  separate(file, into=c("region", "sppfolder", "spp", "year", "filetype"), remove=FALSE) |>  
+  mutate(year = as.numeric(year)) |> 
+  dplyr::select(-sppfolder, -filetype, -year, -file) |> 
+  unique()
+
+# EVALUATE #########
+
+#1. Export objects to clusters----
+tmpcl <- clusterExport(cl, c("root", "loop", "mosaiced", 
+                             "bird", "offsets", "bcrlist", "birdlist", "bootlist", "visit", "id.occc",
+                             "pseudo_r2", "simple_roc", "simple_auc", "get_data_bcr", "evaluate_boot"))
+
+#2. Run BRT function in parallel----
+print("* Evaluating *")
+packaged <- parLapply(cl,
+                      X=1:nrow(loop),
+                      fun=brt_evaluate)
+
+# CONCLUDE ####
+
+#1. Close clusters----
+print("* Shutting down clusters *")
+stopCluster(cl)
+
+if(cc){ q() }
