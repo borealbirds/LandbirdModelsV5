@@ -155,7 +155,7 @@ if(nrow(loop)==0){
 #PACKAGE########
 
 #1. Export objects to clusters----
-tmpcl <- clusterExport(cl, c("loop", "bcr.country", "brt_package"))
+tmpcl <- clusterExport(cl, c("root", "loop", "bcr.country"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
