@@ -29,11 +29,11 @@ library(data.table)
 library(parallel)
 
 #2. Determine if on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
-if(!cc){ cores <- 2}
+if(!cc){ cores <- 8}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
@@ -134,15 +134,17 @@ get_data_bcr <- function(k, bcr.j, spp.i, b.list){
   #8. Get intercept only predictions ----
   cov.k$predinit <- exp(b.list[[k]]$initF + cov.k$offset)
   
-  #9. Split into train and test and occc objects ----
-  train.k <- cov.k |> 
-    dplyr::filter(id %in% bootlist[[k + 2]])
-  test.k <- cov.k |> 
-    dplyr::filter(!id %in% bootlist[[k + 2]])
-  occc.k <- cov.k |> 
-    dplyr::filter(id %in% id.occc$id)
+  #9. Drop the covariates ----
+  dat.k <- cov.k |> 
+    dplyr::select(id, offset, count, p, predraw, predfull, predinit)
   
-  #10. Get the 
+  #9. Split into train and test and occc objects ----
+  train.k <- dat.k |> 
+    dplyr::filter(id %in% bootlist[[k + 2]])
+  test.k <- dat.k |> 
+    dplyr::filter(!id %in% bootlist[[k + 2]])
+  occc.k <- dat.k |> 
+    dplyr::filter(id %in% id.occc$id)
   
   #10. Return ----
   out.k <- list(train.k, test.k, occc.k)
@@ -195,10 +197,8 @@ brt_evaluate <- function(i){
     
     #6. Get the models ----
     bload <- try(load(file.path(root, "output", "06_bootstraps", spp.i, paste0(spp.i, "_", bcr.j, ".Rdata"))))
-    if(class(bload)=="try-error"){
-      corrupt <- rbind(corrupt, loop.i[j,])
-      break
-    }
+    
+    if(class(bload)=="try-error") return(NULL)
     
     #7. Get the data -----
     dat[[j]] <- lapply(seq_along(b.list), function(k) {get_data_bcr(k, bcr.j=bcr.j, spp.i=spp.i, b.list=b.list)})
@@ -208,14 +208,12 @@ brt_evaluate <- function(i){
     
     #9. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
-    preds[[j]] <- suppressWarnings(do.call(cbind,
-                                           lapply(dat[[j]], function(b){as.numeric(b$occc$predfull)})))
+    preds[[j]] <- do.call(cbind, lapply(dat[[j]], function(b){as.numeric(b$occc$predfull)}))
     oc[[j]] <- epi.occc(preds[[j]])
     
     cat(j, " ")
     
   }
-  if(class(bload)=="try-error") return(NULL)
   
   #10. Add some names----
   names(dat) <- c(loop.i$bcr)
@@ -237,10 +235,12 @@ brt_evaluate <- function(i){
     
     #14. Get the data ----
     dat.bcr <- dat[names(dat) %in% bcrs.j]
-    dat[[nrow(loop.i)+j]] <- lapply(seq_len(length(dat.bcr[[1]])), function(i){
+    
+    dat[[nrow(loop.i)+j]] <- lapply(seq_along(dat.bcr[[1]]), function(i){
       train_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$train))
       test_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$test))
-      list(train = train_i, test = test_i)
+      occc_i <- do.call(rbind, lapply(dat.bcr, function(r) r[[i]]$occc))
+      list(train = train_i, test = test_i, occc = occc_i)
     })
     
     #15. Evaluate ----
@@ -248,13 +248,8 @@ brt_evaluate <- function(i){
     
     #16. Calculate OCCC -----
     #Need to get a dataframe of predictions with a column for each bootstrap
-    preds[[nrow(loop.i)+j]] <- suppressWarnings(do.call(cbind,
-                                                        lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$test$predfull)})))
+    preds[[nrow(loop.i)+j]] <- do.call(cbind, lapply(dat[[nrow(loop.i)+j]], function(b){as.numeric(b$occc$predfull)}))
     oc[[nrow(loop.i)+j]] <- epi.occc(preds[[nrow(loop.i)+j]])
-    
-    #17. 
-    
-    cat(j, " ")
     
   }
   
@@ -265,11 +260,10 @@ brt_evaluate <- function(i){
   names(oc) <- c(loop.i$bcr, mosaic.i$region)
   
   #19. Save the data----
-  save(eval, oc, file = file.path(root, "output", "11_validation",
+  save(eval, oc, file = file.path(root, "output", "12_validation",
                                   paste0(spp.i, ".Rdata")))
   
 }
-
 
 #INVENTORY#########
 
