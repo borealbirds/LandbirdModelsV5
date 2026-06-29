@@ -197,9 +197,6 @@ for(i in 1:nrow(spp)){
            scale = 1-(scale1 - min(scale1))/(max(scale1) - min(scale1)),
            scale2 = ifelse(scale < 0.5, NA, (scale - 0.5)/(0.5)))
   
-  #16. Take 50% and rescale ----
-  kde.scale2 <- 
-  
   #16. Re-rasterize ----
   kde.scaler <- rasterize(kde.scale, r, field="scale2", fun=mean)
   #plot(kde.scaler)
