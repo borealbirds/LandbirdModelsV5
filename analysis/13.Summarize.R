@@ -44,13 +44,13 @@ species.wt <- read.csv(file.path(root, "data", "lookups", "lu_species.csv")) |>
   dplyr::select(id, scientific, english, french, family)
 
 #2. Get list of packaged species----
-packaged <- data.frame(file = list.files(file.path(root, "output", "10_packaged"), pattern="*.tif", recursive=TRUE))  |> 
+packaged <- data.frame(file = list.files(file.path(root, "output", "11_packaged"), pattern="*.tif", recursive=TRUE))  |> 
   separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
   mutate(year = as.numeric(year)) |> 
   dplyr::filter(sppfolder!="extrapolation")
 
 #3. Get list of validatd species----
-validated <- data.frame(file = list.files(file.path(root, "output", "11_validation"), pattern=".Rdata")) |> 
+validated <- data.frame(file = list.files(file.path(root, "output", "12_validation"), pattern=".Rdata")) |> 
   separate(file, into=c("spp", "filetype")) |> 
   dplyr::select(spp)
 
@@ -191,7 +191,7 @@ for(i in 1:nrow(spp)){
   species.i <- spp$spp[i]
   
   #2. Load validation output ----
-  load(file.path(root, "output", "11_validation", paste0(species.i, ".Rdata")))
+  load(file.path(root, "output", "12_validation", paste0(species.i, ".Rdata")))
   
   #4. Summarize----
   eval.out[[i]] <- rbindlist(eval, use.names = TRUE, idcol = "region") |> 
@@ -256,26 +256,30 @@ todo <- trunc |>
   dplyr::select(file, region, id, year)
 
 #4. Check for existing output ----
-if(file.exists(file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))){
+if(file.exists(file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))){
   
-  load(file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))
-  abundances_done <- rbindlist(abundance_out)
+  load(file.path(root, "output", "13_summary", "BAMV5-abundance.RData")) |> 
+    unique()
   loop <- anti_join(todo, abundances_done)
   spp <- dplyr::filter(species, id %in% loop$id)
+  
 } else {
-  abundance_out <- list()
+  abundances_done <- data.frame()
   loop <- todo
 }
 
 #5. Apply function in parallel ----
-#do by species so we can stop and start again with losing too much
-if(nrow(spp) > 0){
-  for(i in 1:nrow(spp)){
+spp.yr <- loop |>
+  dplyr::select(id) |>
+  unique()
+
+if(nrow(spp.yr) > 0){
+  for(i in 1:nrow(spp.yr)){
     
-    todo_i <- dplyr::filter(loop, id==spp$spp[i])
+    todo_i <- dplyr::filter(loop, id==spp.yr$id[i])
     
     #7 workers for 7 years of predictions
-    cl <- makePSOCKcluster(7, type="PSOCK")
+    cl <- makePSOCKcluster(5, type="PSOCK")
     tmpcl <- clusterEvalQ(cl, library(tidyverse))
     tmpcl <- clusterEvalQ(cl, library(terra))
     tmpcl <- clusterEvalQ(cl, library(sf))
@@ -285,20 +289,21 @@ if(nrow(spp) > 0){
                              X=1:nrow(todo_i),
                              fun=pop_sum)
     
-    abundance_out[[i]] <- rbindlist(abundance_i)
-    
-    print(paste0("Species ", i, " complete"))
+    abundances_done <- rbind(abundances_done, rbindlist(abundance_i)) |> 
+      unique()
     
     stopCluster(cl)
     gc()
     
-    save(abundance_out, file=file.path(root, "output", "13_summary", "13_BMV5-abundance.RData"))
+    save(abundances_done, file=file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))
+    
+    print(paste0("Species ", i, " complete"))
     
   }
 }
 
 #6. Final object ----
-abundances <- rbindlist(abundance_out) |> 
+abundances <- abundances_done |> 
   left_join(species) |> 
   dplyr::select(id, scientific, english, region, year, population_estimate, population_lower, population_upper, density_estimate, density_lower, density_upper)
 
@@ -314,4 +319,4 @@ out <- list(metadata, species, regions, variables, importance, validation, abund
 names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation", "abundances")
 
 #2. Save ----
-write.xlsx(out, file = file.path(root, "output", "12_BAMV5-results.xlsx"))
+write.xlsx(out, file = file.path(root, "output", "13_summary", "BAMV5-results.xlsx"))
