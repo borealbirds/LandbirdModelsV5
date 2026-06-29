@@ -140,7 +140,7 @@ brt_mosaic <- function(i) {
             "usa9",
             "usa10",
             "usa11",
-            "use12",
+            "usa12",
             "usa13",
             "usa14",
             "usa23",
@@ -242,6 +242,7 @@ brt_mosaic <- function(i) {
 #INVENTORY####
 
 #1. Get list of predictions----
+#remove SOGR in BCR10
 predicted <- data.frame(
   file.pred = list.files(
     file.path(root, "output", "07_predictions"),
@@ -258,7 +259,8 @@ predicted <- data.frame(
     year = as.numeric(year),
     path.pred = file.path(root, "output", "07_predictions", file.pred)
   ) |>
-  dplyr::select(-folder, -file)
+  dplyr::select(-folder, -file) |> 
+  dplyr::filter(!(spp=="SOGR" & bcr %in% c("can10")))
 
 #2. Get list of mosaics completed----
 mosaiced <- data.frame(
@@ -281,7 +283,8 @@ mosaiced <- data.frame(
 #3. Make the to-do list----
 todo <- birdlist |>
   pivot_longer(-bcr, names_to = "spp", values_to = "use") |>
-  dplyr::filter(use == TRUE) |>
+  dplyr::filter(use == TRUE,
+                !(spp=="SOGR" & bcr %in% c("can10"))) |>
   mutate(
     Canada = ifelse(str_sub(bcr, 1, 3) == "can", 1, 0),
     Alaska = ifelse(
@@ -330,33 +333,15 @@ if(nrow(loop)==0){
 
 #MOSAIC####
 
-#1. Make a function for debugging ----
-safe_fun <- function(i){
-  tryCatch({
-    result <- brt_mosaic(i)
-    list(ok=TRUE, result=result)
-  },
-  error=function(e){
-    list(
-      ok=FALSE,
-      error = conditionMessage(e),
-      traceback = paste(sys.calls(), collapse = "\n"),
-      worker = Sys.info()[["nodename"]],
-      pid = Sys.getpid()
-    )
-  }
-  )
-}
-
-#2. Export objects to clusters----
+#1. Export objects to clusters----
 tmpcl <- clusterExport(
   cl,
-  c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root", "akbox", "safe_fun")
+  c("loop", "zeros", "predicted", "bcr", "crs", "brt_mosaic", "root", "akbox")
 )
 
 #3. Run BRT function in parallel----
 print("* Mosaicing predictions *")
-mosaics <- parLapply(cl, X = 1:nrow(loop), fun = safe_fun)
+mosaics <- parLapply(cl, X = 1:nrow(loop), fun = brt_mosaic)
 
 #CONCLUDE####
 
