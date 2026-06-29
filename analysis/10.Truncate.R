@@ -28,7 +28,7 @@ library(sf)
 library(parallel)
 
 #2. Determine if on local or cluster----
-cc <- TRUE
+cc <- FALSE
 
 #3. Set nodes for local vs cluster----
 if(cc){ cores <- 32}
@@ -108,8 +108,8 @@ brt_truncate <- function(i){
   }
   
   #4. Read in the predictions----
-  rast.i <- try(rast(files.i$predpath)) |> 
-    terra::project("EPSG:3978", res=1000)
+  rast.i <- try(rast(files.i$predpath) |> 
+                  terra::project("EPSG:3978", res=1000))
   
   if(inherits(rast.i, "try-error")){return(NULL)}
   
@@ -120,7 +120,7 @@ brt_truncate <- function(i){
   
   #truncate
   truncate.i <- clamp(rast.i, upper = qsp, values=TRUE)
-  #rm(rast.i)
+  rm(rast.i)
   
   #6. Secondary upper truncation ----
   
@@ -131,6 +131,7 @@ brt_truncate <- function(i){
   if(is.na(q99)){return(NULL)}
   
   truncate2.i <- clamp(truncate.i, upper=q99, values=TRUE)
+  rm(truncate.i)
   
   #7. Mask outside range----
   range.i <- rast(file.path(root, "gis", "ranges", paste0(spp.i, ".tif"))) |>
@@ -138,12 +139,14 @@ brt_truncate <- function(i){
   
   mask.i <- truncate2.i * range.i
   mask.i[is.na(mask.i)] <- 0
+  rm(range.i, truncate2.i)
   
   #8. Mask by water and NA layer ----
   out.i <- mask.i |> 
     crop(vect(sf.i), mask=TRUE) |> 
     crop(vect(limit), mask=TRUE) |> 
     mask(vect(water), inverse=TRUE)
+  rm(mask.i)
   
   #9. Add some attributes----
   attr(out.i, "species") <- spp.i
