@@ -28,6 +28,7 @@
 #stratification across years for year-specific validation.
 #Explore tidy models
 #Truncate counts by 99.9% quantile at species level - some models don't converge otherwise
+#Setting species list for within-BCR boundaries, not including buffer (e.g., SOGR from V5 should have been excluded for BCR10)
 
 #PREAMBLE############################
 
