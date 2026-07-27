@@ -89,7 +89,8 @@ brt_package <- function(i){
   samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
     project("EPSG:3978", res=1000) |> 
     crop(vect(sf.i), mask=TRUE) |> 
-    resample(mn.i)
+    resample(mn.i) |> 
+    mask(mn.i)
   
   #14. Stack again ----
   out.i <- c(mn.i, sd.i, samplemn.i)
