@@ -31,19 +31,27 @@ library(parallel)
 cc <- FALSE
 
 #3. Set nodes for local vs cluster----
-if(cc){ cores <- 32}
-if(!cc){ cores <- 2}
+if (cc) {
+  cores <- 32
+}
+if (!cc) {
+  cores <- 2
+}
 
 #4. Create and register clusters----
 print("* Creating clusters *")
 print(table(cores))
-cl <- makePSOCKcluster(cores, type="PSOCK")
+cl <- makePSOCKcluster(cores, type = "PSOCK")
 length(clusterCall(cl, function() Sys.info()[c("nodename", "machine")]))
 
 #5. Set root path----
 print("* Setting root file path *")
-if(cc){root <- "/scratch/ecknight/NationalModels"}
-if(!cc){root <- "G:/Shared drives/BAM_NationalModels5"}
+if (cc) {
+  root <- "/scratch/ecknight/NationalModels"
+}
+if (!cc) {
+  root <- "G:/Shared drives/BAM_NationalModels5"
+}
 
 #6. Load packages on clusters----
 print("* Loading packages on workers *")
@@ -52,105 +60,168 @@ tmpcl <- clusterEvalQ(cl, library(tidyverse))
 tmpcl <- clusterEvalQ(cl, library(terra))
 
 #7. Subunit polygons----
-bcr.country <- read_sf(file.path(root, "gis", "Subregions_Mosaics_EPSG3978.shp"))
+bcr.country <- read_sf(file.path(
+  root,
+  "gis",
+  "Subregions_Mosaics_EPSG3978.shp"
+))
 
 #FUNCTION###########
 
 #1. Set up the loop----
-brt_package <- function(i){
-  
+brt_package <- function(i) {
   spp.i <- loop$spp[i]
   year.i <- loop$year[i]
   bcr.i <- loop$bcr[i]
-  
+
   #2. Get the BCR boundary & correct water mask ----
-  sf.i <- bcr.country |> 
-    dplyr::filter(bcr==bcr.i)
-  
+  sf.i <- bcr.country |>
+    dplyr::filter(bcr == bcr.i)
+
   #4. Read in the predictions----
-  rast.i <- try(rast(file.path(root, "output", "10_truncated", spp.i, bcr.i,
-                               paste0(spp.i, "_", bcr.i, "_", year.i, ".tif"))))
-  
-  if(inherits(rast.i, "try-error")){return(NULL)}
+  rast.i <- try(rast(file.path(
+    root,
+    "output",
+    "10_truncated",
+    spp.i,
+    bcr.i,
+    paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")
+  )))
+
+  if (inherits(rast.i, "try-error")) {
+    return(NULL)
+  }
 
   #6. Calculate mean----
-  mn.i <- app(rast.i, mean, na.rm=TRUE)
-  
+  mn.i <- app(rast.i, mean, na.rm = TRUE)
+
   #8. Calculate sd----
-  sd.i <- app(rast.i, sd, na.rm=TRUE)
+  sd.i <- app(rast.i, sd, na.rm = TRUE)
 
   #12. Read in the sampling distance layers----
-  sample.i <- try(rast(file.path(root, "output", "09_sampling", spp.i,
-                                 paste0(spp.i, "_", bcr.i, "_", year.i, ".tif"))))
-  
-  if(inherits(sample.i, "try-error")){return(NULL)}
-  
+  sample.i <- try(rast(file.path(
+    root,
+    "output",
+    "09_sampling",
+    spp.i,
+    paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")
+  )))
+
+  if (inherits(sample.i, "try-error")) {
+    return(NULL)
+  }
+
   #13. Calculate mean sampling distance----
-  samplemn.i <- app(sample.i, mean, na.rm=TRUE) |> 
-    project("EPSG:3978", res=1000) |> 
-    crop(vect(sf.i), mask=TRUE) |> 
-    resample(mn.i) |> 
+  samplemn.i <- app(sample.i, mean, na.rm = TRUE) |>
+    project("EPSG:3978", res = 1000) |>
+    crop(vect(sf.i), mask = TRUE) |>
+    resample(mn.i) |>
     mask(mn.i)
-  
+
   #14. Stack again ----
   out.i <- c(mn.i, sd.i, samplemn.i)
   names(out.i) <- c("mean", "standard_deviation", "detection_distance")
-  
+
   #16. Add some attributes----
   attr(out.i, "species") <- spp.i
   attr(out.i, "subunit") <- bcr.i
   attr(out.i, "year") <- year.i
-  
+
   #17. Make folders as needed-----
-  if(!(file.exists(file.path(root, "output", "11_packaged", spp.i)))){
+  if (!(file.exists(file.path(root, "output", "11_packaged", spp.i)))) {
     dir.create(file.path(root, "output", "11_packaged", spp.i))
   }
-  
-  if(!(file.exists(file.path(root, "output", "11_packaged", spp.i, bcr.i)))){
+
+  if (!(file.exists(file.path(root, "output", "11_packaged", spp.i, bcr.i)))) {
     dir.create(file.path(root, "output", "11_packaged", spp.i, bcr.i))
   }
-  
+
   #1.8 Save----
-  writeRaster(out.i, filename = file.path(root, "output", "11_packaged", spp.i, bcr.i, paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")), overwrite=TRUE, datatype = "FLT4S")
-  
+  writeRaster(
+    out.i,
+    filename = file.path(
+      root,
+      "output",
+      "11_packaged",
+      spp.i,
+      bcr.i,
+      paste0(spp.i, "_", bcr.i, "_", year.i, ".tif")
+    ),
+    overwrite = TRUE,
+    datatype = "FLT4S"
+  )
 }
 
 #INVENTORY#########
 
 #1. Get the list of sampling layers----
-sampled <- data.frame(file = list.files(file.path(root, "output", "09_sampling"), pattern="*.tif", recursive = TRUE)) |>
-  separate(file, into=c("spf", "spp", "bcr", "year", "filetype"), remove=FALSE) |>
-  mutate(year = as.numeric(year),
-         path = file.path(root, "output", "09_sampling", file)) |>
-  dplyr::filter(year!=1985) |>
+sampled <- data.frame(
+  file = list.files(
+    file.path(root, "output", "09_sampling"),
+    pattern = "*.tif",
+    recursive = TRUE
+  )
+) |>
+  separate(
+    file,
+    into = c("spf", "spp", "bcr", "year", "filetype"),
+    remove = FALSE
+  ) |>
+  mutate(
+    year = as.numeric(year),
+    path = file.path(root, "output", "09_sampling", file)
+  ) |>
+  dplyr::filter(year != 1985) |>
   dplyr::select(-filetype, -file, -spf)
 
 #2. Get the list of truncated models ----
-truncated <- data.frame(file = list.files(file.path(root, "output", "10_truncated"), pattern="*.tif", recursive=TRUE))  |> 
-  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
-  mutate(year = as.numeric(year)) |> 
+truncated <- data.frame(
+  file = list.files(
+    file.path(root, "output", "10_truncated"),
+    pattern = "*.tif",
+    recursive = TRUE
+  )
+) |>
+  separate(
+    file,
+    into = c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"),
+    remove = FALSE
+  ) |>
+  mutate(year = as.numeric(year)) |>
   dplyr::select(-filetype)
 
 #2. Check which have been run----
-done <- data.frame(file = list.files(file.path(root, "output", "11_packaged"), pattern="*.tif", recursive=TRUE))  |> 
-  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |> 
-  mutate(year = as.numeric(year)) |> 
-  dplyr::select(-filetype) |> 
-  dplyr::filter(sppfolder!="SamplingReliability")
+done <- data.frame(
+  file = list.files(
+    file.path(root, "output", "11_packaged"),
+    pattern = "*.tif",
+    recursive = TRUE
+  )
+) |>
+  separate(
+    file,
+    into = c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"),
+    remove = FALSE
+  ) |>
+  mutate(year = as.numeric(year)) |>
+  dplyr::select(-filetype) |>
+  dplyr::filter(sppfolder != "Sampling")
 
 #3. Make the todo list----
 #remove species that we are omitting for now
-loop <- sampled |> 
-  inner_join(truncated) |> 
-  anti_join(done) |> 
+loop <- sampled |>
+  inner_join(truncated) |>
+  anti_join(done) |>
   arrange(-year, spp, bcr)
 
 #4. Shut down if nothing left to do----
-if(nrow(loop)==0){
+if (nrow(loop) == 0) {
   print("* Shutting down clusters *")
   stopCluster(cl)
-  
-  if(cc){ q() }
+
+  if (cc) {
+    q()
+  }
 }
 
 #PACKAGE########
@@ -160,9 +231,7 @@ tmpcl <- clusterExport(cl, c("root", "loop", "bcr.country"))
 
 #2. Run BRT function in parallel----
 print("* Packaging *")
-packaged <- parLapply(cl,
-                       X=1:nrow(loop),
-                       fun=brt_package)
+packaged <- parLapply(cl, X = 1:nrow(loop), fun = brt_package)
 
 #CONCLUDE####
 
@@ -170,4 +239,6 @@ packaged <- parLapply(cl,
 print("* Shutting down clusters *")
 stopCluster(cl)
 
-if(cc){ q() }
+if (cc) {
+  q()
+}
