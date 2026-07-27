@@ -21,7 +21,7 @@ bcr.all <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |>
   st_transform("EPSG:3978")
 
 #4. Make a todo list ----
-loop <- expand.grid(bcr = bcr.all$bcr, seq(1990, 2020, 5))
+loop <- expand.grid(bcr = bcr.all$bcr, year=seq(1990, 2020, 5))
 
 #PACKAGE############
 
@@ -54,12 +54,12 @@ for(i in 1:nrow(loop)){
   names(out) <- c("extrapolation", "samplingdensity_train", "samplingdensity_test")
   
   #5. Make folder as needed ----
-  if(!(file.exists(file.path(root, "output", "10_packaged","Sampling", bcr.i)))){
-    dir.create(file.path(root, "output", "10_packaged", "Sampling", bcr.i))
+  if(!(file.exists(file.path(root, "output", "11_packaged", "Sampling", bcr.i)))){
+    dir.create(file.path(root, "output", "11_packaged", "Sampling", bcr.i))
   }
   
   #6. Save
-  writeRaster(out, file.path(root, "output", "10_packaged", "Sampling", bcr.i, paste0(bcr.i, "_", year.i, ".tif")), overwrite=T)
+  writeRaster(out, file.path(root, "output", "11_packaged", "Sampling", bcr.i, paste0(bcr.i, "_", year.i, ".tif")), overwrite=T)
   
   cat(i, "  ")
   
