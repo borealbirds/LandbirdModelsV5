@@ -27,7 +27,7 @@ library(parallel) #parallelize
 root <- "G:/Shared drives/BAM_NationalModels5"
 
 #3. Restrict scientific notation----
-options(scipen=9999)
+options(scipen = 9999)
 
 #4. Load dataset ----
 load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
@@ -35,234 +35,423 @@ load(file.path(root, "data", "04_NM5.0_data_stratify.Rdata"))
 #SPECIES###########
 
 #1. Get WT list ----
-species.wt <- read.csv(file.path(root, "data", "lookups", "lu_species.csv")) |> 
-  mutate(scientific = paste(species_genus, species_name)) |> 
-  rename(id = species_code,
-         english = species_common_name,
-         french = species_french_name,
-         family = species_family) |>
+species.wt <- read.csv(file.path(root, "data", "lookups", "lu_species.csv")) |>
+  mutate(scientific = paste(species_genus, species_name)) |>
+  rename(
+    id = species_code,
+    english = species_common_name,
+    french = species_french_name,
+    family = species_family
+  ) |>
   dplyr::select(id, scientific, english, french, family)
 
 #2. Get list of packaged species----
-packaged <- data.frame(file = list.files(file.path(root, "output", "11_packaged"), pattern="*.tif", recursive=TRUE))  |> 
-  separate(file, into=c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"), remove=FALSE) |>  
-  mutate(year = as.numeric(year)) |> 
-  dplyr::filter(sppfolder!="extrapolation")
+packaged <- data.frame(
+  file = list.files(
+    file.path(root, "output", "11_packaged"),
+    pattern = "*.tif",
+    recursive = TRUE
+  )
+) |>
+  separate(
+    file,
+    into = c("sppfolder", "bcrfolder", "spp", "bcr", "year", "filetype"),
+    remove = FALSE
+  ) |>
+  mutate(year = as.numeric(year)) |>
+  dplyr::filter(sppfolder != "extrapolation")
 
 #3. Get list of validatd species----
-validated <- data.frame(file = list.files(file.path(root, "output", "12_validation"), pattern=".Rdata")) |> 
-  separate(file, into=c("spp", "filetype")) |> 
+validated <- data.frame(
+  file = list.files(
+    file.path(root, "output", "12_validation"),
+    pattern = ".Rdata"
+  )
+) |>
+  separate(file, into = c("spp", "filetype")) |>
   dplyr::select(spp)
 
 #4. Get list of species ready to summarize----
-spp <- packaged |> 
-  dplyr::select(spp) |> 
-  unique() |> 
+spp <- packaged |>
+  dplyr::select(spp) |>
+  unique() |>
   inner_join(validated)
 
 #5. Join to species info from v4 ----
-species <- species.wt |> 
-  inner_join(spp |> 
-               rename(id = spp)) |> 
-  dplyr::select(all_of(colnames(species.wt))) |> 
+species <- species.wt |>
+  inner_join(
+    spp |>
+      rename(id = spp)
+  ) |>
+  dplyr::select(all_of(colnames(species.wt))) |>
   arrange(id)
 
 #6. Check against to do list ----
-missing <- data.frame(id=colnames(dplyr::select(birdlist, -bcr))) |> 
+missing <- data.frame(id = colnames(dplyr::select(birdlist, -bcr))) |>
   anti_join(species)
 nrow(missing)
 
 #REGIONS############
 
 #1. Get BCR shapefile for modelling ----
-bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |> 
+bcr_mod <- read_sf(file.path(root, "gis", "Subregions_unbuffered.shp")) |>
   st_transform("EPSG:5072")
 
 #2. Get original BCR shapefile for BCR names ----
-bcr_og <- read_sf(file.path(root, "Regions", "archived", "BCR_Terrestrial_master.shp")) |> 
-  st_drop_geometry() |> 
-  mutate(name = str_to_title(BCRNAME)) |> 
-  dplyr::select(BCR, name) |> 
-  unique() |> 
+bcr_og <- read_sf(file.path(
+  root,
+  "Regions",
+  "archived",
+  "BCR_Terrestrial_master.shp"
+)) |>
+  st_drop_geometry() |>
+  mutate(name = str_to_title(BCRNAME)) |>
+  dplyr::select(BCR, name) |>
+  unique() |>
   rename(bcr_link = BCR)
 
 #3. Put together ----
-bcr <- bcr_mod |> 
-  st_drop_geometry() |> 
-  rename(region = bcr,
-         bcr = subUnit) |> 
-  mutate(country = ifelse(country=="can", "Canada", "USA"),
-         area_km2 = round(as.numeric(st_area(bcr_mod))/1000000),
-         bcr_link = case_when(bcr %in% c(40:42) ~ 4,
-                              bcr %in% c(60:62) ~ 6,
-                              bcr %in% c(70:72) ~ 7,
-                              bcr %in% c(80:82) ~ 8,
-                              !is.na(bcr) ~ bcr)) |> 
-  left_join(bcr_og) |> 
-  mutate(name = case_when(bcr==41423 ~ "Northwestern Interior Forest & Artic Plains And Mountains",
-                          !is.na(name) ~ name),
-         type = "Single model") |> 
+bcr <- bcr_mod |>
+  st_drop_geometry() |>
+  rename(region = bcr, bcr = subUnit) |>
+  mutate(
+    country = ifelse(country == "can", "Canada", "USA"),
+    area_km2 = round(as.numeric(st_area(bcr_mod)) / 1000000),
+    bcr_link = case_when(
+      bcr %in% c(40:42) ~ 4,
+      bcr %in% c(60:62) ~ 6,
+      bcr %in% c(70:72) ~ 7,
+      bcr %in% c(80:82) ~ 8,
+      !is.na(bcr) ~ bcr
+    )
+  ) |>
+  left_join(bcr_og) |>
+  mutate(
+    name = case_when(
+      bcr ==
+        41423 ~ "Northwestern Interior Forest & Artic Plains And Mountains",
+      !is.na(name) ~ name
+    ),
+    type = "Single model"
+  ) |>
   dplyr::select(region, type, country, bcr, name, area_km2)
 
 #4. Get sample sizes -----
-surveys <- bcrlist |> 
-  pivot_longer(-id, names_to="region", values_to="use") |> 
+surveys <- bcrlist |>
+  pivot_longer(-id, names_to = "region", values_to = "use") |>
   dplyr::filter(use > 0)
 
-total.surveys <- surveys |> 
-  group_by(region) |> 
-  summarize(total_surveys = n()) |> 
+total.surveys <- surveys |>
+  group_by(region) |>
+  summarize(total_surveys = n()) |>
   ungroup()
 
-boot.surveys <- surveys |> 
-  dplyr::filter(id %in% bootlist$b1) |> 
-  group_by(region) |> 
-  summarize(bootstrap_surveys = n()) |> 
+boot.surveys <- surveys |>
+  dplyr::filter(id %in% bootlist$b1) |>
+  group_by(region) |>
+  summarize(bootstrap_surveys = n()) |>
   ungroup()
 
 bcr.surveys <- full_join(total.surveys, boot.surveys)
 
-surveys.ca <- data.frame(region = "Canada",
-                         total_surveys = nrow(surveys[str_sub(surveys$region, 1, 3)=="can",]),
-                         bootstrap_surveys = sum(bcr.surveys[str_sub(bcr.surveys$region, 1, 3)=="can",]$bootstrap_surveys))
+surveys.ca <- data.frame(
+  region = "Canada",
+  total_surveys = nrow(surveys[str_sub(surveys$region, 1, 3) == "can", ]),
+  bootstrap_surveys = sum(
+    bcr.surveys[str_sub(bcr.surveys$region, 1, 3) == "can", ]$bootstrap_surveys
+  )
+)
 
-surveys.ak <- data.frame(region = "Alaska",
-                         total_surveys = nrow(surveys[surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),]),
-                         bootstrap_surveys = sum(bcr.surveys[bcr.surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),]$bootstrap_surveys))
+surveys.ak <- data.frame(
+  region = "Alaska",
+  total_surveys = nrow(surveys[
+    surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),
+  ]),
+  bootstrap_surveys = sum(
+    bcr.surveys[
+      bcr.surveys$region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5"),
+    ]$bootstrap_surveys
+  )
+)
 
-surveys.48 <- data.frame(region = "Lower48",
-                         total_surveys = nrow(surveys[surveys$region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28"),]),
-                         bootstrap_surveys = sum(bcr.surveys[bcr.surveys$region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28"),]$bootstrap_surveys))
+surveys.48 <- data.frame(
+  region = "Lower48",
+  total_surveys = nrow(surveys[
+    surveys$region %in%
+      c(
+        "usa5",
+        "usa9",
+        "usa10",
+        "usa11",
+        "usa12",
+        "usa13",
+        "usa14",
+        "usa23",
+        "usa28"
+      ),
+  ]),
+  bootstrap_surveys = sum(
+    bcr.surveys[
+      bcr.surveys$region %in%
+        c(
+          "usa5",
+          "usa9",
+          "usa10",
+          "usa11",
+          "usa12",
+          "usa13",
+          "usa14",
+          "usa23",
+          "usa28"
+        ),
+    ]$bootstrap_surveys
+  )
+)
 
 all.surveys <- rbind(bcr.surveys, surveys.ca, surveys.48, surveys.ak)
 
 
 #4. Make mosaic list ----
-area.ca <- bcr |> 
-  dplyr::filter(country=="Canada") |> 
+area.ca <- bcr |>
+  dplyr::filter(country == "Canada") |>
   summarize(area = sum(area_km2))
 
-area.ak <- bcr |> 
-  dplyr::filter(region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |> 
+area.ak <- bcr |>
+  dplyr::filter(region %in% c("usa41423", "usa2", "usa40", "usa43", "usa5")) |>
   summarize(area = sum(area_km2))
 
-area.48 <- bcr |> 
-  dplyr::filter(region %in% c("usa5", "usa9", "usa10", "usa11", "usa12", "usa13", "usa14", "usa23", "usa28")) |> 
+area.48 <- bcr |>
+  dplyr::filter(
+    region %in%
+      c(
+        "usa5",
+        "usa9",
+        "usa10",
+        "usa11",
+        "usa12",
+        "usa13",
+        "usa14",
+        "usa23",
+        "usa28"
+      )
+  ) |>
   summarize(area = sum(area_km2))
 
-mosaic <- data.frame(region=c("Canada", "Alaska", "Lower48"),
-                     type = rep("Mosaic", 3),
-                     country=c("Canada", "USA", "USA"),
-                     bcr = rep(NA, 3),
-                     name = c("Canada mosaic", "Alaska mosaic", "Lower 48 hemiboreal mosaic"),
-                     area_km2 = c(area.ca$area, area.ak$area, area.48$area))
+mosaic <- data.frame(
+  region = c("Canada", "Alaska", "Lower48"),
+  type = rep("Mosaic", 3),
+  country = c("Canada", "USA", "USA"),
+  bcr = rep(NA, 3),
+  name = c("Canada mosaic", "Alaska mosaic", "Lower 48 hemiboreal mosaic"),
+  area_km2 = c(area.ca$area, area.ak$area, area.48$area)
+)
 
 #5. Put together ----
-regions <- rbind(bcr, mosaic) |> 
+regions <- rbind(bcr, mosaic) |>
   full_join(all.surveys)
 
 #VARIABLES########
 
 #1. Get it from google drive----
-variables <- read.csv(file.path(root, "data", "Lookups", "covariate_metadata.csv"))
+variables <- read.csv(file.path(
+  root,
+  "data",
+  "Lookups",
+  "covariate_metadata.csv"
+))
 
 #IMPORTANCE#########
 
-#1. Get it from BAMexploreR ----
-imp_bam <- bam_predictor_importance_v5
+#1. Load the current release object----
+# Load this explicitly instead of using the copy bundled with the installed
+# BAMexploreR package, which may lag behind the current model release.
+importance_path <- file.path(
+  root,
+  "distribution",
+  "predictors",
+  "bam_predictor_importance_v5.rda"
+)
+
+if (!file.exists(importance_path)) {
+  stop("Predictor-importance file not found: ", importance_path)
+}
+
+importance_env <- new.env(parent = emptyenv())
+importance_objects <- load(importance_path, envir = importance_env)
+
+if (!"bam_predictor_importance_v5" %in% importance_objects) {
+  stop(
+    "Expected object `bam_predictor_importance_v5` was not found in: ",
+    importance_path
+  )
+}
+
+imp_bam <- importance_env[["bam_predictor_importance_v5"]]
+
+required_importance_columns <- c(
+  "spp",
+  "bcr",
+  "predictor",
+  "mean_rel_inf",
+  "sd_rel_inf"
+)
+missing_importance_columns <- setdiff(
+  required_importance_columns,
+  names(imp_bam)
+)
+
+if (length(missing_importance_columns) > 0) {
+  stop(
+    "Predictor-importance object is missing required columns: ",
+    paste(missing_importance_columns, collapse = ", ")
+  )
+}
+
+# Report species that would otherwise disappear silently in the join below.
+missing_importance_species <- species |>
+  dplyr::select(id) |>
+  anti_join(
+    imp_bam |>
+      distinct(spp),
+    by = c("id" = "spp")
+  )
+
+if (nrow(missing_importance_species) > 0) {
+  warning(
+    "No predictor-importance data found for: ",
+    paste(missing_importance_species$id, collapse = ", ")
+  )
+}
 
 #2. Wrangle ----
-importance <- imp_bam |> 
-  rename(id = spp,
-         region = bcr,
-         variable = predictor,
-         importance_mean = mean_rel_inf,
-         importance_sd = sd_rel_inf) |> 
-  inner_join(species) |> 
-  dplyr::select(id, scientific, english, region, variable, importance_mean, importance_sd) |> 
+importance <- imp_bam |>
+  rename(
+    id = spp,
+    region = bcr,
+    variable = predictor,
+    importance_mean = mean_rel_inf,
+    importance_sd = sd_rel_inf
+  ) |>
+  inner_join(species) |>
+  mutate(
+    importance_mean = round(importance_mean, 3),
+    importance_sd = round(importance_sd, 3)
+  ) |>
+  dplyr::select(
+    id,
+    scientific,
+    english,
+    region,
+    variable,
+    importance_mean,
+    importance_sd
+  ) |>
   arrange(id, region, -importance_mean)
-  
+
 #VALIDATION#############################
 
 #1. Set up loop----
 eval.out <- list()
-for(i in 1:nrow(spp)){
-  
+for (i in 1:nrow(spp)) {
   species.i <- spp$spp[i]
-  
+
   #2. Load validation output ----
   load(file.path(root, "output", "12_validation", paste0(species.i, ".Rdata")))
-  
-  #4. Summarize----
-  eval.out[[i]] <- rbindlist(eval, use.names = TRUE, idcol = "region") |> 
-#    dplyr::select(-boot) |> 
-    mutate(pseudo_R2 = ifelse(pseudo_R2 < 0, 0, pseudo_R2)) |> 
-    group_by(region) |> 
-    summarize(prevalence = mean(prevalence),
-           AUC_init = mean(AUC_init),
-           AUC_final = mean(AUC_final),
-           pseudo_R2 = mean(pseudo_R2)) |> 
-    ungroup() |> 
-    left_join(rbindlist(oc, idcol = "region") |> 
-                dplyr::select(region, occc, oprec, oaccu)) |> 
-    mutate(id = species.i)
-  
-  cat(i, " ")
 
+  #4. Summarize----
+  eval.out[[i]] <- rbindlist(eval, use.names = TRUE, idcol = "region") |>
+    #    dplyr::select(-boot) |>
+    mutate(pseudo_R2 = ifelse(pseudo_R2 < 0, 0, pseudo_R2)) |>
+    group_by(region) |>
+    summarize(
+      prevalence = round(mean(prevalence), 3),
+      AUC_init = round(mean(AUC_init), 3),
+      AUC_final = round(mean(AUC_final), 3),
+      pseudo_R2 = round(mean(pseudo_R2), 3)
+    ) |>
+    ungroup() |>
+    left_join(
+      rbindlist(oc, idcol = "region") |>
+        dplyr::select(region, occc, oprec, oaccu)
+    ) |>
+    mutate(
+      id = species.i,
+      occc = round(occc, 3),
+      oprec = round(oprec, 3),
+      oaccu = round(oaccu, 3)
+    )
+
+  cat(i, " ")
 }
 
 #5. Final object----
-validation <- rbindlist(eval.out, fill=TRUE) |> 
-  inner_join(species) |> 
-  dplyr::select(id, scientific, english, region, prevalence, AUC_init, AUC_final, pseudo_R2, occc, oprec, oaccu)
+validation <- rbindlist(eval.out, fill = TRUE) |>
+  inner_join(species) |>
+  dplyr::select(
+    id,
+    scientific,
+    english,
+    region,
+    prevalence,
+    AUC_init,
+    AUC_final,
+    pseudo_R2,
+    occc,
+    oprec,
+    oaccu
+  )
 
 #ABUNDANCES##########
 
 #1. Set up the function ----
-pop_sum <- function(i){
-  
+pop_sum <- function(i) {
   t <- rast(file.path(root, "output", "10_truncated", todo_i$file[i]))
-  
+
   #estimate population
-  abun <- global(t * 1 * 100, sum, na.rm=TRUE)[,1]
-  
+  abun <- global(t * 1 * 100, sum, na.rm = TRUE)[, 1]
+
   #estimate density
-  mn <- global(t, mean, na.rm=TRUE)[,1]
-  
+  mn <- global(t, mean, na.rm = TRUE)[, 1]
+
   #results
   out <- data.frame(
     id = todo_i$id[i],
     region = todo_i$region[i],
     year = todo_i$year[i],
-    population_estimate = round(median(abun, na.rm=TRUE)/1e6, 3),
-    population_lower = round(quantile(abun, 0.05, na.rm=TRUE)/1e6, 3),
-    population_upper = round(quantile(abun, 0.95, na.rm=TRUE)/1e6, 3),
-    density_estimate = round(median(mn, na.rm=TRUE), 3),
-    density_lower = round(quantile(mn, 0.05, na.rm=TRUE), 3),
-    density_upper = round(quantile(mn, 0.95, na.rm=TRUE), 3)
+    population_estimate = round(median(abun, na.rm = TRUE) / 1e6, 3),
+    population_lower = round(quantile(abun, 0.05, na.rm = TRUE) / 1e6, 3),
+    population_upper = round(quantile(abun, 0.95, na.rm = TRUE) / 1e6, 3),
+    density_estimate = round(median(mn, na.rm = TRUE), 3),
+    density_lower = round(quantile(mn, 0.05, na.rm = TRUE), 3),
+    density_upper = round(quantile(mn, 0.95, na.rm = TRUE), 3)
   )
-  
+
   return(out)
-  
 }
 
 #3. List of models to run ----
-trunc <- data.frame(file = list.files(file.path(root, "output", "10_truncated"), recursive = TRUE)) |> 
-  separate(file, into=c("sppfolder", "regfolder", "id", "region", "year", "filetype"), remove=FALSE) |> 
+trunc <- data.frame(
+  file = list.files(file.path(root, "output", "10_truncated"), recursive = TRUE)
+) |>
+  separate(
+    file,
+    into = c("sppfolder", "regfolder", "id", "region", "year", "filetype"),
+    remove = FALSE
+  ) |>
   dplyr::select(-sppfolder, -regfolder, -filetype)
-  
-todo <- trunc |> 
-  inner_join(species) |> 
+
+todo <- trunc |>
+  inner_join(species) |>
   dplyr::select(file, region, id, year)
 
 #4. Check for existing output ----
-if(file.exists(file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))){
-  
-  load(file.path(root, "output", "13_summary", "BAMV5-abundance.RData")) |> 
+if (
+  file.exists(file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))
+) {
+  load(file.path(root, "output", "13_summary", "BAMV5-abundance.RData")) |>
     unique()
   loop <- anti_join(todo, abundances_done)
   spp <- dplyr::filter(species, id %in% loop$id)
-  
 } else {
   abundances_done <- data.frame()
   loop <- todo
@@ -273,50 +462,85 @@ spp.yr <- loop |>
   dplyr::select(id) |>
   unique()
 
-if(nrow(spp.yr) > 0){
-  for(i in 1:nrow(spp.yr)){
-    
-    todo_i <- dplyr::filter(loop, id==spp.yr$id[i])
-    
+if (nrow(spp.yr) > 0) {
+  for (i in 1:nrow(spp.yr)) {
+    todo_i <- dplyr::filter(loop, id == spp.yr$id[i])
+
     #7 workers for 7 years of predictions
-    cl <- makePSOCKcluster(5, type="PSOCK")
+    cl <- makePSOCKcluster(5, type = "PSOCK")
     tmpcl <- clusterEvalQ(cl, library(tidyverse))
     tmpcl <- clusterEvalQ(cl, library(terra))
     tmpcl <- clusterEvalQ(cl, library(sf))
     tmpcl <- clusterExport(cl, c("bcr_mod", "pop_sum", "root", "todo_i"))
-    
-    abundance_i <- parLapply(cl,
-                             X=1:nrow(todo_i),
-                             fun=pop_sum)
-    
-    abundances_done <- rbind(abundances_done, rbindlist(abundance_i)) |> 
+
+    abundance_i <- parLapply(cl, X = 1:nrow(todo_i), fun = pop_sum)
+
+    abundances_done <- rbind(abundances_done, rbindlist(abundance_i)) |>
       unique()
-    
+
     stopCluster(cl)
     gc()
-    
-    save(abundances_done, file=file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))
-    
+
+    save(
+      abundances_done,
+      file = file.path(root, "output", "13_summary", "BAMV5-abundance.RData")
+    )
+
     print(paste0("Species ", i, " complete"))
-    
   }
 }
 
 #6. Final object ----
-abundances <- abundances_done |> 
-  left_join(species) |> 
-  dplyr::select(id, scientific, english, region, year, population_estimate, population_lower, population_upper, density_estimate, density_lower, density_upper)
+abundances <- abundances_done |>
+  left_join(species) |>
+  dplyr::select(
+    id,
+    scientific,
+    english,
+    region,
+    year,
+    population_estimate,
+    population_lower,
+    population_upper,
+    density_estimate,
+    density_lower,
+    density_upper
+  )
 
 #METADATA#########
 
 #1. Get metadata -----
-metadata <- read.csv(file.path(root, "data", "Lookups", "BAMv5-results-metadata.csv"))
+metadata <- read.csv(file.path(
+  root,
+  "data",
+  "Lookups",
+  "BAMv5-results-metadata.csv"
+))
 
 #PACKAGE#########
 
 #1. Put it together ----
-out <- list(metadata, species, regions, variables, importance, validation, abundances)
-names(out) <- c("metadata", "species", "regions", "variables", "importance", "validation", "abundances")
+out <- list(
+  metadata,
+  species,
+  regions,
+  variables,
+  importance,
+  validation,
+  abundances
+)
+names(out) <- c(
+  "metadata",
+  "species",
+  "regions",
+  "variables",
+  "importance",
+  "validation",
+  "abundances"
+)
 
 #2. Save ----
-write.xlsx(out, file = file.path(root, "output", "13_summary", "BAMV5-results.xlsx"))
+write.xlsx(
+  out,
+  file = file.path(root, "output", "13_summary", "BAMV5-results.xlsx")
+)
