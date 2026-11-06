@@ -26,7 +26,7 @@ input <- file.path(root, "output", "06_bootstraps")
 output <- file.path(root, "output", "13_predictor_importance")
 output_file <- file.path(
   output,
-  "BAMV5-predictor-importance-bootstrap.rds"
+  "bam_predictor_boot_v5.rda"
 )
 
 if (!dir.exists(input)) {
@@ -154,19 +154,65 @@ if (n_workers > 1) {
   importance_list <- lapply(model_files, extract_model_importance)
 }
 
-bam_predictor_importance_bootstrap_v5 <- importance_list |>
+native_importance <- importance_list |>
   bind_rows() |>
-  arrange(spp, region, boot, desc(rel_inf)) |>
-  as.data.frame()
+  arrange(spp, region, boot, desc(rel_inf))
 
 rm(importance_list)
 gc()
 
+#4. Match the established bam_predictor_boot_v5 schema----
+metadata <- BAMexploreR::predictor_metadata |>
+  dplyr::filter(version == "v5") |>
+  dplyr::select(predictor, predictor_class) |>
+  distinct()
+
+metadata_keys <- tolower(metadata$predictor)
+
+if (anyDuplicated(metadata_keys)) {
+  stop("V5 predictor metadata contains case-insensitive duplicate names.")
+}
+
+canonical_predictor <- setNames(metadata$predictor, metadata_keys)
+
+bam_predictor_boot_v5 <- native_importance |>
+  mutate(
+    predictor = dplyr::coalesce(
+      unname(canonical_predictor[tolower(predictor)]),
+      predictor
+    )
+  ) |>
+  left_join(metadata, by = "predictor") |>
+  transmute(
+    spp,
+    bcr = region,
+    boot = as.integer(boot),
+    predictor,
+    predictor_class,
+    rel.inf = rel_inf
+  ) |>
+  arrange(spp, bcr, boot, desc(rel.inf)) |>
+  as.data.frame()
+
+rm(native_importance)
+
+if (anyNA(bam_predictor_boot_v5$predictor_class)) {
+  missing_classes <- bam_predictor_boot_v5 |>
+    dplyr::filter(is.na(predictor_class)) |>
+    distinct(predictor) |>
+    pull(predictor)
+
+  stop(
+    "Missing predictor classes for: ",
+    paste(missing_classes, collapse = ", ")
+  )
+}
+
 #VALIDATE############################
 
 #1. Confirm each model-bootstrap-predictor row is unique----
-duplicate_rows <- bam_predictor_importance_bootstrap_v5 |>
-  count(spp, region, boot, predictor) |>
+duplicate_rows <- bam_predictor_boot_v5 |>
+  count(spp, bcr, boot, predictor) |>
   dplyr::filter(n > 1)
 
 if (nrow(duplicate_rows) > 0) {
@@ -174,9 +220,9 @@ if (nrow(duplicate_rows) > 0) {
 }
 
 #2. Confirm relative influence sums to 100 within every bootstrap----
-invalid_totals <- bam_predictor_importance_bootstrap_v5 |>
-  group_by(spp, region, boot) |>
-  summarize(total = sum(rel_inf), .groups = "drop") |>
+invalid_totals <- bam_predictor_boot_v5 |>
+  group_by(spp, bcr, boot) |>
+  summarize(total = sum(rel.inf), .groups = "drop") |>
   dplyr::filter(abs(total - 100) > 1e-8)
 
 if (nrow(invalid_totals) > 0) {
@@ -186,8 +232,8 @@ if (nrow(invalid_totals) > 0) {
 #SAVE################################
 
 #1. Save the native bootstrap-level source object----
-saveRDS(
-  bam_predictor_importance_bootstrap_v5,
+save(
+  bam_predictor_boot_v5,
   file = output_file,
   compress = "xz"
 )

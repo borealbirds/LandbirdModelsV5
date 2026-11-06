@@ -270,7 +270,7 @@ importance_path <- file.path(
   root,
   "output",
   "13_predictor_importance",
-  "BAMV5-predictor-importance-bootstrap.rds"
+  "bam_predictor_boot_v5.rda"
 )
 
 if (!file.exists(importance_path)) {
@@ -281,14 +281,25 @@ if (!file.exists(importance_path)) {
   )
 }
 
-imp_boot <- readRDS(importance_path)
+importance_env <- new.env(parent = emptyenv())
+importance_objects <- load(importance_path, envir = importance_env)
+
+if (!"bam_predictor_boot_v5" %in% importance_objects) {
+  stop(
+    "Expected object `bam_predictor_boot_v5` was not found in: ",
+    importance_path
+  )
+}
+
+imp_boot <- importance_env[["bam_predictor_boot_v5"]]
 
 required_importance_columns <- c(
   "spp",
-  "region",
+  "bcr",
   "boot",
   "predictor",
-  "rel_inf"
+  "predictor_class",
+  "rel.inf"
 )
 missing_importance_columns <- setdiff(
   required_importance_columns,
@@ -301,6 +312,16 @@ if (length(missing_importance_columns) > 0) {
     paste(missing_importance_columns, collapse = ", ")
   )
 }
+
+imp_boot <- imp_boot |>
+  transmute(
+    spp,
+    region = bcr,
+    boot,
+    predictor,
+    predictor_class,
+    rel_inf = rel.inf
+  )
 
 # Ensure importance uses the same native region identifiers as the model summary.
 unknown_importance_regions <- imp_boot |>
@@ -336,10 +357,6 @@ if (nrow(missing_importance_species) > 0) {
 
 #2. Summarize across bootstraps and wrangle----
 importance <- imp_boot |>
-  mutate(
-    # Preserve the established public spelling used in the results workbook.
-    predictor = ifelse(tolower(predictor) == "year", "Year", predictor)
-  ) |>
   group_by(spp, region, predictor) |>
   summarize(
     mean_rel_inf = mean(rel_inf, na.rm = TRUE),
