@@ -1,12 +1,13 @@
 # ---
-# title: National Models 5.0 - summarize validation
+# title: National Models 5.0 - summarize model outputs
 # author: Elly Knight
 # created: March 5, 2024
 # ---
 
 #NOTES################################
 
-# This script summarizes the output from the `10.Validate.R` alongside additional model metadata.
+# This script summarizes the output from `12.Validate.R`, predictor importance,
+# abundance estimates, and additional model metadata.
 
 # The output is a .xlsx file similar to the V4 "results" object at file.path(root, "data", "Lookups", "BAMv4-results-2025-05-21.xlsx"))
 
@@ -20,11 +21,13 @@ library(tidyverse) #data wrangling
 library(data.table) #rbinding lists to dataframe with filling unmatched columns
 library(openxlsx) #read and save to excel
 library(sf) #shapefiles
-library(BAMexploreR) #variable importance & pop est function
 library(parallel) #parallelize
 
 #2. Set root path----
 root <- "G:/Shared drives/BAM_NationalModels5"
+
+summary_output <- file.path(root, "output", "14_summary")
+dir.create(summary_output, recursive = TRUE, showWarnings = FALSE)
 
 #3. Restrict scientific notation----
 options(scipen = 9999)
@@ -262,42 +265,34 @@ variables <- read.csv(file.path(
 
 #IMPORTANCE#########
 
-#1. Load the current release object----
-# Load this explicitly instead of using the copy bundled with the installed
-# BAMexploreR package, which may lag behind the current model release.
+#1. Load native, bootstrap-level predictor importance----
 importance_path <- file.path(
   root,
-  "distribution",
-  "predictors",
-  "bam_predictor_importance_v5.rda"
+  "output",
+  "13_predictor_importance",
+  "BAMV5-predictor-importance-bootstrap.rds"
 )
 
 if (!file.exists(importance_path)) {
-  stop("Predictor-importance file not found: ", importance_path)
-}
-
-importance_env <- new.env(parent = emptyenv())
-importance_objects <- load(importance_path, envir = importance_env)
-
-if (!"bam_predictor_importance_v5" %in% importance_objects) {
   stop(
-    "Expected object `bam_predictor_importance_v5` was not found in: ",
-    importance_path
+    "Predictor-importance file not found: ",
+    importance_path,
+    "\nRun analysis/13.PredictorImportance.R before this script."
   )
 }
 
-imp_bam <- importance_env[["bam_predictor_importance_v5"]]
+imp_boot <- readRDS(importance_path)
 
 required_importance_columns <- c(
   "spp",
-  "bcr",
+  "region",
+  "boot",
   "predictor",
-  "mean_rel_inf",
-  "sd_rel_inf"
+  "rel_inf"
 )
 missing_importance_columns <- setdiff(
   required_importance_columns,
-  names(imp_bam)
+  names(imp_boot)
 )
 
 if (length(missing_importance_columns) > 0) {
@@ -307,11 +302,27 @@ if (length(missing_importance_columns) > 0) {
   )
 }
 
+# Ensure importance uses the same native region identifiers as the model summary.
+unknown_importance_regions <- imp_boot |>
+  distinct(region) |>
+  anti_join(
+    regions |>
+      distinct(region),
+    by = "region"
+  )
+
+if (nrow(unknown_importance_regions) > 0) {
+  stop(
+    "Predictor importance contains unknown model-region identifiers: ",
+    paste(unknown_importance_regions$region, collapse = ", ")
+  )
+}
+
 # Report species that would otherwise disappear silently in the join below.
 missing_importance_species <- species |>
   dplyr::select(id) |>
   anti_join(
-    imp_bam |>
+    imp_boot |>
       distinct(spp),
     by = c("id" = "spp")
   )
@@ -323,11 +334,20 @@ if (nrow(missing_importance_species) > 0) {
   )
 }
 
-#2. Wrangle ----
-importance <- imp_bam |>
+#2. Summarize across bootstraps and wrangle----
+importance <- imp_boot |>
+  mutate(
+    # Preserve the established public spelling used in the results workbook.
+    predictor = ifelse(tolower(predictor) == "year", "Year", predictor)
+  ) |>
+  group_by(spp, region, predictor) |>
+  summarize(
+    mean_rel_inf = mean(rel_inf, na.rm = TRUE),
+    sd_rel_inf = sd(rel_inf, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
   rename(
     id = spp,
-    region = bcr,
     variable = predictor,
     importance_mean = mean_rel_inf,
     importance_sd = sd_rel_inf
@@ -446,9 +466,9 @@ todo <- trunc |>
 
 #4. Check for existing output ----
 if (
-  file.exists(file.path(root, "output", "13_summary", "BAMV5-abundance.RData"))
+  file.exists(file.path(summary_output, "BAMV5-abundance.RData"))
 ) {
-  load(file.path(root, "output", "13_summary", "BAMV5-abundance.RData")) |>
+  load(file.path(summary_output, "BAMV5-abundance.RData")) |>
     unique()
   loop <- anti_join(todo, abundances_done)
   spp <- dplyr::filter(species, id %in% loop$id)
@@ -483,7 +503,7 @@ if (nrow(spp.yr) > 0) {
 
     save(
       abundances_done,
-      file = file.path(root, "output", "13_summary", "BAMV5-abundance.RData")
+      file = file.path(summary_output, "BAMV5-abundance.RData")
     )
 
     print(paste0("Species ", i, " complete"))
@@ -542,5 +562,5 @@ names(out) <- c(
 #2. Save ----
 write.xlsx(
   out,
-  file = file.path(root, "output", "13_summary", "BAMV5-results.xlsx")
+  file = file.path(summary_output, "BAMV5-results.xlsx")
 )
